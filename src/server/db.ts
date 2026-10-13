@@ -7,6 +7,7 @@ import {
 } from '../shared/financialConfig.js';
 import type {
   PaymentAuditRecord,
+  PendingRegistrationRecord,
   ReferralRecord,
   SecurityAuditLog,
   TournamentRecord
@@ -18,6 +19,7 @@ interface LocalDatabaseSchema {
   referrals: ReferralRecord[];
   payments: PaymentAuditRecord[];
   security_logs: SecurityAuditLog[];
+  pending_registrations?: PendingRegistrationRecord[];
 }
 
 const LOCAL_DB_DIR = path.resolve('data');
@@ -378,6 +380,9 @@ export class DatabaseProvider {
       try {
         const raw = fs.readFileSync(LOCAL_DB_PATH, 'utf8');
         this.localData = JSON.parse(raw) as LocalDatabaseSchema;
+        if (!this.localData.pending_registrations) {
+          this.localData.pending_registrations = [];
+        }
         return;
       } catch {
         // Fall through to default setup
@@ -428,7 +433,8 @@ export class DatabaseProvider {
       tournament: defaultTournament,
       referrals: seedReferrals,
       payments: [],
-      security_logs: []
+      security_logs: [],
+      pending_registrations: []
     };
 
     this.persistLocalData();
@@ -497,6 +503,17 @@ export class DatabaseProvider {
           collaborator_share DECIMAL(10,2) NOT NULL,
           status VARCHAR(30) NOT NULL,
           raw_payload_json TEXT,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS pending_registrations (
+          client_transaction_id VARCHAR(100) PRIMARY KEY,
+          driver_name VARCHAR(100) NOT NULL,
+          navigator_name VARCHAR(100) NOT NULL,
+          referral_code VARCHAR(50),
+          phone VARCHAR(50),
+          amount_usd DECIMAL(10,2) NOT NULL,
+          status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
       `);
@@ -887,6 +904,128 @@ export class DatabaseProvider {
       }));
     }
     return [...(this.localData?.payments || [])];
+  }
+
+  public async getPaymentAuditByTransactionId(txId: string): Promise<PaymentAuditRecord | null> {
+    if (!txId) return null;
+    const cleanId = String(txId).trim();
+    if (this.isPostgres && this.pgPool) {
+      const res = await this.pgPool.query(
+        'SELECT * FROM payments_audit WHERE payphone_transaction_id = $1 LIMIT 1',
+        [cleanId]
+      );
+      if (res.rows.length > 0) {
+        const r = res.rows[0];
+        return {
+          id: r.id,
+          payphone_transaction_id: r.payphone_transaction_id,
+          tournament_id: r.tournament_id,
+          referral_id: r.referral_id,
+          referral_code: r.referral_code,
+          pair_driver_name: r.pair_driver_name,
+          pair_navigator_name: r.pair_navigator_name,
+          gross_amount: parseFloat(r.gross_amount),
+          payphone_fee: parseFloat(r.payphone_fee),
+          prize_pool_share: parseFloat(r.prize_pool_share),
+          charity_share: parseFloat(r.charity_share),
+          developer_share: parseFloat(r.developer_share),
+          collaborator_share: parseFloat(r.collaborator_share),
+          status: r.status,
+          raw_payload_json: r.raw_payload_json,
+          created_at: r.created_at
+        };
+      }
+      return null;
+    }
+    return (
+      this.localData?.payments?.find((p) => p.payphone_transaction_id === cleanId) || null
+    );
+  }
+
+  public async savePendingRegistration(record: PendingRegistrationRecord): Promise<void> {
+    if (this.isPostgres && this.pgPool) {
+      await this.pgPool.query(
+        `INSERT INTO pending_registrations (
+          client_transaction_id, driver_name, navigator_name, referral_code, phone, amount_usd, status, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (client_transaction_id) DO UPDATE SET
+          driver_name = $2, navigator_name = $3, referral_code = $4, phone = $5, amount_usd = $6, status = $7`,
+        [
+          record.client_transaction_id,
+          record.driver_name,
+          record.navigator_name,
+          record.referral_code || null,
+          record.phone || null,
+          record.amount_usd,
+          record.status,
+          record.created_at
+        ]
+      );
+    }
+    if (this.localData) {
+      if (!this.localData.pending_registrations) {
+        this.localData.pending_registrations = [];
+      }
+      const idx = this.localData.pending_registrations.findIndex(
+        (p) => p.client_transaction_id === record.client_transaction_id
+      );
+      if (idx >= 0) {
+        this.localData.pending_registrations[idx] = record;
+      } else {
+        this.localData.pending_registrations.push(record);
+      }
+      this.persistLocalData();
+    }
+  }
+
+  public async getPendingRegistration(clientTxId: string): Promise<PendingRegistrationRecord | null> {
+    if (!clientTxId) return null;
+    const cleanId = String(clientTxId).trim();
+    if (this.isPostgres && this.pgPool) {
+      const res = await this.pgPool.query(
+        'SELECT * FROM pending_registrations WHERE client_transaction_id = $1 LIMIT 1',
+        [cleanId]
+      );
+      if (res.rows.length > 0) {
+        const row = res.rows[0];
+        return {
+          client_transaction_id: row.client_transaction_id,
+          driver_name: row.driver_name,
+          navigator_name: row.navigator_name,
+          referral_code: row.referral_code || undefined,
+          phone: row.phone || undefined,
+          amount_usd: parseFloat(row.amount_usd),
+          status: row.status as 'PENDING' | 'COMPLETED' | 'CANCELLED',
+          created_at: row.created_at
+        };
+      }
+      return null;
+    }
+    return (
+      this.localData?.pending_registrations?.find(
+        (p) => p.client_transaction_id === cleanId
+      ) || null
+    );
+  }
+
+  public async markPendingRegistrationComplete(clientTxId: string): Promise<void> {
+    if (!clientTxId) return;
+    const cleanId = String(clientTxId).trim();
+    if (this.isPostgres && this.pgPool) {
+      await this.pgPool.query(
+        "UPDATE pending_registrations SET status = 'COMPLETED' WHERE client_transaction_id = $1",
+        [cleanId]
+      );
+    }
+    if (this.localData?.pending_registrations) {
+      const rec = this.localData.pending_registrations.find(
+        (p) => p.client_transaction_id === cleanId
+      );
+      if (rec) {
+        rec.status = 'COMPLETED';
+        this.persistLocalData();
+      }
+    }
   }
 }
 

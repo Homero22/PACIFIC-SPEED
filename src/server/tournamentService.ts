@@ -21,6 +21,7 @@ import { antiCheatEngine } from './antiCheat.js';
 import { dbProvider } from './db.js';
 import {
   checkPaymentRateLimit,
+  confirmPayphoneTransaction,
   registerFailedWebhook,
   verifyPayphoneSignature,
   verifyReplayAttackTimestamp
@@ -119,7 +120,100 @@ export class TournamentService {
       return { success: false, message: `Payphone payment not approved (status: ${payload.status})` };
     }
 
-    return this.applyConfirmedPayment(payload, rawBody, clientIp);
+    // 5. Reconcile metadata from pending registrations if missing
+    if ((!payload.pairMeta?.driver_name || payload.pairMeta.driver_name === 'DRIVER') && payload.clientTransactionId) {
+      const pending = await dbProvider.getPendingRegistration(payload.clientTransactionId);
+      if (pending) {
+        payload.pairMeta = {
+          driver_name: pending.driver_name,
+          navigator_name: pending.navigator_name,
+          referral_code: pending.referral_code
+        };
+      }
+    }
+
+    const result = await this.applyConfirmedPayment(payload, rawBody, clientIp);
+    if (result.success && payload.clientTransactionId) {
+      await dbProvider.markPendingRegistrationComplete(payload.clientTransactionId);
+    }
+    return result;
+  }
+
+  /**
+   * Handles Payphone Browser Callback (?id=...&clientTransactionId=...)
+   * Executes the mandatory 5-minute server-to-server confirmation (POST /api/button/V2/Confirm)
+   * to prevent automatic reversal by Payphone, reconciles with pending registrations,
+   * and credits tournament pools and collaborator shares in PostgreSQL.
+   */
+  public async handlePayphoneCallback(
+    id: number | string,
+    clientTransactionId: string,
+    clientIp = '127.0.0.1'
+  ): Promise<{ success: boolean; message: string; auditRecord?: PaymentAuditRecord }> {
+    if (!id || !clientTransactionId) {
+      return {
+        success: false,
+        message: 'Parámetros de retorno incompletos (se requiere id y clientTransactionId de Payphone).'
+      };
+    }
+
+    // 1. Idempotency check: if transaction already confirmed, avoid double-charging
+    const existingAudit = await dbProvider.getPaymentAuditByTransactionId(String(id));
+    if (existingAudit) {
+      return {
+        success: true,
+        message: `Transacción ${id} ya fue procesada y acreditada exitosamente.`,
+        auditRecord: existingAudit
+      };
+    }
+
+    // 2. Execute mandatory 5-Minute Payphone Server-to-Server Confirmation
+    const confirmResult = await confirmPayphoneTransaction(id, clientTransactionId);
+    if (!confirmResult.success || !confirmResult.approved) {
+      antiCheatEngine.logSecurityViolation(
+        'payphone_confirm_rejected',
+        'high',
+        clientIp,
+        confirmResult.message || 'Transacción rechazada por pasarela Payphone'
+      );
+      return {
+        success: false,
+        message: confirmResult.message || 'La pasarela Payphone no aprobó la transacción.'
+      };
+    }
+
+    // 3. Reconcile metadata from pending_registrations
+    const pending = await dbProvider.getPendingRegistration(clientTransactionId);
+
+    const txData = confirmResult.data || {};
+    const grossAmt = txData.amount ? Number(txData.amount) / 100 : (pending?.amount_usd || 10.0);
+
+    const webhookPayload: PayphoneWebhookPayload = {
+      transactionId: String(confirmResult.transactionId || id),
+      clientTransactionId: String(clientTransactionId),
+      amount: grossAmt,
+      currency: 'USD',
+      status: 'Approved',
+      pairMeta: {
+        driver_name: pending?.driver_name || 'PILOT_A',
+        navigator_name: pending?.navigator_name || 'PILOT_B',
+        referral_code: pending?.referral_code
+      },
+      timestamp: Math.floor(Date.now() / 1000)
+    };
+
+    // 4. Apply confirmed payment to Tournament pools, referrals, and audit
+    const applyResult = await this.applyConfirmedPayment(
+      webhookPayload,
+      JSON.stringify(txData),
+      clientIp
+    );
+
+    if (applyResult.success) {
+      await dbProvider.markPendingRegistrationComplete(clientTransactionId);
+    }
+
+    return applyResult;
   }
 
   /**
@@ -156,6 +250,16 @@ export class TournamentService {
     rawPayload: string,
     clientIp: string
   ): Promise<{ success: boolean; message: string; auditRecord?: PaymentAuditRecord }> {
+    // Idempotency check: prevent duplicate credit if webhook or callback triggers twice
+    const existingAudit = await dbProvider.getPaymentAuditByTransactionId(payload.transactionId);
+    if (existingAudit) {
+      return {
+        success: true,
+        message: `Transacción ${payload.transactionId} ya fue registrada previamente en auditoría (Idempotencia activa).`,
+        auditRecord: existingAudit
+      };
+    }
+
     const config = await dbProvider.getTournamentConfig();
     const tournament = await dbProvider.getActiveTournament();
 

@@ -99,6 +99,42 @@ class PacificSpeedClientApp {
       if (refInput) refInput.value = urlRef.trim().toUpperCase();
     }
 
+    // Check URL parameters for Payphone Payment Callback status
+    const paymentStatus = params.get('payment');
+    const paymentTx = params.get('tx');
+    if (paymentStatus === 'success') {
+      const feedback = document.getElementById('tourney-feedback');
+      if (feedback) {
+        feedback.innerHTML = `🌟 <strong>¡INSCRIPCIÓN OFICIAL CONFIRMADA EN PAYPHONE!</strong><br>ID de Transacción: <code>${paymentTx || 'APROBADA'}</code>.<br>Pareja registrada en la Base de Datos oficial y Pozo de Premios actualizado.`;
+        feedback.style.color = 'var(--phosphor)';
+      }
+      document.querySelectorAll('[data-hangar-tab]').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('.hangar-panel').forEach((p) => p.classList.remove('active'));
+      document.querySelector('[data-hangar-tab="hangar-tab-tournament"]')?.classList.add('active');
+      document.getElementById('hangar-tab-tournament')?.classList.add('active');
+    } else if (paymentStatus === 'error') {
+      const reason = params.get('reason') || 'La pasarela no pudo procesar la transacción.';
+      const feedback = document.getElementById('tourney-feedback');
+      if (feedback) {
+        feedback.innerHTML = `⚠️ <strong>PAGO NO PROCESADO:</strong> ${reason}`;
+        feedback.style.color = 'var(--danger)';
+      }
+      document.querySelectorAll('[data-hangar-tab]').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('.hangar-panel').forEach((p) => p.classList.remove('active'));
+      document.querySelector('[data-hangar-tab="hangar-tab-tournament"]')?.classList.add('active');
+      document.getElementById('hangar-tab-tournament')?.classList.add('active');
+    } else if (paymentStatus === 'cancelled') {
+      const feedback = document.getElementById('tourney-feedback');
+      if (feedback) {
+        feedback.innerHTML = `ℹ️ Cobro cancelado por el usuario en Payphone. Puedes reintentar cuando gustes.`;
+        feedback.style.color = 'var(--accent)';
+      }
+      document.querySelectorAll('[data-hangar-tab]').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('.hangar-panel').forEach((p) => p.classList.remove('active'));
+      document.querySelector('[data-hangar-tab="hangar-tab-tournament"]')?.classList.add('active');
+      document.getElementById('hangar-tab-tournament')?.classList.add('active');
+    }
+
     const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
     this.renderer = new GameRenderer(canvas);
     this.input = new InputManager(() => this.audio.init());
@@ -408,11 +444,12 @@ class PacificSpeedClientApp {
         });
 
         const data = await res.json();
-        if (data.success && data.payUrl) {
+        const checkoutUrl = data.payWithCard || data.payUrl || data.payWithPayPhone;
+        if (data.success && checkoutUrl) {
           if (feedback) {
-            feedback.innerHTML = `✓ ENLACE DE PAGO GENERADO // <a href="${data.payUrl}" target="_blank" style="color:var(--phosphor);font-weight:700;text-decoration:underline;">ABRIR COBRO PAYPHONE ($${data.entry_fee_usd.toFixed(2)} USD)</a>`;
+            feedback.innerHTML = `✓ ENLACE DE PAGO GENERADO // <a href="${checkoutUrl}" target="_blank" style="color:var(--phosphor);font-weight:700;text-decoration:underline;">ABRIR COBRO PAYPHONE ($${data.entry_fee_usd.toFixed(2)} USD)</a>`;
           }
-          window.open(data.payUrl, '_blank');
+          window.open(checkoutUrl, '_blank');
         } else {
           if (feedback) {
             feedback.innerHTML = `⚡ <strong>PASARELA PAYPHONE:</strong> ${data.message || 'Configura PAYPHONE_TOKEN en variables de entorno para cobros reales en vivo.'} <br><em>Consejo: Puedes usar el botón <strong>SANDBOX PAY</strong> para probar la acreditación completa en vivo.</em>`;

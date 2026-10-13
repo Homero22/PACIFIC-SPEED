@@ -16,8 +16,10 @@ import {
 } from './adminSecurity.js';
 import {
   createPayphonePaymentLink,
-  getPayphoneConfig
+  getPayphoneConfig,
+  preparePayphoneTransaction
 } from './payphoneSecurity.js';
+import { dbProvider } from './db.js';
 import { RoomManager } from './roomManager.js';
 import { tournamentService } from './tournamentService.js';
 
@@ -100,6 +102,15 @@ app.post('/api/webhooks/payphone', async (req, res) => {
     const signature = req.headers['x-payphone-signature'] as string | undefined;
     const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
 
+    // If payload contains Button V2 notification format
+    if (req.body?.id && (req.body.clientTxId || req.body.clientTransactionId)) {
+      const id = String(req.body.id);
+      const clientTxId = String(req.body.clientTxId || req.body.clientTransactionId);
+      const cbResult = await tournamentService.handlePayphoneCallback(id, clientTxId, clientIp);
+      res.json(cbResult);
+      return;
+    }
+
     const result = await tournamentService.processPayphoneWebhook(
       req.body,
       rawBody,
@@ -149,13 +160,28 @@ app.post('/api/payphone/create-link', async (req, res) => {
     const proto = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
     const baseUrl = `${proto}://${host}`;
 
-    const linkResult = await createPayphonePaymentLink({
+    // 1. Persist Pending Registration in Database
+    await dbProvider.savePendingRegistration({
+      client_transaction_id: clientTxId,
+      driver_name: (driver_name || 'PILOT_A').trim().toUpperCase(),
+      navigator_name: (navigator_name || 'PILOT_B').trim().toUpperCase(),
+      referral_code: referral_code ? referral_code.trim().toUpperCase() : undefined,
+      phone: phone ? phone.trim() : undefined,
+      amount_usd: telemetry.tournament.entry_fee_usd,
+      status: 'PENDING',
+      created_at: new Date().toISOString()
+    });
+
+    // 2. Prepare Payphone Button V2 Transaction
+    const responseUrl = `${baseUrl}/api/payphone/callback`;
+    const cancellationUrl = `${baseUrl}/?payment=cancelled`;
+
+    const linkResult = await preparePayphoneTransaction({
       amountUsd: telemetry.tournament.entry_fee_usd,
       clientTransactionId: clientTxId,
-      reference: `PACIFIC SPEED - Piloto ${driver_name || 'A'} & Navegante ${navigator_name || 'B'}`,
-      responseUrl: `${baseUrl}/api/webhooks/payphone`,
-      cancellationUrl: `${baseUrl}/`,
-      phone
+      reference: `PACIFIC SPEED - ${driver_name || 'PILOTO'} & ${navigator_name || 'NAVEGANTE'}`,
+      responseUrl,
+      cancellationUrl
     });
 
     res.json({
@@ -166,6 +192,48 @@ app.post('/api/payphone/create-link', async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, error: (err as Error).message });
   }
+});
+
+/**
+ * Payphone Official Response URL Handler (GET /api/payphone/callback)
+ * Fulfills Payphone's strict 5-minute confirmation rule to avoid automatic reversals.
+ */
+app.get('/api/payphone/callback', async (req, res) => {
+  try {
+    const id = (req.query.id || req.query.transactionId) as string;
+    const clientTransactionId = (req.query.clientTransactionId || req.query.clientTxId) as string;
+    const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
+
+    if (!id || !clientTransactionId) {
+      res.redirect('/?payment=cancelled');
+      return;
+    }
+
+    const result = await tournamentService.handlePayphoneCallback(
+      id,
+      clientTransactionId,
+      clientIp
+    );
+
+    if (result.success) {
+      res.redirect(`/?payment=success&tx=${encodeURIComponent(String(id))}`);
+    } else {
+      res.redirect(`/?payment=error&reason=${encodeURIComponent(result.message)}`);
+    }
+  } catch (err: any) {
+    console.error('[PAYPHONE CALLBACK] Error:', err);
+    res.redirect(`/?payment=error&reason=${encodeURIComponent(err.message || 'Error procesando cobro')}`);
+  }
+});
+
+app.get('/api/payphone/status', (_req, res) => {
+  const cfg = getPayphoneConfig();
+  res.json({
+    configured: cfg.isConfigured,
+    environment: cfg.env,
+    baseUrl: cfg.baseUrl,
+    storeId: cfg.storeId ? 'SET' : 'NOT_SET'
+  });
 });
 
 app.get('/api/referrals/:code', async (req, res) => {

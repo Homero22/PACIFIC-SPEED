@@ -247,7 +247,8 @@ export interface SecurityAuditLog {
     | 'webhook_replay_rejected'
     | 'rate_limit_exceeded'
     | 'admin_unauthorized_access'
-    | 'config_modified';
+    | 'config_modified'
+    | 'payphone_confirm_rejected';
   severity: 'low' | 'medium' | 'high' | 'critical';
   ip_address: string;
   details: string;
@@ -268,6 +269,17 @@ export interface PayphoneWebhookPayload {
     referral_code?: string;
   };
   timestamp?: number;
+}
+
+export interface PendingRegistrationRecord {
+  client_transaction_id: string;
+  driver_name: string;
+  navigator_name: string;
+  referral_code?: string;
+  phone?: string;
+  amount_usd: number;
+  status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
+  created_at: string;
 }
 
 export interface TournamentTelemetryStatus {

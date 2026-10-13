@@ -22,25 +22,40 @@ export function getPayphoneClientId(): string | undefined {
   return cleanEnv(process.env.PAYPHONE_CLIENT_ID) || cleanEnv(process.env.PAYPHONE_APP_ID);
 }
 
+export function getPayphoneBaseUrl(): string {
+  return cleanEnv(process.env.PAYPHONE_API_URL) || 'https://pay.payphonetodoesposible.com';
+}
+
+export function getPayphoneStoreId(): string | undefined {
+  return cleanEnv(process.env.PAYPHONE_STORE_ID);
+}
+
 export function getPayphoneConfig() {
   return {
     token: getPayphoneToken(),
     clientId: getPayphoneClientId(),
     secretKey: getPayphoneSecretKey(),
-    storeId: cleanEnv(process.env.PAYPHONE_STORE_ID),
+    storeId: getPayphoneStoreId(),
+    baseUrl: getPayphoneBaseUrl(),
     env: cleanEnv(process.env.PAYPHONE_ENV) || 'production',
     isConfigured: Boolean(getPayphoneToken())
   };
 }
 
-export async function createPayphonePaymentLink(params: {
+export async function preparePayphoneTransaction(params: {
   amountUsd: number;
   clientTransactionId: string;
   reference: string;
-  responseUrl?: string;
-  cancellationUrl?: string;
-  phone?: string;
-}): Promise<{ success: boolean; payUrl?: string; paymentId?: number; message?: string }> {
+  responseUrl: string;
+  cancellationUrl: string;
+}): Promise<{
+  success: boolean;
+  paymentId?: number;
+  payWithCard?: string;
+  payWithPayPhone?: string;
+  payUrl?: string;
+  message?: string;
+}> {
   const token = getPayphoneToken();
   if (!token) {
     return {
@@ -51,8 +66,11 @@ export async function createPayphonePaymentLink(params: {
 
   // Payphone amounts are in cents: $10.00 -> 1000
   const amountInCents = Math.round(params.amountUsd * 100);
+  const storeId = getPayphoneStoreId();
 
   const payload: Record<string, any> = {
+    responseUrl: params.responseUrl,
+    cancellationUrl: params.cancellationUrl,
     amount: amountInCents,
     amountWithoutTax: amountInCents,
     amountWithTax: 0,
@@ -60,17 +78,19 @@ export async function createPayphonePaymentLink(params: {
     service: 0,
     tip: 0,
     clientTransactionId: params.clientTransactionId,
-    reference: params.reference,
     currency: 'USD',
+    reference: params.reference,
     expireIn: 30
   };
 
-  if (params.responseUrl) payload.responseUrl = params.responseUrl;
-  if (params.cancellationUrl) payload.cancellationUrl = params.cancellationUrl;
-  if (params.phone) payload.phoneNumber = params.phone;
+  if (storeId) {
+    payload.storeId = storeId;
+  }
+
+  const baseUrl = getPayphoneBaseUrl();
 
   try {
-    const res = await fetch('https://pay.payphonetodo.es/api/Links/Create', {
+    const res = await fetch(`${baseUrl}/api/button/Prepare`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -80,17 +100,20 @@ export async function createPayphonePaymentLink(params: {
     });
 
     const data = (await res.json()) as any;
-    if (res.ok && (data.payWithPayPhone || data.url)) {
+    if (res.ok && (data.payWithCard || data.payWithPayPhone || data.paymentId)) {
+      const payUrl = data.payWithCard || data.payWithPayPhone;
       return {
         success: true,
-        payUrl: data.payWithPayPhone || data.url,
-        paymentId: data.paymentId || data.id
+        paymentId: data.paymentId || data.id,
+        payWithCard: data.payWithCard,
+        payWithPayPhone: data.payWithPayPhone,
+        payUrl
       };
     }
 
     return {
       success: false,
-      message: data.message || data.error || 'Error generando enlace de cobro en Payphone.'
+      message: data.message || data.error || `Error generando botón en Payphone (HTTP ${res.status})`
     };
   } catch (err: any) {
     return {
@@ -98,6 +121,94 @@ export async function createPayphonePaymentLink(params: {
       message: `Error de conexión con la pasarela Payphone: ${err?.message || String(err)}`
     };
   }
+}
+
+export async function confirmPayphoneTransaction(
+  id: number | string,
+  clientTxId: string
+): Promise<{
+  success: boolean;
+  approved: boolean;
+  transactionId?: number | string;
+  data?: any;
+  message?: string;
+}> {
+  const token = getPayphoneToken();
+  if (!token) {
+    return {
+      success: false,
+      approved: false,
+      message: 'Credenciales de Payphone pendientes. Por favor define PAYPHONE_TOKEN.'
+    };
+  }
+
+  const baseUrl = getPayphoneBaseUrl();
+  const payload = {
+    id: Number(id),
+    clientTxId: String(clientTxId)
+  };
+
+  try {
+    const res = await fetch(`${baseUrl}/api/button/V2/Confirm`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = (await res.json()) as any;
+    if (res.ok) {
+      const isApproved =
+        data.transactionStatus === 'Approved' ||
+        data.statusCode === 3 ||
+        data.status === 'Approved';
+
+      return {
+        success: true,
+        approved: isApproved,
+        transactionId: data.transactionId || id,
+        data,
+        message: isApproved
+          ? 'Transacción confirmada y aprobada por Payphone.'
+          : (data.message || `Transacción no aprobada (estado: ${data.transactionStatus || data.statusCode})`)
+      };
+    }
+
+    return {
+      success: false,
+      approved: false,
+      data,
+      message: data.message || data.error || `Error en confirmación de Payphone (HTTP ${res.status})`
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      approved: false,
+      message: `Error de red al confirmar con Payphone: ${err?.message || String(err)}`
+    };
+  }
+}
+
+export async function createPayphonePaymentLink(params: {
+  amountUsd: number;
+  clientTransactionId: string;
+  reference: string;
+  responseUrl?: string;
+  cancellationUrl?: string;
+  phone?: string;
+}): Promise<{ success: boolean; payUrl?: string; payWithCard?: string; payWithPayPhone?: string; paymentId?: number; message?: string }> {
+  const respUrl = params.responseUrl || 'http://localhost:3000/api/payphone/callback';
+  const cancUrl = params.cancellationUrl || 'http://localhost:3000/';
+
+  return preparePayphoneTransaction({
+    amountUsd: params.amountUsd,
+    clientTransactionId: params.clientTransactionId,
+    reference: params.reference,
+    responseUrl: respUrl,
+    cancellationUrl: cancUrl
+  });
 }
 
 export function generatePayphoneSignature(payloadString: string, secretKey = getPayphoneSecretKey()): string {

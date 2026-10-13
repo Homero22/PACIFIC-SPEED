@@ -6,9 +6,12 @@ import {
 } from '../financialConfig.js';
 import {
   generatePayphoneSignature,
+  getPayphoneBaseUrl,
+  getPayphoneConfig,
   verifyPayphoneSignature,
   verifyReplayAttackTimestamp
 } from '../../server/payphoneSecurity.js';
+import { dbProvider } from '../../server/db.js';
 import {
   generateAdminToken,
   validateAdminToken,
@@ -131,5 +134,44 @@ describe('Anti-Cheat Engine — Server-Authoritative Input Validation', () => {
     // Check that violation was recorded in audit log
     const logs = engine.getSecurityLogs();
     expect(logs.some((l) => l.event_type === 'impossible_speed')).toBe(true);
+  });
+});
+
+describe('Payphone Button V2 Integration & Pending Registration Database Layer', () => {
+  it('resolves correct official Payphone endpoints and configuration structure', () => {
+    const baseUrl = getPayphoneBaseUrl();
+    expect(baseUrl).toBe('https://pay.payphonetodoesposible.com');
+
+    const config = getPayphoneConfig();
+    expect(config).toHaveProperty('baseUrl');
+    expect(config).toHaveProperty('isConfigured');
+    expect(config.baseUrl).toBe('https://pay.payphonetodoesposible.com');
+  });
+
+  it('persists, queries, and marks complete pending registrations for pair metadata reconciliation', async () => {
+    const clientTxId = `TEST-TX-${Date.now()}`;
+    const testRecord = {
+      client_transaction_id: clientTxId,
+      driver_name: 'TEST_PILOT_ALPHA',
+      navigator_name: 'TEST_NAV_BRAVO',
+      referral_code: 'SPEED2026',
+      phone: '+593999888777',
+      amount_usd: 10.0,
+      status: 'PENDING' as const,
+      created_at: new Date().toISOString()
+    };
+
+    await dbProvider.savePendingRegistration(testRecord);
+
+    const retrieved = await dbProvider.getPendingRegistration(clientTxId);
+    expect(retrieved).not.toBeNull();
+    expect(retrieved?.driver_name).toBe('TEST_PILOT_ALPHA');
+    expect(retrieved?.navigator_name).toBe('TEST_NAV_BRAVO');
+    expect(retrieved?.referral_code).toBe('SPEED2026');
+    expect(retrieved?.status).toBe('PENDING');
+
+    await dbProvider.markPendingRegistrationComplete(clientTxId);
+    const updated = await dbProvider.getPendingRegistration(clientTxId);
+    expect(updated?.status).toBe('COMPLETED');
   });
 });
