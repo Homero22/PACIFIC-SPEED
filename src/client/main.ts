@@ -382,11 +382,48 @@ class PacificSpeedClientApp {
       await this.handleSimulatePayphonePayment();
     });
 
-    document.getElementById('btn-tourney-pay')?.addEventListener('click', () => {
+    document.getElementById('btn-tourney-pay')?.addEventListener('click', async () => {
       this.audio.init();
       const feedback = document.getElementById('tourney-feedback');
+      const refInput = document.getElementById('tourney-referral-input') as HTMLInputElement | null;
+      const phoneInput = document.getElementById('tourney-phone-input') as HTMLInputElement | null;
+
       if (feedback) {
-        feedback.innerHTML = '⚡ MODO PRODUCCIÓN: Enlace Payphone SDK activo en deployment público. Usa <strong>SANDBOX PAY</strong> para acreditar $10 USD de prueba con la matemática exacta al instante.';
+        feedback.textContent = 'CONECTANDO CON PASARELA PAYPHONE...';
+        feedback.style.color = 'var(--accent)';
+      }
+
+      try {
+        const res = await fetch('/api/payphone/create-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            driver_name: this.pilotName || 'PILOT_A',
+            navigator_name:
+              this.lobbyState?.players.find((p) => p.role === 'navigator')?.name ||
+              `CO_PILOT_${Math.floor(10 + Math.random() * 89)}`,
+            referral_code: refInput?.value.trim().toUpperCase() || undefined,
+            phone: phoneInput?.value.trim() || undefined
+          })
+        });
+
+        const data = await res.json();
+        if (data.success && data.payUrl) {
+          if (feedback) {
+            feedback.innerHTML = `✓ ENLACE DE PAGO GENERADO // <a href="${data.payUrl}" target="_blank" style="color:var(--phosphor);font-weight:700;text-decoration:underline;">ABRIR COBRO PAYPHONE ($${data.entry_fee_usd.toFixed(2)} USD)</a>`;
+          }
+          window.open(data.payUrl, '_blank');
+        } else {
+          if (feedback) {
+            feedback.innerHTML = `⚡ <strong>PASARELA PAYPHONE:</strong> ${data.message || 'Configura PAYPHONE_TOKEN en variables de entorno para cobros reales en vivo.'} <br><em>Consejo: Puedes usar el botón <strong>SANDBOX PAY</strong> para probar la acreditación completa en vivo.</em>`;
+            feedback.style.color = 'var(--accent)';
+          }
+        }
+      } catch (err: any) {
+        if (feedback) {
+          feedback.textContent = `Error conectando con la pasarela: ${err?.message || 'Fallo de red'}`;
+          feedback.style.color = 'var(--danger)';
+        }
       }
     });
 

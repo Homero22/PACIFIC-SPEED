@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import fs from 'fs';
 import { createServer } from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -13,6 +14,10 @@ import {
   resetAdminAttempts,
   verifyAdminPassword
 } from './adminSecurity.js';
+import {
+  createPayphonePaymentLink,
+  getPayphoneConfig
+} from './payphoneSecurity.js';
 import { RoomManager } from './roomManager.js';
 import { tournamentService } from './tournamentService.js';
 
@@ -44,6 +49,7 @@ app.get('/api/health', (_req, res) => {
     game: 'PACIFIC SPEED: OVERDRIVE',
     version: '1.0.0',
     database: tournamentService.getDatabaseStatus(),
+    payphone: getPayphoneConfig(),
     timestamp: new Date().toISOString()
   });
 });
@@ -128,6 +134,35 @@ app.post('/api/tournament/simulate-payment', async (req, res) => {
       return;
     }
     res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: (err as Error).message });
+  }
+});
+
+app.post('/api/payphone/create-link', async (req, res) => {
+  try {
+    const { driver_name, navigator_name, referral_code, phone } = req.body || {};
+    const telemetry = await tournamentService.getTournamentTelemetryStatus();
+    const clientTxId = `PS-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`.toUpperCase();
+
+    const host = req.get('host') || 'localhost:3000';
+    const proto = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
+    const baseUrl = `${proto}://${host}`;
+
+    const linkResult = await createPayphonePaymentLink({
+      amountUsd: telemetry.tournament.entry_fee_usd,
+      clientTransactionId: clientTxId,
+      reference: `PACIFIC SPEED - Piloto ${driver_name || 'A'} & Navegante ${navigator_name || 'B'}`,
+      responseUrl: `${baseUrl}/api/webhooks/payphone`,
+      cancellationUrl: `${baseUrl}/`,
+      phone
+    });
+
+    res.json({
+      ...linkResult,
+      clientTransactionId: clientTxId,
+      entry_fee_usd: telemetry.tournament.entry_fee_usd
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: (err as Error).message });
   }
@@ -300,14 +335,29 @@ wss.on('connection', (ws) => {
   });
 });
 
-const clientDistPath = path.resolve(__dirname, '../../dist/client');
+const clientDistCandidates = [
+  path.resolve(__dirname, '../../dist/client'),
+  path.resolve(__dirname, '../client'),
+  path.resolve(process.cwd(), 'dist/client')
+];
+const clientDistPath = clientDistCandidates.find((p) => fs.existsSync(p)) || clientDistCandidates[0];
+
+const publicPath = path.resolve(process.cwd(), 'public');
+if (fs.existsSync(publicPath)) {
+  app.use(express.static(publicPath));
+}
+
 app.use(express.static(clientDistPath));
 
-app.get('/admin*', (_req, res) => {
+app.get('/admin', (_req, res) => {
   res.sendFile(path.join(clientDistPath, 'admin.html'), (err) => {
-    if (err) {
-      res.status(200).send('Admin Portal. Build with npm run build.');
-    }
+    if (err) res.status(200).send('Admin Portal. Build with npm run build.');
+  });
+});
+
+app.get('/admin/*', (_req, res) => {
+  res.sendFile(path.join(clientDistPath, 'admin.html'), (err) => {
+    if (err) res.status(200).send('Admin Portal. Build with npm run build.');
   });
 });
 
@@ -324,7 +374,8 @@ app.get('*', (req, res, next) => {
   });
 });
 
-const PORT = Number(process.env.PORT) || 3000;
+const rawPort = process.env.PORT ? String(process.env.PORT).trim().replace(/^["']|["']$/g, '') : '';
+const PORT = parseInt(rawPort, 10) || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`[PACIFIC SPEED: OVERDRIVE] Server listening on http://0.0.0.0:${PORT}`);
 });

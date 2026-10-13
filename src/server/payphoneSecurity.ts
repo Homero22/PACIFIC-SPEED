@@ -3,8 +3,101 @@ import type { Request, Response, NextFunction } from 'express';
 
 const DEFAULT_DEV_SECRET = 'dev_payphone_secret_key_pacific_overdrive_2026';
 
+function cleanEnv(val?: string): string | undefined {
+  if (!val) return undefined;
+  const trimmed = val.trim();
+  const unquoted = trimmed.replace(/^["'](.*)["']$/, '$1').trim();
+  return unquoted.length > 0 ? unquoted : undefined;
+}
+
 export function getPayphoneSecretKey(): string {
-  return process.env.PAYPHONE_SECRET_KEY || DEFAULT_DEV_SECRET;
+  return cleanEnv(process.env.PAYPHONE_SECRET_KEY) || cleanEnv(process.env.PAYPHONE_SECRET) || DEFAULT_DEV_SECRET;
+}
+
+export function getPayphoneToken(): string | undefined {
+  return cleanEnv(process.env.PAYPHONE_TOKEN) || cleanEnv(process.env.PAYPHONE_BEARER_TOKEN) || cleanEnv(process.env.PAYPHONE_ACCESS_TOKEN);
+}
+
+export function getPayphoneClientId(): string | undefined {
+  return cleanEnv(process.env.PAYPHONE_CLIENT_ID) || cleanEnv(process.env.PAYPHONE_APP_ID);
+}
+
+export function getPayphoneConfig() {
+  return {
+    token: getPayphoneToken(),
+    clientId: getPayphoneClientId(),
+    secretKey: getPayphoneSecretKey(),
+    storeId: cleanEnv(process.env.PAYPHONE_STORE_ID),
+    env: cleanEnv(process.env.PAYPHONE_ENV) || 'production',
+    isConfigured: Boolean(getPayphoneToken())
+  };
+}
+
+export async function createPayphonePaymentLink(params: {
+  amountUsd: number;
+  clientTransactionId: string;
+  reference: string;
+  responseUrl?: string;
+  cancellationUrl?: string;
+  phone?: string;
+}): Promise<{ success: boolean; payUrl?: string; paymentId?: number; message?: string }> {
+  const token = getPayphoneToken();
+  if (!token) {
+    return {
+      success: false,
+      message: 'Credenciales de Payphone pendientes. Por favor define PAYPHONE_TOKEN en las variables de entorno.'
+    };
+  }
+
+  // Payphone amounts are in cents: $10.00 -> 1000
+  const amountInCents = Math.round(params.amountUsd * 100);
+
+  const payload: Record<string, any> = {
+    amount: amountInCents,
+    amountWithoutTax: amountInCents,
+    amountWithTax: 0,
+    tax: 0,
+    service: 0,
+    tip: 0,
+    clientTransactionId: params.clientTransactionId,
+    reference: params.reference,
+    currency: 'USD',
+    expireIn: 30
+  };
+
+  if (params.responseUrl) payload.responseUrl = params.responseUrl;
+  if (params.cancellationUrl) payload.cancellationUrl = params.cancellationUrl;
+  if (params.phone) payload.phoneNumber = params.phone;
+
+  try {
+    const res = await fetch('https://pay.payphonetodo.es/api/Links/Create', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = (await res.json()) as any;
+    if (res.ok && (data.payWithPayPhone || data.url)) {
+      return {
+        success: true,
+        payUrl: data.payWithPayPhone || data.url,
+        paymentId: data.paymentId || data.id
+      };
+    }
+
+    return {
+      success: false,
+      message: data.message || data.error || 'Error generando enlace de cobro en Payphone.'
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: `Error de conexión con la pasarela Payphone: ${err?.message || String(err)}`
+    };
+  }
 }
 
 export function generatePayphoneSignature(payloadString: string, secretKey = getPayphoneSecretKey()): string {
