@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>PACIFIC SPEED: OVERDRIVE // TACTICAL STEALTH EDITION</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Orbitron:wght@600;800;900&family=Rajdhani:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg-obsidian: #020509;
+        --panel-glass: rgba(7, 13, 22, 0.84);
+        --accent: #ffb703;
+        --accent-glow: rgba(255, 183, 3, 0.35);
+        --phosphor: #00ff9d;
+        --cyan: #00f0ff;
+        --danger: #ff2a54;
+        --text-primary: #e6f2ff;
+        --text-muted: #8aa4c0;
+        --font-display: 'Orbitron', sans-serif;
+        --font-tactical: 'JetBrains Mono', monospace;
+        --font-ui: 'Rajdhani', sans-serif;
+      }
+
+      body[data-hud-theme='tactical_amber'] {
+        --accent: #ffb703;
+        --accent-glow: rgba(255, 183, 3, 0.35);
+      }
+      body[data-hud-theme='neural_green'] {
+        --accent: #00ff9d;
+        --accent-glow: rgba(0, 255, 157, 0.35);
+      }
+      body[data-hud-theme='abyssal_violet'] {
+        --accent: #00f0ff;
+        --accent-glow: rgba(0, 240, 255, 0.35);
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        user-select: none;
+      }
+
+      body {
+        background-color: var(--bg-obsidian);
+        background-image: linear-gradient(rgba(2, 6, 12, 0.72), rgba(2, 5, 10, 0.92)),
+          url('/assets/hangar_hero.jpg');
+        background-size: cover;
+        background-position: center;
+        color: var(--text-primary);
+        font-family: var(--font-tactical);
+        height: 100vh;
+        width: 100vw;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* 9:16 Vertical Viewport Frame */
+      #app-shell {
+        position: relative;
+        width: 100%;
+        max-width: 600px;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        background: rgba(2, 5, 10, 0.94);
+        border-left: 1px solid rgba(255, 183, 3, 0.25);
+        border-right: 1px solid rgba(255, 183, 3, 0.25);
+        box-shadow: 0 0 65px rgba(0, 0, 0, 0.95);
+        transition: all 0.25s ease;
+      }
+
+      body.tiktok-916-mode #app-shell {
+        max-width: 506px;
+        height: 900px;
+        max-height: 96vh;
+        border: 2px solid var(--accent);
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 0 40px var(--accent-glow);
+      }
+
+      /* Top Stealth Fighter HUD */
+      .hud-top {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 15;
+        padding: 10px 14px;
+        background: linear-gradient(180deg, rgba(2, 6, 12, 0.96) 0%, rgba(2, 6, 12, 0) 100%);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        pointer-events: none;
+      }
+
+      .hud-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .hud-interactive {
+        pointer-events: auto;
+        display: flex;
+        gap: 4px;
+      }
+
+      .metric-box {
+        background: rgba(6, 13, 24, 0.85);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-left: 3px solid var(--accent);
+        padding: 4px 10px;
+        backdrop-filter: blur(8px);
+        clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%);
+      }
+
+      .metric-label {
+        font-size: 9px;
+        letter-spacing: 1px;
+        color: var(--text-muted);
+        display: block;
+      }
+
+      .metric-value {
+        font-family: var(--font-display);
+        font-size: 15px;
+        font-weight: 800;
+        color: var(--accent);
+      }
+
+      .bars-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .bar-container {
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        height: 9px;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .bar-fill-integrity {
+        height: 100%;
+        width: 100%;
+        background: linear-gradient(90deg, #ff2a54, #00ff9d);
+        transition: width 0.12s ease;
+      }
+
+      .bar-fill-shield {
+        height: 100%;
+        width: 100%;
+        background: linear-gradient(90deg, #0077ff, #00f0ff);
+        transition: width 0.1s ease;
+      }
+
+      .bar-label {
+        font-size: 9px;
+        letter-spacing: 0.5px;
+        color: var(--text-muted);
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 2px;
+      }
+
+      .role-banner {
+        font-size: 10px;
+        letter-spacing: 0.8px;
+        padding: 3px 8px;
+        background: rgba(0, 255, 157, 0.08);
+        border: 1px solid rgba(0, 255, 157, 0.3);
+        color: var(--phosphor);
+        font-weight: 700;
+      }
+
+      .overdrive-pill {
+        background: linear-gradient(90deg, #ff0055, #ffb703);
+        color: #02050a;
+        font-family: var(--font-display);
+        font-weight: 900;
+        font-size: 10px;
+        padding: 3px 9px;
+        box-shadow: 0 0 15px rgba(255, 183, 3, 0.6);
+      }
+
+      /* Live Tactical Comms Strip (TikTok 9:16 Quick Reactions) */
+      .comms-strip {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 5px;
+        pointer-events: auto;
+        margin-top: 2px;
+      }
+
+      .comms-btn {
+        background: rgba(5, 12, 22, 0.82);
+        border: 1px solid rgba(0, 240, 255, 0.28);
+        color: var(--text-primary);
+        font-family: var(--font-tactical);
+        font-size: 9px;
+        font-weight: 600;
+        padding: 4px 4px;
+        cursor: pointer;
+        transition: all 0.14s ease;
+        text-align: center;
+      }
+
+      .comms-btn:hover {
+        border-color: var(--accent);
+        background: rgba(255, 183, 3, 0.18);
+      }
+
+      /* Canvas Wrapper */
+      #canvas-wrapper {
+        flex: 1;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+      }
+
+      #game-canvas {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+
+      /* Bottom Touch Controls */
+      .hud-bottom {
+        position: absolute;
+        bottom: 10px;
+        left: 12px;
+        right: 12px;
+        z-index: 15;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        pointer-events: none;
+      }
+
+      .joystick-zone {
+        width: 104px;
+        height: 104px;
+        border-radius: 50%;
+        border: 1.5px dashed rgba(255, 183, 3, 0.45);
+        background: rgba(4, 10, 18, 0.6);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: auto;
+        touch-action: none;
+      }
+
+      .joystick-knob {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        background: radial-gradient(circle, #ffffff 0%, var(--accent) 70%);
+        box-shadow: 0 0 14px var(--accent);
+      }
+
+      .navigator-buttons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        pointer-events: auto;
+      }
+
+      .tac-btn {
+        background: rgba(6, 14, 26, 0.88);
+        border: 1px solid rgba(0, 240, 255, 0.45);
+        color: var(--text-primary);
+        font-family: var(--font-tactical);
+        font-size: 10px;
+        font-weight: 700;
+        padding: 10px 10px;
+        cursor: pointer;
+        backdrop-filter: blur(6px);
+        clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%);
+      }
+
+      .tac-btn:active {
+        background: var(--cyan);
+        color: #02050a;
+      }
+
+      /* Modals with Realistic Hangar Glassmorphism */
+      .modal-overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 30;
+        background: linear-gradient(180deg, rgba(2, 6, 12, 0.62) 0%, rgba(2, 5, 10, 0.92) 100%),
+          url('/assets/hangar_hero.jpg');
+        background-size: cover;
+        background-position: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 12px;
+        overflow-y: auto;
+      }
+
+      .modal-card {
+        width: 100%;
+        max-width: 530px;
+        background: var(--panel-glass);
+        backdrop-filter: blur(18px) saturate(160%);
+        border: 1px solid rgba(255, 183, 3, 0.42);
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85), 0 0 25px var(--accent-glow);
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-height: 95vh;
+        overflow-y: auto;
+        clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+      }
+
+      .game-title {
+        font-family: var(--font-display);
+        font-size: 20px;
+        font-weight: 900;
+        letter-spacing: 1.5px;
+        color: #ffffff;
+        text-shadow: 0 0 14px var(--accent-glow);
+      }
+
+      .subtitle {
+        font-size: 10px;
+        letter-spacing: 1.2px;
+        color: var(--accent);
+        text-transform: uppercase;
+      }
+
+      .section-box {
+        background: rgba(3, 8, 15, 0.72);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        padding: 9px 11px;
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+
+      .section-title {
+        font-family: var(--font-ui);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        color: var(--cyan);
+        text-transform: uppercase;
+      }
+
+      .input-row {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      input[type='text'],
+      select {
+        background: rgba(2, 6, 12, 0.92);
+        border: 1px solid rgba(0, 240, 255, 0.35);
+        color: var(--text-primary);
+        font-family: var(--font-tactical);
+        font-size: 11px;
+        padding: 7px 9px;
+        flex: 1;
+      }
+
+      .btn {
+        background: rgba(12, 24, 40, 0.85);
+        border: 1px solid rgba(0, 240, 255, 0.4);
+        color: var(--text-primary);
+        font-family: var(--font-tactical);
+        font-size: 10px;
+        font-weight: 700;
+        padding: 7px 10px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 0 100%);
+      }
+
+      .btn:hover {
+        border-color: var(--accent);
+        background: rgba(255, 183, 3, 0.16);
+      }
+
+      .btn.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #02050a;
+        box-shadow: 0 0 14px var(--accent-glow);
+      }
+
+      .recording-active {
+        background: var(--danger) !important;
+        border-color: #ffffff !important;
+        color: #ffffff !important;
+        animation: recPulse 1s infinite alternate;
+      }
+
+      @keyframes recPulse {
+        from {
+          box-shadow: 0 0 4px var(--danger);
+        }
+        to {
+          box-shadow: 0 0 16px var(--danger);
+        }
+      }
+
+      .btn-primary {
+        background: linear-gradient(90deg, var(--accent), #ff8800);
+        border: none;
+        color: #02050a;
+        font-family: var(--font-display);
+        font-size: 13px;
+        font-weight: 900;
+        letter-spacing: 1px;
+        padding: 12px;
+        text-align: center;
+        box-shadow: 0 0 20px var(--accent-glow);
+      }
+
+      .btn-primary:hover {
+        filter: brightness(1.12);
+      }
+
+      .crew-slot {
+        display: flex;
+        justify-content: space-between;
+        padding: 6px 8px;
+        background: rgba(0, 0, 0, 0.45);
+        border-left: 3px solid var(--phosphor);
+        font-size: 10px;
+      }
+
+      .cosmetics-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+      }
+
+      .cosmetic-field label {
+        font-size: 9px;
+        color: var(--text-muted);
+        display: block;
+        margin-bottom: 3px;
+      }
+
+      .leaderboard-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 10px;
+      }
+
+      .leaderboard-table th,
+      .leaderboard-table td {
+        text-align: left;
+        padding: 4px 6px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+      }
+
+      .status-badge {
+        font-size: 9px;
+        font-weight: 700;
+        padding: 3px 7px;
+        border: 1px solid currentColor;
+      }
+      .status-online {
+        background: rgba(0, 255, 157, 0.14);
+        color: var(--phosphor);
+      }
+      .status-offline {
+        background: rgba(255, 183, 3, 0.15);
+        color: var(--accent);
+      }
+
+      .ad-progress-outer {
+        width: 100%;
+        height: 12px;
+        background: #060d18;
+        border: 1px solid var(--accent);
+        overflow: hidden;
+      }
+
+      .ad-progress-inner {
+        width: 0%;
+        height: 100%;
+        background: linear-gradient(90deg, #ffb703, #00ff9d);
+        transition: width 0.1s linear;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body data-hud-theme="tactical_amber">
+    <div id="app-shell">
+      <!-- Top Stealth Fighter Telemetry & TikTok 9:16 Controls -->
+      <header class="hud-top">
+        <div class="hud-row">
+          <div class="metric-box">
+            <span class="metric-label">MISSION SCORE</span>
+            <span id="hud-score" class="metric-value">0</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-label">AIRSPEED (MIN 50)</span>
+            <span id="hud-speed" class="metric-value">100 KT</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-label">RANGE</span>
+            <span id="hud-distance" class="metric-value">0 M</span>
+          </div>
+          <div class="hud-interactive">
+            <button id="btn-record-clip" class="btn" title="Grabar video vertical 9:16 (.webm) directo para TikTok/Reels">
+              🔴 REC CLIP
+            </button>
+            <button id="btn-tiktok-mode" class="btn" title="Encuadre 9:16 para TikTok / Reels">
+              9:16 STREAM
+            </button>
+            <button id="btn-hud-swap-role" class="btn" title="Alternar asiento Driver / Navigator">
+              SWAP
+            </button>
+            <button id="btn-voice-mode" class="btn" title="Cambiar modo de Narrador (Híbrido / Español / Inglés / Off)">
+              VOICE: HYBRID
+            </button>
+            <button id="btn-mute-audio" class="btn">SFX: ON</button>
+          </div>
+        </div>
+
+        <div class="bars-row">
+          <div>
+            <div class="bar-label">
+              <span>HULL ARMOR INTEGRITY</span>
+              <span id="hud-integrity-text">100%</span>
+            </div>
+            <div class="bar-container">
+              <div id="hud-integrity-bar" class="bar-fill-integrity"></div>
+            </div>
+          </div>
+          <div>
+            <div class="bar-label">
+              <span>CAPACITOR / FLANK SHIELDS</span>
+              <span id="hud-shield-text">100%</span>
+            </div>
+            <div class="bar-container">
+              <div id="hud-shield-bar" class="bar-fill-shield"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hud-row">
+          <span id="hud-role-badge" class="role-banner">PILOT A // STEALTH DRIVER [LOW-VIS CONE]</span>
+          <span id="hud-overdrive-badge" class="overdrive-pill hidden">MACH 2.0 OVERDRIVE</span>
+        </div>
+
+        <!-- Live Holographic Comms Reactions Bar -->
+        <div class="comms-strip">
+          <button class="comms-btn" data-comms="bogey_alert">⚠️ BOGEY INBOUND</button>
+          <button class="comms-btn" data-comms="nice_deflect">🛡️ GOOD INTERCEPT</button>
+          <button class="comms-btn" data-comms="engage_overdrive">⚡ FULL AFTERBURNER</button>
+          <button class="comms-btn" data-comms="mayday_panic">💀 PULL UP / STALL</button>
+        </div>
+      </header>
+
+      <!-- Main 60FPS HTML5 Canvas -->
+      <main id="canvas-wrapper">
+        <canvas id="game-canvas"></canvas>
+      </main>
+
+      <!-- Bottom Touch & Tactical Controls -->
+      <footer class="hud-bottom">
+        <div id="touch-joystick-zone" class="joystick-zone" title="Driver Flight Stick (WASD / Flechas)">
+          <div id="touch-joystick-knob" class="joystick-knob"></div>
+        </div>
+
+        <div class="navigator-buttons">
+          <button id="btn-touch-shield-left" class="tac-btn">SHIELD L [J]</button>
+          <button id="btn-touch-shield-right" class="tac-btn">SHIELD R [L]</button>
+          <button id="btn-touch-ping" class="tac-btn">VECTOR PING [K]</button>
+          <button id="btn-touch-radar" class="tac-btn">FLIR SCAN [SPACE]</button>
+        </div>
+      </footer>
+
+      <!-- Modal 1: Realistic Stealth Hangar Command Lobby -->
+      <section id="modal-lobby" class="modal-overlay">
+        <div class="modal-card">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start">
+            <div>
+              <h1 class="game-title">PACIFIC SPEED // OVERDRIVE</h1>
+              <p class="subtitle">STEALTH INTERCEPTOR CO-OP SIMULATOR // 60HZ WEBSOCKET</p>
+            </div>
+            <span id="ws-status-badge" class="status-badge status-offline">INITIALIZING...</span>
+          </div>
+
+          <!-- Mode Selector -->
+          <div class="section-box">
+            <span class="section-title">01 // MODO TÁCTICO DE OPERACIÓN</span>
+            <div class="input-row">
+              <button class="btn active" data-mode="online">ONLINE MULTIPLAYER (WS)</button>
+              <button class="btn" data-mode="local_bot">SOLO + AWACS AI CO-PILOT</button>
+              <button class="btn" data-mode="local_coop">2P LOCAL SPLIT KEYBOARD</button>
+            </div>
+          </div>
+
+          <!-- Room & Viral Sharing -->
+          <div class="section-box">
+            <span class="section-title">02 // ENLACE DE ESCUADRÓN (?room=NEURAL-XYZ)</span>
+            <div class="input-row">
+              <input id="pilot-name-input" type="text" placeholder="CALLSIGN" maxlength="16" />
+              <input id="room-code-input" type="text" placeholder="NEURAL-01" maxlength="16" />
+              <button id="btn-join-room" class="btn">SYNC ROOM</button>
+            </div>
+            <button id="btn-copy-link" class="btn" style="width: 100%; border-color: var(--accent)">
+              📋 COPIAR LINK DE ESCUADRÓN (WHATSAPP / DISCORD / TIKTOK)
+            </button>
+            <div id="lobby-players-list" style="display: flex; flex-direction: column; gap: 4px"></div>
+          </div>
+
+          <!-- Asymmetric Role Selection -->
+          <div class="section-box">
+            <span class="section-title">03 // ASIGNACIÓN DE CABINA ASIMÉTRICA</span>
+            <div class="input-row">
+              <button id="btn-role-driver" class="btn active" style="flex: 1; text-align: left">
+                <strong>PILOT A // STEALTH DRIVER</strong> [WASD / Flechas]<br />
+                <span style="font-size: 9px; opacity: 0.8">Vuelo supersónico bajo tormenta y faros volumétricos</span>
+              </button>
+              <button id="btn-role-navigator" class="btn" style="flex: 1; text-align: left">
+                <strong>PILOT B // AWACS NAVIGATOR</strong> [J / K / L / Space]<br />
+                <span style="font-size: 9px; opacity: 0.8">Radar satelital completo, escudos laterales y vectores</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Cosmetic Store Slots -->
+          <div class="section-box">
+            <span class="section-title">04 // ARMAMENTO &amp; CONFIGURACIÓN DE CHASIS</span>
+            <div class="cosmetics-grid">
+              <div class="cosmetic-field">
+                <label for="select-paint">ARMOR SPEC</label>
+                <select id="select-paint">
+                  <option value="crimson_jaeger">Crimson Raptor</option>
+                  <option value="cyber_gold">Gold Vanguard</option>
+                  <option value="phantom_stealth">Phantom Nighthawk</option>
+                </select>
+              </div>
+              <div class="cosmetic-field">
+                <label for="select-trail">AFTERBURNER PLUME</label>
+                <select id="select-trail">
+                  <option value="plasma_cyan">Ion Cyan</option>
+                  <option value="overdrive_magenta">Thermal Magenta</option>
+                  <option value="solar_flare">Mach Afterburner</option>
+                </select>
+              </div>
+              <div class="cosmetic-field">
+                <label for="select-theme">AVIONICS HUD</label>
+                <select id="select-theme">
+                  <option value="tactical_amber">Mil-Spec Amber</option>
+                  <option value="neural_green">NVG Phosphor Green</option>
+                  <option value="abyssal_violet">Deep Telemetry Cyan</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <button id="btn-start-match" class="btn btn-primary">
+            LAUNCH INTERCEPTOR // ENGAGE OVERDRIVE
+          </button>
+
+          <!-- Leaderboard Preview -->
+          <div class="section-box">
+            <span class="section-title">REGISTRO GLOBAL DE ESCUADRONES</span>
+            <table class="leaderboard-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>TRIPULACIÓN</th>
+                  <th>SCORE</th>
+                  <th>TELEMETRÍA</th>
+                  <th>SECTOR</th>
+                </tr>
+              </thead>
+              <tbody id="leaderboard-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Modal 2: Monetization Hook - 5s Emergency Field Repair -->
+      <section id="modal-ad-revive" class="modal-overlay hidden">
+        <div class="modal-card" style="border-color: var(--danger)">
+          <h2 class="game-title" style="color: var(--danger)">MASTER CAUTION // HULL CRITICAL</h2>
+          <p id="ad-timer-text" class="subtitle" style="font-size: 11px; color: var(--text-primary)">
+            PROTOCOLO DE EMERGENCIA: TRANSMISIÓN DE 5S PARA RESTAURAR 100% DE INTEGRIDAD Y REINICIAR TURBINA
+          </p>
+          <div class="ad-progress-outer">
+            <div id="ad-progress-bar" class="ad-progress-inner"></div>
+          </div>
+          <div class="input-row">
+            <button id="btn-watch-ad" class="btn btn-primary" style="flex: 2">
+              ACTIVAR DRON DE REPARACIÓN (5S VIDEO AD) — 100% HULL
+            </button>
+            <button id="btn-decline-ad" class="btn" style="flex: 1; border-color: var(--danger)">
+              ABORTAR MISIÓN
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Modal 3: Mission Debrief & Instant Rematch -->
+      <section id="modal-gameover" class="modal-overlay hidden">
+        <div class="modal-card">
+          <h2 class="game-title">FLIGHT DEBRIEF // SIGNAL LOST</h2>
+          <div class="section-box" style="text-align: center; padding: 14px">
+            <span class="metric-label">FINAL TACTICAL SCORE</span>
+            <div id="gameover-score" class="metric-value" style="font-size: 32px">0</div>
+            <p id="gameover-breakdown" class="subtitle" style="margin-top: 6px"></p>
+          </div>
+          <div class="input-row">
+            <button id="btn-instant-rematch" class="btn btn-primary" style="flex: 2">
+              INSTANT REMATCH (RE-DEPLOY SQUAD)
+            </button>
+            <button id="btn-back-lobby" class="btn" style="flex: 1">
+              RETURN TO HANGAR
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="/src/client/main.ts"></script>
+  </body>
+</html>
