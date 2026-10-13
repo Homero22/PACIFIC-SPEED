@@ -301,6 +301,14 @@ wss.on('connection', (ws) => {
 const clientDistPath = path.resolve(__dirname, '../../dist/client');
 app.use(express.static(clientDistPath));
 
+app.get('/admin*', (_req, res) => {
+  res.sendFile(path.join(clientDistPath, 'admin.html'), (err) => {
+    if (err) {
+      res.status(200).send('Admin Portal. Build with npm run build.');
+    }
+  });
+});
+
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/ws')) {
     return next();

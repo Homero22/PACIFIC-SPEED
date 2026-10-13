@@ -50,10 +50,10 @@
     "status": "active",
     "entry_fee_usd": 10,
     "max_couples": 50,
-    "registered_couples_count": 1,
-    "accumulated_prize_pool": 6,
-    "accumulated_charity_amount": 1.5,
-    "accumulated_operating_margin": 1.92,
+    "registered_couples_count": 2,
+    "accumulated_prize_pool": 12,
+    "accumulated_charity_amount": 3,
+    "accumulated_operating_margin": 3.84,
     "config_snapshot": {
       "currency": "USD",
       "entry_fee_per_pair": 10,
@@ -109,8 +109,8 @@
       "collaborator_payphone_number": "+593991234567",
       "total_couples_referred": 3,
       "accumulated_earnings_usd": 1.74,
-      "settled_earnings_usd": 0,
-      "pending_earnings_usd": 1.74,
+      "settled_earnings_usd": 1.74,
+      "pending_earnings_usd": 0,
       "created_at": "2026-10-13T17:21:08.182Z"
     },
     {
@@ -120,12 +120,30 @@
       "collaborator_payphone_number": "+593987654321",
       "total_couples_referred": 1,
       "accumulated_earnings_usd": 0.58,
-      "settled_earnings_usd": 0,
-      "pending_earnings_usd": 0.58,
+      "settled_earnings_usd": 0.58,
+      "pending_earnings_usd": 0,
       "created_at": "2026-10-13T17:21:08.182Z"
     }
   ],
   "payments": [
+    {
+      "id": "audit-1791912694043-2sem",
+      "payphone_transaction_id": "sim-payphone-1791912694043-9v3l",
+      "tournament_id": "tourney-default-01",
+      "referral_id": null,
+      "referral_code": null,
+      "pair_driver_name": "RAPTOR_75",
+      "pair_navigator_name": "CO_PILOT_58",
+      "gross_amount": 10,
+      "payphone_fee": 0.58,
+      "prize_pool_share": 6,
+      "charity_share": 1.5,
+      "developer_share": 1.34,
+      "collaborator_share": 0.58,
+      "status": "APPROVED",
+      "raw_payload_json": "{\"transactionId\":\"sim-payphone-1791912694043-9v3l\",\"clientTransactionId\":\"client-1791912694043\",\"amount\":10,\"currency\":\"USD\",\"status\":\"Approved\",\"pairMeta\":{\"driver_name\":\"RAPTOR_75\",\"navigator_name\":\"CO_PILOT_58\"},\"timestamp\":1791912694}",
+      "created_at": "2026-10-13T17:31:34.043Z"
+    },
     {
       "id": "audit-1791912098291-2e1v",
       "payphone_transaction_id": "sim-payphone-1791912098290-6nw1",

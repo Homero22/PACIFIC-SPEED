@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pacific Speed // Operations & Financial Management</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/client/admin.css" />
+  </head>
+  <body>
+    <!-- 1. Vista de Autenticación Ejecutiva (Login) -->
+    <main id="view-login">
+      <div class="login-card">
+        <div class="login-header">
+          <span class="brand-badge">Operaciones Corporativas</span>
+          <h1 class="login-title">Control de Torneos &amp; Finanzas</h1>
+          <p class="login-subtitle">Ingresa la llave maestra de administración para acceder a la consola financiera.</p>
+        </div>
+
+        <form id="form-login">
+          <div class="form-group">
+            <label for="login-password" class="form-label">Llave Maestra (Admin Secret Key)</label>
+            <input
+              id="login-password"
+              type="password"
+              class="form-input"
+              placeholder="••••••••••••••••••••••••"
+              autocomplete="current-password"
+              required
+            />
+          </div>
+
+          <button id="btn-login-submit" type="submit" class="btn-primary">
+            <span>Acceder a la Consola</span>
+          </button>
+
+          <div id="login-error-box" class="login-error"></div>
+        </form>
+
+        <div style="text-align: center; margin-top: 24px;">
+          <a href="/" style="color: var(--text-muted); text-decoration: none; font-size: 13px;">
+            &larr; Volver a la Sala de Juego
+          </a>
+        </div>
+      </div>
+    </main>
+
+    <!-- 2. Consola Administrativa Completa (Dashboard) -->
+    <div id="view-dashboard" class="hidden">
+      <!-- Navbar Superior -->
+      <header class="admin-navbar">
+        <div class="navbar-brand">
+          <div class="navbar-logo-icon">PS</div>
+          <div>
+            <div class="navbar-title">Pacific Speed // Operations Portal</div>
+            <div style="font-size: 11px; color: var(--text-subtle);">Tournament Engine v1.0.0 &bull; Payphone Financial Core</div>
+          </div>
+        </div>
+
+        <div class="navbar-actions">
+          <span class="badge badge-success">
+            <span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>
+            Servidor 60 Hz Activo
+          </span>
+          <button id="btn-refresh-data" class="btn-secondary" title="Recargar datos del servidor">
+            <span>🔄 Recargar</span>
+          </button>
+          <button id="btn-logout" class="btn-secondary" style="color: #f87171; border-color: rgba(239, 68, 68, 0.2);">
+            <span>Cerrar Sesión</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Layout Central -->
+      <div class="admin-layout">
+        <!-- Sidebar de Navegación -->
+        <aside class="admin-sidebar">
+          <span class="sidebar-heading">Módulos Financieros</span>
+          <a class="nav-link active" data-tab="tab-overview">
+            <span>📈</span> Resumen Ejecutivo
+          </a>
+          <a class="nav-link" data-tab="tab-tournament">
+            <span>🏆</span> Torneo &amp; Podio
+          </a>
+          <a class="nav-link" data-tab="tab-payments">
+            <span>💳</span> Libro de Pagos
+          </a>
+          <a class="nav-link" data-tab="tab-referrals">
+            <span>🤝</span> Red de Afiliados
+          </a>
+
+          <span class="sidebar-heading" style="margin-top: 14px;">Administración</span>
+          <a class="nav-link" data-tab="tab-config">
+            <span>⚙️</span> Configuración Dinámica
+          </a>
+          <a class="nav-link" data-tab="tab-security">
+            <span>🛡️</span> Auditoría &amp; Seguridad
+          </a>
+
+          <div style="margin-top: auto; padding-top: 20px; border-top: 1px solid var(--border-color);">
+            <a href="/" class="nav-link" style="color: var(--text-subtle);">
+              <span>🎮</span> Ir al Hangar de Vuelo
+            </a>
+          </div>
+        </aside>
+
+        <!-- Área de Contenido Principal -->
+        <main class="admin-content">
+          <!-- PESTAÑA 1: RESUMEN EJECUTIVO -->
+          <section id="tab-overview" class="tab-panel">
+            <div class="page-header">
+              <div>
+                <h2 class="page-title">Resumen Ejecutivo &amp; Estado Financiero</h2>
+                <p class="page-description">Métricas consolidadas del torneo activo, retenciones y distribución de fondos.</p>
+              </div>
+              <span id="overview-status-badge" class="badge badge-success">Torneo Activo</span>
+            </div>
+
+            <!-- KPIs Principales -->
+            <div class="kpi-grid">
+              <div class="kpi-card">
+                <span class="kpi-label">Recaudación Bruta</span>
+                <span id="kpi-gross" class="kpi-value">$0.00</span>
+                <span class="kpi-subtext">Total cobrado vía Payphone</span>
+              </div>
+              <div class="kpi-card" style="border-left: 3px solid #10b981;">
+                <span class="kpi-label">Pozo de Premios (60%)</span>
+                <span id="kpi-prize-pool" class="kpi-value" style="color: #10b981;">$0.00</span>
+                <span class="kpi-subtext">Acumulado para el Podio Top 3</span>
+              </div>
+              <div class="kpi-card" style="border-left: 3px solid #06b6d4;">
+                <span class="kpi-label">Donación Refugio (15%)</span>
+                <span id="kpi-charity" class="kpi-value" style="color: #06b6d4;">$0.00</span>
+                <span class="kpi-subtext">Fondos para rescate y alimento animal</span>
+              </div>
+              <div class="kpi-card" style="border-left: 3px solid #6366f1;">
+                <span class="kpi-label">Margen Neto Plataforma</span>
+                <span id="kpi-developer" class="kpi-value" style="color: #818cf8;">$0.00</span>
+                <span class="kpi-subtext">70% del margen operativo restante</span>
+              </div>
+              <div class="kpi-card" style="border-left: 3px solid #f59e0b;">
+                <span class="kpi-label">Bolsa Afiliados / Referidos</span>
+                <span id="kpi-collaborators" class="kpi-value" style="color: #fbbf24;">$0.00</span>
+                <span class="kpi-subtext">30% del margen para promotores</span>
+              </div>
+              <div class="kpi-card" style="border-left: 3px solid #ef4444;">
+                <span class="kpi-label">Retención Pasarela Payphone</span>
+                <span id="kpi-payphone-fee" class="kpi-value" style="color: #f87171;">$0.00</span>
+                <span class="kpi-subtext">5% fee + 15% IVA sobre fee (5.75% efectivo)</span>
+              </div>
+            </div>
+
+            <!-- Podio Estimado -->
+            <div class="panel-card">
+              <div class="panel-header">
+                <div>
+                  <h3 class="panel-title">Proyección de Premios en Podio</h3>
+                  <p class="page-description">Distribución proporcional automática sobre el pozo de premios actual.</p>
+                </div>
+              </div>
+              <div class="podium-grid">
+                <div class="podium-box first-place">
+                  <div class="podium-title">🥇 1er Lugar (66.66%)</div>
+                  <div id="overview-podium-1" class="podium-amount" style="color: #f59e0b;">$0.00 USD</div>
+                  <div id="overview-podium-1-team" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">--</div>
+                </div>
+                <div class="podium-box">
+                  <div class="podium-title">🥈 2do Lugar (23.33%)</div>
+                  <div id="overview-podium-2" class="podium-amount" style="color: #94a3b8;">$0.00 USD</div>
+                  <div id="overview-podium-2-team" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">--</div>
+                </div>
+                <div class="podium-box">
+                  <div class="podium-title">🥉 3er Lugar (10.01%)</div>
+                  <div id="overview-podium-3" class="podium-amount" style="color: #d97706;">$0.00 USD</div>
+                  <div id="overview-podium-3-team" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">--</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- PESTAÑA 2: TORNEO & PODIO -->
+          <section id="tab-tournament" class="tab-panel hidden">
+            <div class="page-header">
+              <div>
+                <h2 class="page-title">Gestión del Torneo Oficial</h2>
+                <p class="page-description">Control de ciclo de vida del evento, verificación de cupos y liquidación definitiva.</p>
+              </div>
+            </div>
+
+            <div class="panel-card">
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+                <div>
+                  <h3 id="tourney-panel-name" class="panel-title">PACIFIC SPEED: OVERDRIVE - TEMPORADA INAUGURAL</h3>
+                  <p style="font-size: 13px; color: var(--text-muted);">
+                    Cupos de inscripción: <strong id="tourney-panel-couples" style="color: var(--text-main);">0 / 50 parejas</strong> &bull;
+                    Costo por pareja: <strong id="tourney-panel-fee" style="color: var(--text-main);">$10.00 USD</strong>
+                  </p>
+                </div>
+                <button id="btn-close-tournament-action" class="btn-primary" style="background: #dc2626; width: auto; padding: 10px 18px;">
+                  🔒 Cerrar Torneo &amp; Liquidar Podio
+                </button>
+              </div>
+            </div>
+
+            <div class="panel-card">
+              <h3 class="panel-title">Auditoría del Podio Final</h3>
+              <p class="page-description" style="margin-bottom: 14px;">
+                Al cerrar el torneo, el pozo queda bloqueado y se emite el certificado oficial de distribución a los ganadores y al refugio animal.
+              </p>
+              <div id="tournament-closure-report" style="background: var(--bg-subtle); border-radius: var(--radius-md); padding: 16px; font-size: 13px; color: var(--text-muted);">
+                El torneo se encuentra actualmente en curso. Cuando la competencia finalice, haz clic en el botón superior para liquidar.
+              </div>
+            </div>
+          </section>
+
+          <!-- PESTAÑA 3: LIBRO DE PAGOS -->
+          <section id="tab-payments" class="tab-panel hidden">
+            <div class="page-header">
+              <div>
+                <h2 class="page-title">Libro Contable de Pagos Payphone</h2>
+                <p class="page-description">Registro inmutable de todas las transacciones procesadas, retenciones y distribución exacta.</p>
+              </div>
+              <button id="btn-export-csv" class="btn-secondary">
+                <span>📥 Exportar a CSV</span>
+              </button>
+            </div>
+
+            <div class="panel-card">
+              <div style="margin-bottom: 14px;">
+                <input
+                  id="search-payments"
+                  type="text"
+                  class="form-input"
+                  placeholder="Buscar por ID de transacción, piloto o código de referido..."
+                  style="max-width: 400px;"
+                />
+              </div>
+
+              <div class="data-table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Ref. Payphone</th>
+                      <th>Fecha / Hora</th>
+                      <th>Tripulación</th>
+                      <th>Bruto</th>
+                      <th>Fee Pasarela</th>
+                      <th>Pozo Ganador</th>
+                      <th>Refugio</th>
+                      <th>Net Dev</th>
+                      <th>Afiliado</th>
+                      <th>Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody id="table-payments-body">
+                    <tr>
+                      <td colspan="10" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                        Cargando transacciones...
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- PESTAÑA 4: RED DE AFILIADOS -->
+          <section id="tab-referrals" class="tab-panel hidden">
+            <div class="page-header">
+              <div>
+                <h2 class="page-title">Red de Afiliados &amp; Colaboradores</h2>
+                <p class="page-description">Gestión de promotores, creadores de contenido y liquidación de comisiones acumuladas.</p>
+              </div>
+            </div>
+
+            <!-- Formulario Alta de Socio -->
+            <div class="panel-card">
+              <h3 class="panel-title" style="margin-bottom: 12px;">Registrar Nuevo Afiliado</h3>
+              <form id="form-create-referral" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) 120px; gap: 12px; align-items: flex-end;">
+                <div>
+                  <label class="form-label">Código Único</label>
+                  <input id="ref-code-input" type="text" class="form-input" placeholder="EJ: STREAMER26" required maxlength="30" />
+                </div>
+                <div>
+                  <label class="form-label">Nombre del Colaborador</label>
+                  <input id="ref-name-input" type="text" class="form-input" placeholder="Nombre / Agencia" required maxlength="80" />
+                </div>
+                <div>
+                  <label class="form-label">Teléfono Payphone</label>
+                  <input id="ref-phone-input" type="text" class="form-input" placeholder="+593991234567" maxlength="25" />
+                </div>
+                <button type="submit" class="btn-primary" style="height: 42px;">
+                  <span>+ Agregar</span>
+                </button>
+              </form>
+              <div id="ref-form-feedback" style="margin-top: 8px; font-size: 13px;"></div>
+            </div>
+
+            <!-- Tabla de Afiliados -->
+            <div class="panel-card">
+              <h3 class="panel-title" style="margin-bottom: 14px;">Colaboradores Activos</h3>
+              <div class="data-table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Código</th>
+                      <th>Nombre</th>
+                      <th>Cuenta Payphone</th>
+                      <th>Parejas Referidas</th>
+                      <th>Total Ganado</th>
+                      <th>Saldo Pendiente</th>
+                      <th>Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody id="table-referrals-body">
+                    <tr>
+                      <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                        Cargando afiliados...
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- PESTAÑA 5: CONFIGURACIÓN DINÁMICA -->
+          <section id="tab-config" class="tab-panel hidden">
+            <div class="page-header">
+              <div>
+                <h2 class="page-title">Configuración Financiera Dinámica</h2>
+                <p class="page-description">Ajuste de parámetros económicos con hot-reload directo en la base de datos.</p>
+              </div>
+            </div>
+
+            <div class="panel-card">
+              <form id="form-config">
+                <div class="config-grid">
+                  <div class="config-box">
+                    <div class="config-box-header">Precio de Entrada por Pareja (USD)</div>
+                    <div class="config-box-desc">Costo oficial cobrado a través de Payphone.</div>
+                    <input id="cfg-entry-fee" type="number" step="0.5" min="1" class="form-input" />
+                  </div>
+
+                  <div class="config-box">
+                    <div class="config-box-header">Límite Máximo de Parejas</div>
+                    <div class="config-box-desc">Cupo total admitido para el torneo oficial.</div>
+                    <input id="cfg-max-couples" type="number" step="1" min="2" class="form-input" />
+                  </div>
+
+                  <div class="config-box">
+                    <div class="config-box-header">Porcentaje Pozo de Premios</div>
+                    <div class="config-box-desc">Proporción del ingreso bruto directo para ganadores (0.60 = 60%).</div>
+                    <input id="cfg-prize-pool" type="number" step="0.01" min="0" max="1" class="form-input" />
+                  </div>
+
+                  <div class="config-box">
+                    <div class="config-box-header">Porcentaje Refugio Animal</div>
+                    <div class="config-box-desc">Donación para alimento y medicina de rescate animal (0.15 = 15%).</div>
+                    <input id="cfg-charity" type="number" step="0.01" min="0" max="1" class="form-input" />
+                  </div>
+
+                  <div class="config-box">
+                    <div class="config-box-header">Tasa Base Payphone</div>
+                    <div class="config-box-desc">Comisión oficial de pasarela sin IVA (0.05 = 5%).</div>
+                    <input id="cfg-payphone-fee" type="number" step="0.005" min="0" max="0.2" class="form-input" />
+                  </div>
+
+                  <div class="config-box">
+                    <div class="config-box-header">Subdistribución Plataforma (Dev Net)</div>
+                    <div class="config-box-desc">Porcentaje del margen operativo para infraestructura (0.70 = 70%).</div>
+                    <input id="cfg-dev-share" type="number" step="0.05" min="0" max="1" class="form-input" />
+                  </div>
+                </div>
+
+                <div style="margin-top: 20px; display: flex; align-items: center; gap: 14px;">
+                  <button type="submit" class="btn-primary" style="width: auto; padding: 11px 24px;">
+                    <span>💾 Guardar Cambios en Base de Datos</span>
+                  </button>
+                  <span id="config-feedback" style="font-size: 13px;"></span>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <!-- PESTAÑA 6: AUDITORÍA & SEGURIDAD -->
+          <section id="tab-security" class="tab-panel hidden">
+            <div class="page-header">
+              <div>
+                <h2 class="page-title">Auditoría de Seguridad &amp; Anti-Cheat</h2>
+                <p class="page-description">Registro criptográfico de firmas HMAC, intentos de spoofing y mitigaciones en 60Hz.</p>
+              </div>
+              <button id="btn-clear-security-logs" class="btn-secondary" style="color: #f87171;">
+                <span>Limpiar Registros</span>
+              </button>
+            </div>
+
+            <div class="panel-card">
+              <div class="data-table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Fecha / Hora</th>
+                      <th>Severidad</th>
+                      <th>Tipo de Evento</th>
+                      <th>Dirección IP</th>
+                      <th>Detalles Técnicos</th>
+                    </tr>
+                  </thead>
+                  <tbody id="table-security-body">
+                    <tr>
+                      <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                        No hay violaciones de seguridad registradas.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <!-- Script de Inicialización -->
+    <script type="module" src="/src/client/admin.ts"></script>
+  </body>
+</html>
