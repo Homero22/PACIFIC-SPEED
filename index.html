@@ -302,23 +302,26 @@
 
       /* Modals with Realistic Hangar Glassmorphism */
       .modal-overlay {
-        position: absolute;
+        position: fixed;
         inset: 0;
-        z-index: 30;
-        background: linear-gradient(180deg, rgba(2, 6, 12, 0.62) 0%, rgba(2, 5, 10, 0.92) 100%),
+        z-index: 50;
+        width: 100vw;
+        height: 100vh;
+        background: linear-gradient(180deg, rgba(2, 6, 12, 0.72) 0%, rgba(2, 5, 10, 0.94) 100%),
           url('/assets/hangar_hero.jpg');
         background-size: cover;
         background-position: center;
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 12px;
+        padding: 16px;
+        overflow-x: hidden;
         overflow-y: auto;
       }
 
       .modal-card {
         width: 100%;
-        max-width: 540px;
+        max-width: 560px;
         background: var(--panel-glass);
         backdrop-filter: blur(20px) saturate(160%);
         border: 1px solid rgba(255, 183, 3, 0.42);
@@ -328,6 +331,7 @@
         flex-direction: column;
         gap: 12px;
         max-height: 94vh;
+        overflow-x: hidden;
         overflow-y: auto;
         clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
         transition: max-width 0.25s ease, padding 0.25s ease;
@@ -520,12 +524,12 @@
       /* Hangar Navigation Tabs */
       .hangar-nav {
         display: flex;
-        gap: 6px;
+        flex-wrap: wrap;
+        gap: 8px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.14);
-        padding-bottom: 8px;
-        margin-bottom: 4px;
-        overflow-x: auto;
-        scrollbar-width: thin;
+        padding-bottom: 10px;
+        margin-bottom: 6px;
+        overflow-x: hidden;
       }
 
       .hangar-tab-btn {
@@ -770,8 +774,8 @@
 
       /* WIDESCREEN PC DESKTOP (1024px+) */
       @media (min-width: 1024px) {
-        .modal-card {
-          max-width: 1180px;
+        #modal-lobby .modal-card {
+          max-width: 1240px;
           padding: 24px 28px;
           gap: 16px;
           max-height: 92vh;
@@ -784,15 +788,18 @@
         }
 
         .hangar-nav {
-          overflow-x: visible;
-          gap: 10px;
+          flex-wrap: nowrap;
+          overflow-x: hidden;
+          gap: 12px;
           padding-bottom: 12px;
-          margin-bottom: 12px;
+          margin-bottom: 14px;
         }
 
         .hangar-tab-btn {
+          flex: 1;
+          justify-content: center;
           font-size: 12px;
-          padding: 10px 18px;
+          padding: 11px 16px;
           letter-spacing: 0.8px;
         }
 
