@@ -318,18 +318,19 @@
 
       .modal-card {
         width: 100%;
-        max-width: 530px;
+        max-width: 540px;
         background: var(--panel-glass);
-        backdrop-filter: blur(18px) saturate(160%);
+        backdrop-filter: blur(20px) saturate(160%);
         border: 1px solid rgba(255, 183, 3, 0.42);
         box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85), 0 0 25px var(--accent-glow);
         padding: 16px;
         display: flex;
         flex-direction: column;
-        gap: 10px;
-        max-height: 95vh;
+        gap: 12px;
+        max-height: 94vh;
         overflow-y: auto;
         clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+        transition: max-width 0.25s ease, padding 0.25s ease;
       }
 
       .game-title {
@@ -472,7 +473,7 @@
       .leaderboard-table th,
       .leaderboard-table td {
         text-align: left;
-        padding: 4px 6px;
+        padding: 6px 8px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.07);
       }
 
@@ -522,8 +523,9 @@
         gap: 6px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.14);
         padding-bottom: 8px;
-        margin-bottom: 8px;
+        margin-bottom: 4px;
         overflow-x: auto;
+        scrollbar-width: thin;
       }
 
       .hangar-tab-btn {
@@ -538,6 +540,9 @@
         white-space: nowrap;
         transition: all 0.15s ease;
         clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 0 100%);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
       }
 
       .hangar-tab-btn:hover {
@@ -549,7 +554,7 @@
         background: var(--accent);
         color: #020509;
         border-color: var(--accent);
-        box-shadow: 0 0 12px var(--accent-glow);
+        box-shadow: 0 0 14px var(--accent-glow);
       }
 
       .hangar-panel {
@@ -562,6 +567,22 @@
         display: flex;
       }
 
+      /* Responsive Layout Containers */
+      .hangar-grid-split,
+      .hangar-tournament-split,
+      .hangar-chassis-split {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .hangar-col {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        flex: 1;
+      }
+
       /* Role Selection Cards */
       .role-cards-grid {
         display: grid;
@@ -572,14 +593,15 @@
       .role-card-btn {
         background: rgba(4, 10, 20, 0.85);
         border: 1.5px solid rgba(255, 255, 255, 0.14);
-        padding: 10px;
+        padding: 12px;
         cursor: pointer;
         transition: all 0.18s ease;
         text-align: left;
         display: flex;
         flex-direction: column;
-        gap: 4px;
+        gap: 6px;
         clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%);
+        position: relative;
       }
 
       .role-card-btn:hover {
@@ -598,6 +620,9 @@
         font-size: 11px;
         font-weight: 800;
         color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 6px;
       }
 
       .role-card-btn.active .role-card-title {
@@ -605,9 +630,125 @@
       }
 
       .role-card-desc {
-        font-size: 9px;
+        font-size: 9.5px;
         color: var(--text-muted);
-        line-height: 1.4;
+        line-height: 1.45;
+      }
+
+      .role-tag-pill {
+        display: inline-block;
+        padding: 2px 6px;
+        background: rgba(0, 240, 255, 0.12);
+        border: 1px solid rgba(0, 240, 255, 0.3);
+        color: var(--cyan);
+        font-size: 8.5px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        border-radius: 2px;
+        margin-top: 2px;
+      }
+
+      /* Holographic Mission Briefing Card */
+      .mission-briefing-card {
+        background: linear-gradient(145deg, rgba(4, 12, 24, 0.9) 0%, rgba(2, 6, 12, 0.95) 100%);
+        border: 1px solid rgba(0, 240, 255, 0.35);
+        border-left: 3px solid var(--cyan);
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .mission-briefing-card::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 60px;
+        height: 60px;
+        background: radial-gradient(circle, rgba(0, 240, 255, 0.15) 0%, transparent 70%);
+        pointer-events: none;
+      }
+
+      .intel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .intel-badge {
+        font-size: 8.5px;
+        font-weight: 800;
+        letter-spacing: 1px;
+        padding: 2px 7px;
+        background: rgba(255, 42, 84, 0.18);
+        border: 1px solid var(--danger);
+        color: var(--danger);
+        text-transform: uppercase;
+      }
+
+      .stat-chip-row {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+      }
+
+      .stat-chip {
+        background: rgba(0, 0, 0, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 5px 7px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .stat-chip-label {
+        font-size: 8px;
+        color: var(--text-muted);
+        letter-spacing: 0.5px;
+      }
+
+      .stat-chip-value {
+        font-family: var(--font-display);
+        font-size: 11px;
+        color: var(--text-primary);
+        font-weight: 700;
+      }
+
+      /* Hero Launch Button with Pulsing Glow */
+      .btn-launch-hero {
+        font-size: 14px !important;
+        padding: 16px 18px !important;
+        letter-spacing: 1.5px !important;
+        background: linear-gradient(90deg, #ff9500 0%, #ffb703 50%, #ff5500 100%) !important;
+        border: none !important;
+        color: #020509 !important;
+        font-weight: 900 !important;
+        text-transform: uppercase !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 3px !important;
+        animation: launchPulse 2.4s infinite alternate ease-in-out;
+      }
+
+      @keyframes launchPulse {
+        0% {
+          box-shadow: 0 0 15px rgba(255, 183, 3, 0.45);
+        }
+        100% {
+          box-shadow: 0 0 35px rgba(255, 183, 3, 0.85), 0 0 15px rgba(255, 85, 0, 0.6);
+        }
+      }
+
+      .launch-hotkey-hint {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        opacity: 0.85;
       }
 
       .footer-portal-link {
@@ -625,6 +766,68 @@
       .footer-portal-link:hover {
         color: var(--phosphor);
         border-color: var(--phosphor);
+      }
+
+      /* WIDESCREEN PC DESKTOP (1024px+) */
+      @media (min-width: 1024px) {
+        .modal-card {
+          max-width: 1180px;
+          padding: 24px 28px;
+          gap: 16px;
+          max-height: 92vh;
+          border: 1.5px solid rgba(255, 183, 3, 0.55);
+          box-shadow: 0 30px 70px rgba(0, 0, 0, 0.94), 0 0 35px rgba(255, 183, 3, 0.25);
+        }
+
+        .game-title {
+          font-size: 23px;
+        }
+
+        .hangar-nav {
+          overflow-x: visible;
+          gap: 10px;
+          padding-bottom: 12px;
+          margin-bottom: 12px;
+        }
+
+        .hangar-tab-btn {
+          font-size: 12px;
+          padding: 10px 18px;
+          letter-spacing: 0.8px;
+        }
+
+        .hangar-grid-split {
+          display: grid;
+          grid-template-columns: 1.15fr 0.85fr;
+          gap: 18px;
+          align-items: stretch;
+        }
+
+        .hangar-tournament-split {
+          display: grid;
+          grid-template-columns: 1.05fr 0.95fr;
+          gap: 18px;
+          align-items: stretch;
+        }
+
+        .hangar-chassis-split {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 18px;
+          align-items: stretch;
+        }
+
+        .role-card-title {
+          font-size: 12px;
+        }
+
+        .role-card-desc {
+          font-size: 10px;
+        }
+
+        .stat-chip-row {
+          grid-template-columns: repeat(4, 1fr);
+        }
       }
     </style>
   </head>
@@ -720,160 +923,251 @@
       <section id="modal-lobby" class="modal-overlay">
         <div class="modal-card">
           <!-- Hangar Header -->
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.12); padding-bottom: 10px;">
             <div>
-              <h1 class="game-title" style="font-size: 19px;">PACIFIC SPEED // OVERDRIVE</h1>
-              <p class="subtitle" style="font-size: 9px;">SIMULADOR CO-OP TÁCTICO A 60 HZ</p>
+              <h1 class="game-title">PACIFIC SPEED // OVERDRIVE</h1>
+              <p class="subtitle">ESTACIÓN DE MANDO TÁCTICO &bull; 60 HZ SERVER-AUTHORITATIVE</p>
             </div>
             <span id="ws-status-badge" class="status-badge status-offline">CONECTANDO...</span>
           </div>
 
-          <!-- Hangar Navigation Tabs -->
+          <!-- Hangar Navigation Tabs (Clean Horizontal Layout, No Scrollbar) -->
           <nav class="hangar-nav">
             <button class="hangar-tab-btn active" data-hangar-tab="hangar-tab-play">
-              🚀 JUGAR AHORA
+              🚀 1. JUGAR AHORA
             </button>
             <button class="hangar-tab-btn" data-hangar-tab="hangar-tab-tournament">
-              🏆 TORNEO OFICIAL ($10 USD)
+              🏆 2. TORNEO OFICIAL ($10 USD)
             </button>
             <button class="hangar-tab-btn" data-hangar-tab="hangar-tab-chassis">
-              🛠️ CHASIS &amp; ARMERÍA
+              🛠️ 3. CHASIS &amp; ARMERÍA
             </button>
             <button class="hangar-tab-btn" data-hangar-tab="hangar-tab-leaderboard">
-              🏅 CLASIFICACIÓN
+              🏅 4. SALÓN DE LA FAMA
             </button>
           </nav>
 
-          <!-- TAB 1: JUGAR AHORA (VISTA PRINCIPAL DIRECTA) -->
+          <!-- TAB 1: JUGAR AHORA (WIDESCREEN 2-COLUMN SPLIT DECK) -->
           <div id="hangar-tab-play" class="hangar-panel active">
-            <!-- Callsign & Squad Code -->
-            <div class="section-box">
-              <span class="section-title">01 // TU IDENTIFICACIÓN Y ESCUADRÓN</span>
-              <div class="input-row">
-                <input id="pilot-name-input" type="text" placeholder="TU CALLSIGN (EJ: RAPTOR_22)" maxlength="16" />
-                <input id="room-code-input" type="text" placeholder="CÓDIGO SALA" maxlength="16" />
-                <button id="btn-join-room" class="btn">SINCRONIZAR</button>
-              </div>
-              <button id="btn-copy-link" class="btn" style="width: 100%; border-color: var(--cyan); margin-top: 4px;">
-                📋 COPIAR ENLACE DE ESCUADRÓN (WHATSAPP / DISCORD)
-              </button>
-            </div>
-
-            <!-- Asymmetric Role Selection Cards -->
-            <div class="section-box">
-              <span class="section-title">02 // SELECCIONA TU ROL EN CABINA</span>
-              <div class="role-cards-grid">
-                <div id="btn-role-driver" class="role-card-btn active">
-                  <span class="role-card-title">🏎️ PILOTO // DRIVER</span>
-                  <p class="role-card-desc">
-                    Control directo del interceptor a Mach 2. Evasión de colisiones y reflejos en vuelo con <strong>WASD / Flechas</strong>.
-                  </p>
+            <div class="hangar-grid-split">
+              <!-- Left Column: Squad & Role Readiness -->
+              <div class="hangar-col">
+                <!-- 01: Callsign & Squad Code -->
+                <div class="section-box">
+                  <span class="section-title">01 // TU IDENTIFICACIÓN Y ESCUADRÓN</span>
+                  <div class="input-row">
+                    <input id="pilot-name-input" type="text" placeholder="TU CALLSIGN (EJ: RAPTOR_22)" maxlength="16" />
+                    <input id="room-code-input" type="text" placeholder="CÓDIGO SALA" maxlength="16" />
+                    <button id="btn-join-room" class="btn">SINCRONIZAR</button>
+                  </div>
+                  <button id="btn-copy-link" class="btn" style="width: 100%; border-color: var(--cyan); margin-top: 4px;">
+                    📋 COPIAR ENLACE DE ESCUADRÓN (WHATSAPP / DISCORD)
+                  </button>
                 </div>
-                <div id="btn-role-navigator" class="role-card-btn">
-                  <span class="role-card-title">🛰️ NAVEGANTE // AWACS</span>
-                  <p class="role-card-desc">
-                    Radar satelital de largo alcance, despliegue de escudos deflectores y marcación de vectores con <strong>J / K / L / Space</strong>.
-                  </p>
+
+                <!-- 02: Asymmetric Role Selection Cards -->
+                <div class="section-box">
+                  <span class="section-title">02 // SELECCIONA TU ROL EN CABINA</span>
+                  <div class="role-cards-grid">
+                    <div id="btn-role-driver" class="role-card-btn active">
+                      <span class="role-card-title">🏎️ PILOTO // DRIVER</span>
+                      <p class="role-card-desc">
+                        Control de vuelo y dirección Mach 2. Evasión de colisiones y reflejos en pista.
+                      </p>
+                      <span class="role-tag-pill">WASD / FLECHAS — TIMÓN DIRECTO</span>
+                    </div>
+                    <div id="btn-role-navigator" class="role-card-btn">
+                      <span class="role-card-title">🛰️ NAVEGANTE // AWACS</span>
+                      <p class="role-card-desc">
+                        Radar de largo alcance, pulsos de escudos deflectores y marcación de carril.
+                      </p>
+                      <span class="role-tag-pill">J / K / L / SPACE — RADAR &amp; ESCUDOS</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 03: Mode Selector -->
+                <div class="section-box" style="padding: 8px 10px;">
+                  <span class="section-title" style="font-size: 10px;">03 // MODO DE DESPLIEGUE</span>
+                  <div class="input-row">
+                    <button class="btn active" data-mode="online" style="flex: 1; font-size: 9px;">ONLINE CO-OP (WS)</button>
+                    <button class="btn" data-mode="local_bot" style="flex: 1; font-size: 9px;">SOLO + IA CO-PILOTO</button>
+                    <button class="btn" data-mode="local_coop" style="flex: 1; font-size: 9px;">2P LOCAL TECLADO</button>
+                  </div>
                 </div>
               </div>
 
-              <!-- Live Crew Status -->
-              <div id="lobby-players-list" style="display: flex; flex-direction: column; gap: 4px; margin-top: 8px;"></div>
-            </div>
+              <!-- Right Column: Mission Briefing & Launch Deck -->
+              <div class="hangar-col">
+                <!-- Mission Briefing Hologram Card -->
+                <div class="mission-briefing-card">
+                  <div class="intel-header">
+                    <span class="section-title" style="color: var(--cyan); margin: 0;">BRIEFING DE MISIÓN // SECTOR 07</span>
+                    <span class="intel-badge">AMENAZA: ALTA</span>
+                  </div>
+                  <div style="font-size: 10px; color: var(--text-primary); line-height: 1.45;">
+                    <strong style="color: var(--accent);">PACIFIC COASTAL HIGHWAY:</strong> Tormenta nocturna en curso. Viento cruzado y tráfico hostil masivo a 250+ KT.
+                  </div>
+                  <div class="stat-chip-row">
+                    <div class="stat-chip">
+                      <span class="stat-chip-label">TICK RATE</span>
+                      <span class="stat-chip-value" style="color: var(--phosphor);">60 HZ SYNC</span>
+                    </div>
+                    <div class="stat-chip">
+                      <span class="stat-chip-label">BLINDAJE</span>
+                      <span class="stat-chip-value" style="color: #00f0ff;">TITANIO 100%</span>
+                    </div>
+                    <div class="stat-chip">
+                      <span class="stat-chip-label">DEFLECTOR</span>
+                      <span class="stat-chip-value" style="color: #ffb703;">ESCUDO ION</span>
+                    </div>
+                    <div class="stat-chip">
+                      <span class="stat-chip-label">SOBREMARCHA</span>
+                      <span class="stat-chip-value" style="color: #ff0055;">MACH 2.0</span>
+                    </div>
+                  </div>
+                </div>
 
-            <!-- Big Launch Action Button -->
-            <button id="btn-start-match" class="btn btn-primary" style="font-size: 15px; padding: 14px; letter-spacing: 1.2px;">
-              DESPLEGAR INTERCEPTOR // INICIAR MISIÓN
-            </button>
+                <!-- Cockpit Crew Status -->
+                <div class="section-box">
+                  <span class="section-title" style="font-size: 10px;">ASIENTOS DE CABINA [DATALINK]</span>
+                  <div id="lobby-players-list" style="display: flex; flex-direction: column; gap: 4px;"></div>
+                </div>
 
-            <!-- Mode Selector (Secondary Bar) -->
-            <div class="section-box" style="padding: 6px 10px;">
-              <span class="section-title" style="font-size: 10px;">MODO DE PARTIDA</span>
-              <div class="input-row">
-                <button class="btn active" data-mode="online" style="flex: 1; font-size: 9px;">ONLINE CO-OP (WS)</button>
-                <button class="btn" data-mode="local_bot" style="flex: 1; font-size: 9px;">SOLO + IA CO-PILOTO</button>
-                <button class="btn" data-mode="local_coop" style="flex: 1; font-size: 9px;">2P LOCAL TECLADO</button>
+                <!-- Hero Launch CTA Action Button -->
+                <button id="btn-start-match" class="btn btn-primary btn-launch-hero">
+                  <span>DESPLEGAR INTERCEPTOR // INICIAR MISIÓN</span>
+                  <span class="launch-hotkey-hint">⚡ [PRESIONA ESPACIO O HAZ CLIC PARA DESPEGAR]</span>
+                </button>
               </div>
             </div>
           </div>
 
           <!-- TAB 2: TORNEO OFICIAL -->
           <div id="hangar-tab-tournament" class="hangar-panel">
-            <div class="section-box" style="border: 1px solid var(--accent); background: rgba(14, 25, 42, 0.9);">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span class="section-title" style="color: var(--accent);">CAMPEONATO OFICIAL // $10 USD POR PAREJA</span>
-                <span id="tourney-status-pill" class="status-badge status-online">REGISTRO ABIERTO</span>
-              </div>
-              <p style="font-size: 10px; color: var(--text-muted); line-height: 1.4; margin-top: 2px;">
-                Compitan en pareja a máxima velocidad. El <strong>60%</strong> del pozo acumulado se entrega al Top 3 y el <strong>15%</strong> se dona directamente a alimento y rescate animal.
-              </p>
+            <div class="hangar-tournament-split">
+              <!-- Left Column: Tournament Telemetry & Podium -->
+              <div class="hangar-col">
+                <div class="section-box" style="border: 1px solid var(--accent); background: rgba(14, 25, 42, 0.9);">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span class="section-title" style="color: var(--accent);">CAMPEONATO OFICIAL // $10 USD POR PAREJA</span>
+                    <span id="tourney-status-pill" class="status-badge status-online">REGISTRO ABIERTO</span>
+                  </div>
+                  <p style="font-size: 10px; color: var(--text-muted); line-height: 1.45; margin-top: 4px;">
+                    Compitan en pareja a máxima velocidad. El <strong>60%</strong> del pozo se entrega al Top 3 y el <strong>15%</strong> se dona a alimento y medicina animal.
+                  </p>
 
-              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin: 8px 0;">
-                <div class="metric-box" style="padding: 6px;">
-                  <span class="metric-label">CUPOS OCUPADOS</span>
-                  <span id="tourney-couples-count" class="metric-value" style="font-size: 14px;">0 / 50</span>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin: 10px 0;">
+                    <div class="metric-box" style="padding: 6px;">
+                      <span class="metric-label">CUPOS OCUPADOS</span>
+                      <span id="tourney-couples-count" class="metric-value" style="font-size: 14px;">0 / 50</span>
+                    </div>
+                    <div class="metric-box" style="padding: 6px; border-left-color: var(--phosphor);">
+                      <span class="metric-label">POZO PREMIOS (60%)</span>
+                      <span id="tourney-prize-pool" class="metric-value" style="font-size: 14px; color: var(--phosphor);">$0.00</span>
+                    </div>
+                    <div class="metric-box" style="padding: 6px; border-left-color: var(--cyan);">
+                      <span class="metric-label">REFUGIO ANIMAL (15%)</span>
+                      <span id="tourney-charity-pool" class="metric-value" style="font-size: 14px; color: var(--cyan);">$0.00</span>
+                    </div>
+                  </div>
+
+                  <div style="font-size: 10px; color: var(--text-muted); display: flex; justify-content: space-between; background: rgba(0,0,0,0.4); padding: 8px 10px; border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.08);">
+                    <span>🥇 1º (66.66%): <strong id="tourney-podium-1" style="color: #ffb703;">$0.00</strong></span>
+                    <span>🥈 2º (23.33%): <strong id="tourney-podium-2" style="color: #e6f2ff;">$0.00</strong></span>
+                    <span>🥉 3º (10.01%): <strong id="tourney-podium-3" style="color: #cd7f32;">$0.00</strong></span>
+                  </div>
+
+                  <div style="font-size: 9px; color: var(--text-muted); margin-top: 8px; display: flex; align-items: center; gap: 6px;">
+                    <span>🛡️ SERVIDOR AUTORITATIVO 60 HZ &bull; FIRMA PAYPHONE HMAC-SHA256 &bull; ANTI-CHEAT ACTIVO</span>
+                  </div>
                 </div>
-                <div class="metric-box" style="padding: 6px; border-left-color: var(--phosphor);">
-                  <span class="metric-label">POZO PREMIOS (60%)</span>
-                  <span id="tourney-prize-pool" class="metric-value" style="font-size: 14px; color: var(--phosphor);">$0.00</span>
+              </div>
+
+              <!-- Right Column: Registration & Payment Gateway -->
+              <div class="hangar-col">
+                <div class="section-box" style="background: rgba(8, 16, 28, 0.88);">
+                  <span class="section-title">INSCRIPCIÓN DE PAREJA EN PASARELA</span>
+                  <p style="font-size: 10px; color: var(--text-muted); line-height: 1.4; margin-top: 2px;">
+                    Ingresa el código de referido del creador o streamer para atribución de comisiones directas:
+                  </p>
+                  <div class="input-row" style="margin-top: 6px;">
+                    <input id="tourney-referral-input" type="text" placeholder="CÓDIGO REFERIDO (OPCIONAL)" maxlength="30" />
+                    <input id="tourney-phone-input" type="text" placeholder="TELÉFONO O CUENTA PAYPHONE" maxlength="40" />
+                  </div>
+
+                  <div style="display: flex; gap: 6px; margin-top: 8px;">
+                    <button id="btn-tourney-pay" class="btn" style="flex: 2; background: linear-gradient(90deg, #ff8800, #ffb703); color: #020509; font-weight: 800; padding: 11px;">
+                      💳 INSCRIBIR ($10.00 USD PAYPHONE)
+                    </button>
+                    <button id="btn-tourney-simulate-pay" class="btn" style="flex: 1; border-color: var(--cyan); font-size: 9px;" title="Simular pasarela Payphone para testing rápido">
+                      🧪 SANDBOX PAY
+                    </button>
+                  </div>
+                  <div id="tourney-feedback" style="font-size: 10px; color: var(--phosphor); text-align: center; min-height: 16px; margin-top: 6px;"></div>
                 </div>
-                <div class="metric-box" style="padding: 6px; border-left-color: var(--cyan);">
-                  <span class="metric-label">REFUGIO ANIMAL (15%)</span>
-                  <span id="tourney-charity-pool" class="metric-value" style="font-size: 14px; color: var(--cyan);">$0.00</span>
-                </div>
               </div>
-
-              <div style="font-size: 10px; color: var(--text-muted); display: flex; justify-content: space-between; background: rgba(0,0,0,0.35); padding: 5px 8px; border-radius: 4px;">
-                <span>🥇 1º (66.66%): <strong id="tourney-podium-1" style="color: #ffb703;">$0.00</strong></span>
-                <span>🥈 2º (23.33%): <strong id="tourney-podium-2" style="color: #e6f2ff;">$0.00</strong></span>
-                <span>🥉 3º (10.01%): <strong id="tourney-podium-3" style="color: #cd7f32;">$0.00</strong></span>
-              </div>
-
-              <div class="input-row" style="margin-top: 8px;">
-                <input id="tourney-referral-input" type="text" placeholder="CÓDIGO DE REFERIDO (OPCIONAL)" maxlength="30" />
-                <input id="tourney-phone-input" type="text" placeholder="TELÉFONO O CUENTA PAYPHONE" maxlength="40" />
-              </div>
-
-              <div style="display: flex; gap: 6px; margin-top: 4px;">
-                <button id="btn-tourney-pay" class="btn" style="flex: 2; background: linear-gradient(90deg, #ff8800, #ffb703); color: #020509; font-weight: 800; padding: 10px;">
-                  💳 INSCRIBIR PAREJA ($10.00 USD PAYPHONE)
-                </button>
-                <button id="btn-tourney-simulate-pay" class="btn" style="flex: 1; border-color: var(--cyan); font-size: 9px;" title="Simular pasarela Payphone para testing rápido">
-                  🧪 SANDBOX PAY
-                </button>
-              </div>
-              <div id="tourney-feedback" style="font-size: 10px; color: var(--phosphor); text-align: center; min-height: 14px; margin-top: 4px;"></div>
             </div>
           </div>
 
           <!-- TAB 3: CHASIS & ARMERÍA -->
           <div id="hangar-tab-chassis" class="hangar-panel">
-            <div class="section-box">
-              <span class="section-title">CONFIGURACIÓN TÁCTICA DEL INTERCEPTOR</span>
-              <div class="cosmetics-grid" style="margin-top: 8px;">
-                <div class="cosmetic-field">
-                  <label for="select-paint">ESPECIFICACIÓN DE BLINDAJE</label>
-                  <select id="select-paint">
-                    <option value="crimson_jaeger">Crimson Raptor</option>
-                    <option value="cyber_gold">Gold Vanguard</option>
-                    <option value="phantom_stealth">Phantom Nighthawk</option>
-                  </select>
+            <div class="hangar-chassis-split">
+              <!-- Left Column: Customization Selectors -->
+              <div class="hangar-col">
+                <div class="section-box">
+                  <span class="section-title">PERSONALIZACIÓN DE AVATAR &amp; SISTEMAS</span>
+                  <div class="cosmetics-grid" style="margin-top: 8px;">
+                    <div class="cosmetic-field">
+                      <label for="select-paint">ESPECIFICACIÓN DE BLINDAJE</label>
+                      <select id="select-paint">
+                        <option value="crimson_jaeger">Crimson Raptor</option>
+                        <option value="cyber_gold">Gold Vanguard</option>
+                        <option value="phantom_stealth">Phantom Nighthawk</option>
+                      </select>
+                    </div>
+                    <div class="cosmetic-field">
+                      <label for="select-trail">ESTELA DE POSTQUEMADOR</label>
+                      <select id="select-trail">
+                        <option value="plasma_cyan">Ion Cyan</option>
+                        <option value="overdrive_magenta">Thermal Magenta</option>
+                        <option value="solar_flare">Mach Afterburner</option>
+                      </select>
+                    </div>
+                    <div class="cosmetic-field">
+                      <label for="select-theme">PALETA DE AVIÓNICA HUD</label>
+                      <select id="select-theme">
+                        <option value="tactical_amber">Mil-Spec Amber</option>
+                        <option value="neural_green">NVG Phosphor Green</option>
+                        <option value="abyssal_violet">Deep Telemetry Cyan</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
-                <div class="cosmetic-field">
-                  <label for="select-trail">ESTELA DE POSTQUEMADOR</label>
-                  <select id="select-trail">
-                    <option value="plasma_cyan">Ion Cyan</option>
-                    <option value="overdrive_magenta">Thermal Magenta</option>
-                    <option value="solar_flare">Mach Afterburner</option>
-                  </select>
-                </div>
-                <div class="cosmetic-field">
-                  <label for="select-theme">PALETA DE AVIÓNICA HUD</label>
-                  <select id="select-theme">
-                    <option value="tactical_amber">Mil-Spec Amber</option>
-                    <option value="neural_green">NVG Phosphor Green</option>
-                    <option value="abyssal_violet">Deep Telemetry Cyan</option>
-                  </select>
+              </div>
+
+              <!-- Right Column: Engineering Tech Specs -->
+              <div class="hangar-col">
+                <div class="section-box" style="background: rgba(6, 12, 22, 0.9);">
+                  <span class="section-title" style="color: var(--cyan);">FICHA TÉCNICA MILITAR DEL INTERCEPTOR</span>
+                  <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px; font-size: 10px;">
+                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 4px;">
+                      <span style="color: var(--text-muted);">ESTRUCTURA DE CHASIS:</span>
+                      <strong style="color: var(--text-primary);">COMPUESTO DE TITANIO &bull; STEALTH F-35</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 4px;">
+                      <span style="color: var(--text-muted);">VELOCIDAD CRUCERO:</span>
+                      <strong style="color: var(--accent);">250 KT (VECTORIAL MAX)</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 4px;">
+                      <span style="color: var(--text-muted);">BARRERA DE DEFLEXIÓN:</span>
+                      <strong style="color: #00f0ff;">100 MW ESCUDO DE IONES</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-bottom: 4px;">
+                      <span style="color: var(--text-muted);">TURBO-POSTQUEMADOR:</span>
+                      <strong style="color: #ff0055;">MACH 2.0 OVERDRIVE (4.0s)</strong>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -882,7 +1176,10 @@
           <!-- TAB 4: SALÓN DE LA FAMA (LEADERBOARD) -->
           <div id="hangar-tab-leaderboard" class="hangar-panel">
             <div class="section-box">
-              <span class="section-title">REGISTRO GLOBAL DE ESCUADRONES</span>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span class="section-title">REGISTRO GLOBAL DE ESCUADRONES</span>
+                <span style="font-size: 9px; color: var(--text-muted);">CLASIFICACIÓN OFICIAL AUTORITATIVA</span>
+              </div>
               <table class="leaderboard-table" style="margin-top: 8px;">
                 <thead>
                   <tr>
@@ -900,7 +1197,7 @@
 
           <!-- Discrete Footer with Link to Admin Portal -->
           <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; margin-top: 4px;">
-            <span style="font-size: 10px; color: var(--text-muted);">PACIFIC SPEED: OVERDRIVE &bull; v1.0.0</span>
+            <span style="font-size: 10px; color: var(--text-muted);">PACIFIC SPEED: OVERDRIVE &bull; v1.0.0 &bull; 60 HZ SERVER ENGINE</span>
             <a href="/admin" target="_blank" class="footer-portal-link">
               <span>⚙️ Consola de Administración (/admin) &rarr;</span>
             </a>
