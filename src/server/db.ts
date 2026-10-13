@@ -78,7 +78,13 @@ export class DatabaseProvider {
         const targetHost = this.pgConfig.host || 'remote';
         console.log(`[DB] Connected to PostgreSQL database successfully (${targetDb} @ ${targetHost}:${this.pgConfig.port || 5432}).`);
       } catch (err) {
-        console.warn('[DB] Postgres connection/init failed, falling back to local file storage:', err);
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.warn(`[DB] Postgres connection/init failed: ${errorMsg}`);
+        const isRailway = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_SERVICE_ID || process.env.RAILWAY_STATIC_URL);
+        if (isRailway && (this.pgConfig?.host === 'localhost' || this.pgConfig?.host === '127.0.0.1')) {
+          console.warn('[DB] 💡 TIP RAILWAY: Detectado entorno Railway con DB_HOST="localhost". En Railway, agrega un servicio PostgreSQL (+ New -> Database -> PostgreSQL) para usar la variable DATABASE_URL provista por Railway.');
+        }
+        console.warn('[DB] Activando fallback a almacenamiento local persistente (data/tournament_db.json).');
         this.isPostgres = false;
         if (this.pgPool) {
           try {
