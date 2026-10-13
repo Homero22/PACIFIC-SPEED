@@ -43,6 +43,7 @@ app.get('/api/health', (_req, res) => {
     status: 'ok',
     game: 'PACIFIC SPEED: OVERDRIVE',
     version: '1.0.0',
+    database: tournamentService.getDatabaseStatus(),
     timestamp: new Date().toISOString()
   });
 });

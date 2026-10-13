@@ -31,6 +31,10 @@ export class TournamentService {
     await dbProvider.init();
   }
 
+  public getDatabaseStatus() {
+    return dbProvider.getDatabaseInfo();
+  }
+
   public async getTournamentTelemetryStatus(): Promise<TournamentTelemetryStatus> {
     const config = await dbProvider.getTournamentConfig();
     const tournament = await dbProvider.getActiveTournament();

@@ -23,120 +23,346 @@ interface LocalDatabaseSchema {
 const LOCAL_DB_DIR = path.resolve('data');
 const LOCAL_DB_PATH = path.join(LOCAL_DB_DIR, 'tournament_db.json');
 
-export class DatabaseProvider {
-  private pgPool: pg.Pool | null = null;
-  private isPostgres = false;
-  private localData: LocalDatabaseSchema | null = null;
-  private pgConfig: pg.PoolConfig | null = null;
+function cleanEnv(val: string | undefined): string | undefined {
+  if (!val) return undefined;
+  const trimmed = val.trim();
+  const unquoted = trimmed.replace(/^["'](.*)["']$/, '$1').trim();
+  return unquoted.length > 0 ? unquoted : undefined;
+}
 
-  constructor() {
-    const dbUrl = process.env.DATABASE_URL;
-    const host = process.env.DB_HOST || process.env.PGHOST;
-    const port = parseInt(process.env.DB_PORT || process.env.PGPORT || '5432', 10);
-    const user = process.env.DB_USERNAME || process.env.DB_USER || process.env.PGUSER;
-    const password = process.env.DB_PASSWORD || process.env.PGPASSWORD;
-    const database = process.env.DB_DATABASE || process.env.DB_NAME || process.env.PGDATABASE;
+interface ResolvedPgConfig {
+  config: pg.PoolConfig;
+  source: string;
+  hostDisplay: string;
+  dbDisplay: string;
+  userDisplay: string;
+  portDisplay: number;
+  isRemote: boolean;
+}
 
-    if (dbUrl) {
-      this.pgConfig = {
-        connectionString: dbUrl,
-        ssl: dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1') ? false : { rejectUnauthorized: false }
-      };
-    } else if (host && user && database) {
-      const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
-      this.pgConfig = {
+function resolvePgConfig(): ResolvedPgConfig | null {
+  // 1. Check all URL aliases
+  const rawUrl =
+    cleanEnv(process.env.DATABASE_URL) ||
+    cleanEnv(process.env.POSTGRES_URL) ||
+    cleanEnv(process.env.POSTGRESQL_URL) ||
+    cleanEnv(process.env.DATABASE_PUBLIC_URL) ||
+    cleanEnv(process.env.DATABASE_PRIVATE_URL) ||
+    cleanEnv(process.env.DB_URL) ||
+    cleanEnv(process.env.POSTGRES_PRISMA_URL);
+
+  if (rawUrl) {
+    const isLocal =
+      rawUrl.includes('localhost') ||
+      rawUrl.includes('127.0.0.1') ||
+      rawUrl.includes('::1');
+
+    let hostDisplay = 'remote-host';
+    let dbDisplay = 'database';
+    let userDisplay = 'user';
+    let portDisplay = 5432;
+    try {
+      const parsed = new URL(rawUrl.replace(/^postgres(ql)?:/, 'http:'));
+      hostDisplay = parsed.hostname || hostDisplay;
+      portDisplay = parsed.port ? parseInt(parsed.port, 10) : 5432;
+      dbDisplay = parsed.pathname.replace(/^\//, '') || dbDisplay;
+      userDisplay = parsed.username || userDisplay;
+    } catch {}
+
+    const forceSsl = cleanEnv(process.env.PGSSLMODE) === 'require' || cleanEnv(process.env.DB_SSL) === 'true';
+    const disableSsl = cleanEnv(process.env.PGSSLMODE) === 'disable' || cleanEnv(process.env.DB_SSL) === 'false';
+
+    const ssl = disableSsl ? false : (forceSsl || !isLocal ? { rejectUnauthorized: false } : false);
+
+    return {
+      config: {
+        connectionString: rawUrl,
+        ssl
+      },
+      source: 'DATABASE_URL (o alias de URL)',
+      hostDisplay,
+      dbDisplay,
+      userDisplay,
+      portDisplay,
+      isRemote: !isLocal
+    };
+  }
+
+  // 2. Check discrete variables and aliases
+  const host =
+    cleanEnv(process.env.DB_HOST) ||
+    cleanEnv(process.env.PGHOST) ||
+    cleanEnv(process.env.POSTGRES_HOST) ||
+    cleanEnv(process.env.DATABASE_HOST) ||
+    cleanEnv(process.env.DB_HOSTNAME) ||
+    cleanEnv(process.env.PG_HOST);
+
+  const portRaw =
+    cleanEnv(process.env.DB_PORT) ||
+    cleanEnv(process.env.PGPORT) ||
+    cleanEnv(process.env.POSTGRES_PORT) ||
+    cleanEnv(process.env.DATABASE_PORT) ||
+    cleanEnv(process.env.PG_PORT) ||
+    '5432';
+
+  const user =
+    cleanEnv(process.env.DB_USERNAME) ||
+    cleanEnv(process.env.DB_USER) ||
+    cleanEnv(process.env.PGUSER) ||
+    cleanEnv(process.env.POSTGRES_USER) ||
+    cleanEnv(process.env.DATABASE_USER) ||
+    cleanEnv(process.env.PG_USER) ||
+    cleanEnv(process.env.DB_USER_NAME) ||
+    (host ? 'postgres' : undefined);
+
+  const password =
+    cleanEnv(process.env.DB_PASSWORD) ||
+    cleanEnv(process.env.DB_PASS) ||
+    cleanEnv(process.env.PGPASSWORD) ||
+    cleanEnv(process.env.POSTGRES_PASSWORD) ||
+    cleanEnv(process.env.DATABASE_PASSWORD) ||
+    cleanEnv(process.env.PG_PASSWORD) ||
+    cleanEnv(process.env.DB_PWD);
+
+  const database =
+    cleanEnv(process.env.DB_DATABASE) ||
+    cleanEnv(process.env.DB_NAME) ||
+    cleanEnv(process.env.PGDATABASE) ||
+    cleanEnv(process.env.POSTGRES_DB) ||
+    cleanEnv(process.env.POSTGRES_DATABASE) ||
+    cleanEnv(process.env.DATABASE_NAME) ||
+    cleanEnv(process.env.PG_DATABASE) ||
+    (host ? 'postgres' : undefined);
+
+  if (host && user && database) {
+    const port = parseInt(portRaw, 10) || 5432;
+    const isLocal =
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '::1';
+
+    const forceSsl = cleanEnv(process.env.PGSSLMODE) === 'require' || cleanEnv(process.env.DB_SSL) === 'true';
+    const disableSsl = cleanEnv(process.env.PGSSLMODE) === 'disable' || cleanEnv(process.env.DB_SSL) === 'false';
+
+    const ssl = disableSsl ? false : (forceSsl || !isLocal ? { rejectUnauthorized: false } : false);
+
+    return {
+      config: {
         host,
         port,
         user,
         password,
         database,
-        ssl: isLocal ? false : { rejectUnauthorized: false }
-      };
-    }
+        ssl
+      },
+      source: 'Variables discretas (DB_HOST, DB_USER, DB_PASSWORD, DB_DATABASE, etc.)',
+      hostDisplay: host,
+      dbDisplay: database,
+      userDisplay: user,
+      portDisplay: port,
+      isRemote: !isLocal
+    };
+  }
 
-    if (this.pgConfig) {
-      try {
-        this.pgPool = new pg.Pool(this.pgConfig);
-        this.isPostgres = true;
-      } catch (err) {
-        console.warn('[DB] Failed to initialize PostgreSQL pool. Falling back to local storage:', err);
-        this.isPostgres = false;
-      }
-    }
+  return null;
+}
 
-    if (!this.isPostgres) {
-      this.initLocalStorage();
-    }
+export class DatabaseProvider {
+  private pgPool: pg.Pool | null = null;
+  private isPostgres = false;
+  private isInitialized = false;
+  private localData: LocalDatabaseSchema | null = null;
+  private pgConfig: pg.PoolConfig | null = null;
+  private currentDbName = 'local';
+  private currentHostName = 'local';
+
+  constructor() {
+    this.initLocalStorage();
   }
 
   public async init(): Promise<void> {
-    if (this.isPostgres && this.pgPool && this.pgConfig) {
-      try {
-        await this.ensureDatabaseExists();
-        await this.initPostgresTables();
-        const targetDb = this.pgConfig.database || 'PostgreSQL';
-        const targetHost = this.pgConfig.host || 'remote';
-        console.log(`[DB] Connected to PostgreSQL database successfully (${targetDb} @ ${targetHost}:${this.pgConfig.port || 5432}).`);
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        console.warn(`[DB] Postgres connection/init failed: ${errorMsg}`);
-        const isRailway = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_SERVICE_ID || process.env.RAILWAY_STATIC_URL);
-        if (isRailway && (this.pgConfig?.host === 'localhost' || this.pgConfig?.host === '127.0.0.1')) {
-          console.warn('[DB] 💡 TIP RAILWAY: Detectado entorno Railway con DB_HOST="localhost". En Railway, agrega un servicio PostgreSQL (+ New -> Database -> PostgreSQL) para usar la variable DATABASE_URL provista por Railway.');
-        }
-        console.warn('[DB] Activando fallback a almacenamiento local persistente (data/tournament_db.json).');
-        this.isPostgres = false;
-        if (this.pgPool) {
-          try {
-            await this.pgPool.end();
-          } catch {}
-          this.pgPool = null;
-        }
-        this.initLocalStorage();
+    if (this.isInitialized) return;
+
+    console.log('[DB] ========================================================');
+    console.log('[DB] Evaluando configuración de base de datos...');
+
+    const resolved = resolvePgConfig();
+
+    if (!resolved) {
+      console.log('[DB] ℹ️  No se detectaron credenciales de PostgreSQL en las variables de entorno.');
+      console.log('[DB] Variables inspeccionadas: DATABASE_URL, POSTGRES_URL, DB_HOST, PGHOST, DB_USERNAME, PGUSER, DB_PASSWORD, DB_DATABASE, etc.');
+      console.log('[DB] Modo activo: Almacenamiento local persistente (data/tournament_db.json).');
+      console.log('[DB] ========================================================');
+      this.isInitialized = true;
+      return;
+    }
+
+    console.log(`[DB] Credenciales PostgreSQL detectadas vía: ${resolved.source}`);
+    console.log(`[DB] Destino: Host="${resolved.hostDisplay}", Port=${resolved.portDisplay}, DB="${resolved.dbDisplay}", User="${resolved.userDisplay}", SSL=${Boolean(resolved.config.ssl)}`);
+    console.log('[DB] Intentando conexión con PostgreSQL...');
+
+    try {
+      const { pool, finalConfig } = await this.connectWithSslNegotiation(resolved.config);
+      this.pgPool = pool;
+      this.pgConfig = finalConfig;
+      this.isPostgres = true;
+      this.currentDbName = resolved.dbDisplay;
+      this.currentHostName = resolved.hostDisplay;
+
+      await this.ensureDatabaseExists(resolved.dbDisplay);
+      await this.initPostgresTables();
+
+      console.log(`[DB] ✅ Conectado exitosamente a PostgreSQL ("${resolved.dbDisplay}" @ ${resolved.hostDisplay}:${resolved.portDisplay}). Tablas verificadas.`);
+      console.log('[DB] ========================================================');
+      this.isInitialized = true;
+    } catch (err: any) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.warn(`[DB] ❌ Error conectando a PostgreSQL: ${errorMsg}`);
+
+      const isRailway = Boolean(
+        process.env.RAILWAY_ENVIRONMENT ||
+        process.env.RAILWAY_SERVICE_ID ||
+        process.env.RAILWAY_STATIC_URL
+      );
+
+      if (isRailway && (resolved.hostDisplay === 'localhost' || resolved.hostDisplay === '127.0.0.1')) {
+        console.warn('[DB] 💡 NOTA PARA RAILWAY: Se detectó DB_HOST="localhost" dentro del contenedor de Railway.');
+        console.warn('[DB] En Railway, cada servicio corre en un contenedor aislado. Para conectar a PostgreSQL:');
+        console.warn('[DB]   1. En Railway crea un servicio PostgreSQL (+ New -> Database -> PostgreSQL).');
+        console.warn('[DB]   2. En tu servicio web, vincula la variable DATABASE_URL provista por Railway.');
+        console.warn('[DB]   3. O si usas una base externa (Supabase/Neon), coloca el HOST público o DATABASE_URL.');
       }
-    } else {
-      console.log('[DB] Running with local persistent storage (data/tournament_db.json).');
+
+      console.warn('[DB] ⚠️  Activando fallback a almacenamiento local persistente (data/tournament_db.json).');
+      console.log('[DB] ========================================================');
+
+      this.isPostgres = false;
+      if (this.pgPool) {
+        await this.pgPool.end().catch(() => {});
+        this.pgPool = null;
+      }
+      this.isInitialized = true;
     }
   }
 
-  private async ensureDatabaseExists(): Promise<void> {
-    if (!this.pgConfig || !this.pgConfig.database) return;
-    const targetDb = this.pgConfig.database;
+  private async connectWithSslNegotiation(
+    config: pg.PoolConfig
+  ): Promise<{ pool: pg.Pool; finalConfig: pg.PoolConfig }> {
+    let currentConfig: pg.PoolConfig = { ...config, connectionTimeoutMillis: 10000 };
+    let pool = new pg.Pool(currentConfig);
 
     try {
-      const client = await this.pgPool!.connect();
+      const client = await pool.connect();
+      client.release();
+      return { pool, finalConfig: currentConfig };
+    } catch (err: any) {
+      const msg = (err?.message || '').toLowerCase();
+
+      // Case 1: Server does not support SSL (e.g. local or internal Docker network in Railway)
+      if (
+        msg.includes('server does not support ssl') ||
+        msg.includes('does not support ssl') ||
+        msg.includes('ssl not supported')
+      ) {
+        console.log('[DB] El servidor no admite SSL. Reintentando con SSL desactivado...');
+        await pool.end().catch(() => {});
+        currentConfig = { ...currentConfig, ssl: false };
+        if (currentConfig.connectionString) {
+          currentConfig.connectionString = currentConfig.connectionString.replace(/([?&])sslmode=[^&]+/, '$1sslmode=disable');
+        }
+        pool = new pg.Pool(currentConfig);
+        const client = await pool.connect();
+        client.release();
+        return { pool, finalConfig: currentConfig };
+      }
+
+      // Case 2: Server requires SSL (e.g. Neon, Supabase, Railway Public Proxy, RDS)
+      if (
+        msg.includes('no pg_hba.conf entry') ||
+        msg.includes('ssl off') ||
+        msg.includes('ssl connection is required') ||
+        msg.includes('require ssl') ||
+        msg.includes('encryption required')
+      ) {
+        console.log('[DB] El servidor requiere SSL. Reintentando con SSL activado...');
+        await pool.end().catch(() => {});
+        currentConfig = { ...currentConfig, ssl: { rejectUnauthorized: false } };
+        pool = new pg.Pool(currentConfig);
+        const client = await pool.connect();
+        client.release();
+        return { pool, finalConfig: currentConfig };
+      }
+
+      await pool.end().catch(() => {});
+      throw err;
+    }
+  }
+
+  private async ensureDatabaseExists(targetDb: string): Promise<void> {
+    if (!this.pgPool || !this.pgConfig) return;
+
+    try {
+      const client = await this.pgPool.connect();
       client.release();
       return;
     } catch (err: any) {
       if (err && err.code === '3D000') {
-        console.log(`[DB] Database "${targetDb}" does not exist. Creating it automatically...`);
-        const adminConfig: pg.ClientConfig = {
-          ...this.pgConfig,
-          database: 'postgres'
-        };
-        const adminClient = new pg.Client(adminConfig);
-        await adminClient.connect();
+        console.log(`[DB] Base de datos "${targetDb}" no existe. Intentando crearla automáticamente...`);
         try {
-          if (/^[a-zA-Z0-9_]+$/.test(targetDb)) {
-            await adminClient.query(`CREATE DATABASE "${targetDb}"`);
-            console.log(`[DB] Database "${targetDb}" created successfully!`);
-          } else {
-            throw new Error(`Invalid database name identifier: ${targetDb}`);
+          const adminConfig: pg.PoolConfig = {
+            ...this.pgConfig,
+            database: 'postgres',
+            connectionTimeoutMillis: 8000
+          };
+          if (adminConfig.connectionString) {
+            adminConfig.connectionString = adminConfig.connectionString.replace(/\/[^/?]+(\?|$)/, '/postgres$1');
           }
-        } finally {
-          await adminClient.end();
-        }
-
-        if (this.pgPool) {
+          const adminClient = new pg.Client(adminConfig);
+          await adminClient.connect();
           try {
-            await this.pgPool.end();
-          } catch {}
+            if (/^[a-zA-Z0-9_]+$/.test(targetDb)) {
+              await adminClient.query(`CREATE DATABASE "${targetDb}"`);
+              console.log(`[DB] Base de datos "${targetDb}" creada exitosamente.`);
+            } else {
+              throw new Error(`Nombre de base de datos no válido: ${targetDb}`);
+            }
+          } finally {
+            await adminClient.end().catch(() => {});
+          }
+
+          if (this.pgPool) {
+            await this.pgPool.end().catch(() => {});
+          }
+          this.pgPool = new pg.Pool(this.pgConfig);
+          const client = await this.pgPool.connect();
+          client.release();
+        } catch (adminErr: any) {
+          console.warn(`[DB] Nota: No se pudo auto-crear la base de datos "${targetDb}" (${adminErr?.message}). Procediendo si es servicio administrado.`);
+          throw adminErr;
         }
-        this.pgPool = new pg.Pool(this.pgConfig);
       } else {
         throw err;
       }
     }
+  }
+
+  public isPostgresActive(): boolean {
+    return this.isPostgres;
+  }
+
+  public getDatabaseInfo(): { type: 'postgresql' | 'local_json'; host: string; database: string } {
+    if (this.isPostgres) {
+      return {
+        type: 'postgresql',
+        host: this.currentHostName,
+        database: this.currentDbName
+      };
+    }
+    return {
+      type: 'local_json',
+      host: 'local',
+      database: 'data/tournament_db.json'
+    };
   }
 
   private initLocalStorage(): void {
