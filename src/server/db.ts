@@ -27,15 +27,36 @@ export class DatabaseProvider {
   private pgPool: pg.Pool | null = null;
   private isPostgres = false;
   private localData: LocalDatabaseSchema | null = null;
+  private pgConfig: pg.PoolConfig | null = null;
 
   constructor() {
     const dbUrl = process.env.DATABASE_URL;
+    const host = process.env.DB_HOST || process.env.PGHOST;
+    const port = parseInt(process.env.DB_PORT || process.env.PGPORT || '5432', 10);
+    const user = process.env.DB_USERNAME || process.env.DB_USER || process.env.PGUSER;
+    const password = process.env.DB_PASSWORD || process.env.PGPASSWORD;
+    const database = process.env.DB_DATABASE || process.env.DB_NAME || process.env.PGDATABASE;
+
     if (dbUrl) {
+      this.pgConfig = {
+        connectionString: dbUrl,
+        ssl: dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1') ? false : { rejectUnauthorized: false }
+      };
+    } else if (host && user && database) {
+      const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+      this.pgConfig = {
+        host,
+        port,
+        user,
+        password,
+        database,
+        ssl: isLocal ? false : { rejectUnauthorized: false }
+      };
+    }
+
+    if (this.pgConfig) {
       try {
-        this.pgPool = new pg.Pool({
-          connectionString: dbUrl,
-          ssl: dbUrl.includes('localhost') ? false : { rejectUnauthorized: false }
-        });
+        this.pgPool = new pg.Pool(this.pgConfig);
         this.isPostgres = true;
       } catch (err) {
         console.warn('[DB] Failed to initialize PostgreSQL pool. Falling back to local storage:', err);
@@ -49,18 +70,66 @@ export class DatabaseProvider {
   }
 
   public async init(): Promise<void> {
-    if (this.isPostgres && this.pgPool) {
+    if (this.isPostgres && this.pgPool && this.pgConfig) {
       try {
+        await this.ensureDatabaseExists();
         await this.initPostgresTables();
-        console.log('[DB] Connected to PostgreSQL / Supabase database successfully.');
+        const targetDb = this.pgConfig.database || 'PostgreSQL';
+        const targetHost = this.pgConfig.host || 'remote';
+        console.log(`[DB] Connected to PostgreSQL database successfully (${targetDb} @ ${targetHost}:${this.pgConfig.port || 5432}).`);
       } catch (err) {
-        console.warn('[DB] Postgres init failed, falling back to local file storage:', err);
+        console.warn('[DB] Postgres connection/init failed, falling back to local file storage:', err);
         this.isPostgres = false;
-        this.pgPool = null;
+        if (this.pgPool) {
+          try {
+            await this.pgPool.end();
+          } catch {}
+          this.pgPool = null;
+        }
         this.initLocalStorage();
       }
     } else {
       console.log('[DB] Running with local persistent storage (data/tournament_db.json).');
+    }
+  }
+
+  private async ensureDatabaseExists(): Promise<void> {
+    if (!this.pgConfig || !this.pgConfig.database) return;
+    const targetDb = this.pgConfig.database;
+
+    try {
+      const client = await this.pgPool!.connect();
+      client.release();
+      return;
+    } catch (err: any) {
+      if (err && err.code === '3D000') {
+        console.log(`[DB] Database "${targetDb}" does not exist. Creating it automatically...`);
+        const adminConfig: pg.ClientConfig = {
+          ...this.pgConfig,
+          database: 'postgres'
+        };
+        const adminClient = new pg.Client(adminConfig);
+        await adminClient.connect();
+        try {
+          if (/^[a-zA-Z0-9_]+$/.test(targetDb)) {
+            await adminClient.query(`CREATE DATABASE "${targetDb}"`);
+            console.log(`[DB] Database "${targetDb}" created successfully!`);
+          } else {
+            throw new Error(`Invalid database name identifier: ${targetDb}`);
+          }
+        } finally {
+          await adminClient.end();
+        }
+
+        if (this.pgPool) {
+          try {
+            await this.pgPool.end();
+          } catch {}
+        }
+        this.pgPool = new pg.Pool(this.pgConfig);
+      } else {
+        throw err;
+      }
     }
   }
 
@@ -195,6 +264,104 @@ export class DatabaseProvider {
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
       `);
+
+      // Seed 1: Active Configuration
+      const cfgRes = await client.query('SELECT id FROM tournament_configs WHERE id = $1', ['active_config']);
+      if (cfgRes.rows.length === 0) {
+        await client.query(
+          'INSERT INTO tournament_configs (id, config_json, updated_at) VALUES ($1, $2, CURRENT_TIMESTAMP)',
+          ['active_config', JSON.stringify(DEFAULT_FINANCIAL_CONFIG)]
+        );
+      }
+
+      // Seed 2: Default Tournament
+      const tourneyRes = await client.query('SELECT id FROM tournaments LIMIT 1');
+      if (tourneyRes.rows.length === 0) {
+        const defaultTourney = this.localData?.tournament || {
+          id: 'tourney-default-01',
+          name: 'PACIFIC SPEED: OVERDRIVE - TEMPORADA INAUGURAL',
+          status: 'active',
+          entry_fee_usd: DEFAULT_FINANCIAL_CONFIG.entry_fee_per_pair,
+          max_couples: DEFAULT_FINANCIAL_CONFIG.max_couples_limit,
+          registered_couples_count: 0,
+          accumulated_prize_pool: 0,
+          accumulated_charity_amount: 0,
+          accumulated_operating_margin: 0,
+          config_snapshot: DEFAULT_FINANCIAL_CONFIG,
+          created_at: new Date().toISOString()
+        };
+        await client.query(
+          `INSERT INTO tournaments (
+            id, name, status, entry_fee_usd, max_couples, registered_couples_count,
+            accumulated_prize_pool, accumulated_charity_amount, accumulated_operating_margin,
+            config_snapshot_json, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [
+            defaultTourney.id,
+            defaultTourney.name,
+            defaultTourney.status,
+            defaultTourney.entry_fee_usd,
+            defaultTourney.max_couples,
+            defaultTourney.registered_couples_count,
+            defaultTourney.accumulated_prize_pool,
+            defaultTourney.accumulated_charity_amount,
+            defaultTourney.accumulated_operating_margin,
+            JSON.stringify(defaultTourney.config_snapshot),
+            defaultTourney.created_at
+          ]
+        );
+      }
+
+      // Seed 3: Default Referrals
+      const refRes = await client.query('SELECT id FROM referrals LIMIT 1');
+      if (refRes.rows.length === 0) {
+        const seedRefs = this.localData?.referrals?.length ? this.localData.referrals : [
+          {
+            id: 'ref-partner-01',
+            referral_code: 'SPEED2026',
+            collaborator_name: 'ESCUADRON VORTEX MEDIA',
+            collaborator_payphone_number: '+593991234567',
+            total_couples_referred: 3,
+            accumulated_earnings_usd: 1.74,
+            settled_earnings_usd: 0.0,
+            pending_earnings_usd: 1.74,
+            created_at: new Date().toISOString()
+          },
+          {
+            id: 'ref-partner-02',
+            referral_code: 'TIKTOKRUN',
+            collaborator_name: 'STREAMER JAEGER TOP',
+            collaborator_payphone_number: '+593987654321',
+            total_couples_referred: 1,
+            accumulated_earnings_usd: 0.58,
+            settled_earnings_usd: 0.0,
+            pending_earnings_usd: 0.58,
+            created_at: new Date().toISOString()
+          }
+        ];
+
+        for (const ref of seedRefs) {
+          await client.query(
+            `INSERT INTO referrals (
+              id, referral_code, collaborator_name, collaborator_payphone_number,
+              total_couples_referred, accumulated_earnings_usd, settled_earnings_usd,
+              pending_earnings_usd, created_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (id) DO NOTHING`,
+            [
+              ref.id,
+              ref.referral_code.toUpperCase(),
+              ref.collaborator_name,
+              ref.collaborator_payphone_number,
+              ref.total_couples_referred,
+              ref.accumulated_earnings_usd,
+              ref.settled_earnings_usd,
+              ref.pending_earnings_usd,
+              ref.created_at
+            ]
+          );
+        }
+      }
     } finally {
       client.release();
     }

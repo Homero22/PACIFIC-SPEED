@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "dotenv": "^18.0.7",
     "express": "^4.21.2",
     "pg": "^8.23.1",
     "ws": "^8.18.0"
