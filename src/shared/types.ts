@@ -1,3 +1,9 @@
+import type {
+  TournamentFinancialConfig,
+  TournamentSecurityConfig,
+  TransactionCalculationResult
+} from './financialConfig.js';
+
 export type PlayerRole = 'driver' | 'navigator';
 export type ShieldSide = 'left' | 'right';
 export type LaneIndex = 0 | 1 | 2;
@@ -176,6 +182,164 @@ export interface LeaderboardEntry {
   region: string;
   created_at: string;
 }
+
+// -------------------------------------------------------------
+// Tournament Financial & Security Engine Entities
+// -------------------------------------------------------------
+
+export type TournamentStatus = 'draft' | 'active' | 'in_progress' | 'completed';
+
+export interface TournamentRecord {
+  id: string; // UUID
+  name: string;
+  status: TournamentStatus;
+  entry_fee_usd: number;
+  max_couples: number;
+  registered_couples_count: number;
+  accumulated_prize_pool: number;
+  accumulated_charity_amount: number;
+  accumulated_operating_margin: number;
+  config_snapshot: TournamentFinancialConfig;
+  created_at: string;
+  completed_at?: string;
+}
+
+export interface ReferralRecord {
+  id: string; // UUID
+  referral_code: string;
+  collaborator_name: string;
+  collaborator_payphone_number: string;
+  total_couples_referred: number;
+  accumulated_earnings_usd: number;
+  settled_earnings_usd: number;
+  pending_earnings_usd: number;
+  created_at: string;
+}
+
+export type PaymentAuditStatus = 'pending' | 'APPROVED' | 'REJECTED';
+
+export interface PaymentAuditRecord {
+  id: string; // UUID
+  payphone_transaction_id: string;
+  tournament_id: string;
+  referral_id: string | null;
+  referral_code: string | null;
+  pair_driver_name: string;
+  pair_navigator_name: string;
+  gross_amount: number;
+  payphone_fee: number;
+  prize_pool_share: number;
+  charity_share: number;
+  developer_share: number;
+  collaborator_share: number;
+  status: PaymentAuditStatus;
+  raw_payload_json?: string;
+  created_at: string;
+}
+
+export interface SecurityAuditLog {
+  id: string;
+  event_type:
+    | 'impossible_speed'
+    | 'impossible_position_jump'
+    | 'shield_spam'
+    | 'invalid_hmac_signature'
+    | 'webhook_replay_rejected'
+    | 'rate_limit_exceeded'
+    | 'admin_unauthorized_access'
+    | 'config_modified';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  ip_address: string;
+  details: string;
+  timestamp: string;
+}
+
+export interface PayphoneWebhookPayload {
+  transactionId: string;
+  clientTransactionId: string;
+  amount: number; // in cents or dollars (e.g. 1000 or 10.00)
+  currency: string;
+  status: 'Approved' | 'Rejected' | 'Pending';
+  optionalParameter?: string; // referral code or pair meta
+  pairMeta?: {
+    driver_name: string;
+    navigator_name: string;
+    room_code?: string;
+    referral_code?: string;
+  };
+  timestamp?: number;
+}
+
+export interface TournamentTelemetryStatus {
+  tournament: {
+    id: string;
+    name: string;
+    status: TournamentStatus;
+    entry_fee_usd: number;
+    max_couples: number;
+    registered_couples: number;
+    accumulated_prize_pool: number;
+    accumulated_charity: number;
+    podium_preview: {
+      first_place: number;
+      second_place: number;
+      third_place: number;
+    };
+  };
+  config: TournamentFinancialConfig;
+}
+
+export interface AdminLoginRequest {
+  password: string;
+}
+
+export interface AdminLoginResponse {
+  token: string;
+  expires_in_hours: number;
+}
+
+export interface AdminDashboardData {
+  tournament: TournamentRecord;
+  financial_summary: {
+    gross_collected_total: number;
+    payphone_fees_total: number;
+    prize_pool_total: number;
+    charity_total: number;
+    developer_net_total: number;
+    collaborator_payouts_total: number;
+  };
+  payments_audit: PaymentAuditRecord[];
+  referrals: ReferralRecord[];
+  security_logs: SecurityAuditLog[];
+  active_config: TournamentFinancialConfig;
+  security_config: TournamentSecurityConfig;
+}
+
+export interface CreateReferralDto {
+  referral_code: string;
+  collaborator_name: string;
+  collaborator_payphone_number: string;
+}
+
+export interface SettleReferralDto {
+  referral_id: string;
+  settle_amount?: number;
+}
+
+export interface UpdateConfigDto {
+  entry_fee_per_pair?: number;
+  max_couples_limit?: number;
+  effective_payphone_fee?: number;
+  prize_pool_percentage?: number;
+  charity_percentage?: number;
+  operating_margin_percentage?: number;
+  developer_share_of_margin?: number;
+  collaborator_share_of_margin?: number;
+}
+
+// -------------------------------------------------------------
+// WebSocket Messages
+// -------------------------------------------------------------
 
 export type WsClientMessage =
   | {

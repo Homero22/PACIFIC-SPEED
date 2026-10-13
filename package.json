@@ -14,11 +14,13 @@
   },
   "dependencies": {
     "express": "^4.21.2",
+    "pg": "^8.23.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.2",
+    "@types/pg": "^8.23.1",
     "@types/ws": "^8.5.13",
     "concurrently": "^9.1.0",
     "tsx": "^4.19.2",

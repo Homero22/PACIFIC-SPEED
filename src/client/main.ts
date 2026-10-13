@@ -1,5 +1,6 @@
 import { GameSimulation } from '../shared/simulation.js';
 import type {
+  AdminDashboardData,
   ClientInputPayload,
   CosmeticLoadout,
   GameMode,
@@ -9,6 +10,7 @@ import type {
   ServerWorldStatePayload,
   TacticalCommsEvent,
   TacticalCommsPreset,
+  TournamentTelemetryStatus,
   WsClientMessage,
   WsServerMessage
 } from '../shared/types.js';
@@ -42,6 +44,11 @@ class PacificSpeedClientApp {
   private currentWorldState: ServerWorldStatePayload;
   private lobbyState: RoomLobbyState | null = null;
   private leaderboard: LeaderboardEntry[] = [];
+
+  // Tournament & Admin Command Deck Engine
+  private adminToken: string | null = sessionStorage.getItem('ps_admin_token');
+  private activeTourneyStatus: TournamentTelemetryStatus | null = null;
+  private adminDashboardData: AdminDashboardData | null = null;
 
   private audio = new AudioEngine();
   private input: InputManager;
@@ -89,6 +96,12 @@ class PacificSpeedClientApp {
       this.updateUrlRoomParam(this.roomCode);
     }
 
+    const urlRef = params.get('ref');
+    if (urlRef) {
+      const refInput = document.getElementById('tourney-referral-input') as HTMLInputElement | null;
+      if (refInput) refInput.value = urlRef.trim().toUpperCase();
+    }
+
     const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
     this.renderer = new GameRenderer(canvas);
     this.input = new InputManager(() => this.audio.init());
@@ -98,6 +111,8 @@ class PacificSpeedClientApp {
     this.bindUIEvents(canvas);
     this.connectWebSocket();
     void this.fetchLeaderboardHttp();
+    void this.fetchTournamentTelemetry();
+    setInterval(() => void this.fetchTournamentTelemetry(), 10000);
 
     requestAnimationFrame((now) => this.AnimationLoop(now));
   }
@@ -349,6 +364,94 @@ class PacificSpeedClientApp {
       document.getElementById('btn-touch-ping'),
       document.getElementById('btn-touch-radar')
     );
+
+    // Tournament & Payphone Sandbox UI Handlers
+    document.getElementById('btn-tourney-simulate-pay')?.addEventListener('click', async () => {
+      this.audio.init();
+      await this.handleSimulatePayphonePayment();
+    });
+
+    document.getElementById('btn-tourney-pay')?.addEventListener('click', () => {
+      this.audio.init();
+      const feedback = document.getElementById('tourney-feedback');
+      if (feedback) {
+        feedback.innerHTML = '⚡ MODO PRODUCCIÓN: Enlace Payphone SDK activo en deployment público. Usa <strong>SANDBOX PAY</strong> para acreditar $10 USD de prueba con la matemática exacta al instante.';
+      }
+    });
+
+    // Admin Command Deck & Login Handlers
+    document.getElementById('btn-open-admin')?.addEventListener('click', () => {
+      this.audio.init();
+      if (this.adminToken) {
+        this.openAdminDeck();
+      } else {
+        document.getElementById('modal-admin-login')?.classList.remove('hidden');
+      }
+    });
+
+    document.getElementById('btn-close-admin-login')?.addEventListener('click', () => {
+      document.getElementById('modal-admin-login')?.classList.add('hidden');
+    });
+
+    document.getElementById('btn-submit-admin-login')?.addEventListener('click', async () => {
+      await this.handleAdminLogin();
+    });
+
+    document.getElementById('admin-password-input')?.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter') {
+        await this.handleAdminLogin();
+      }
+    });
+
+    document.getElementById('btn-close-admin-deck')?.addEventListener('click', () => {
+      document.getElementById('modal-admin-deck')?.classList.add('hidden');
+    });
+
+    document.getElementById('btn-admin-logout')?.addEventListener('click', () => {
+      this.adminToken = null;
+      sessionStorage.removeItem('ps_admin_token');
+      document.getElementById('modal-admin-deck')?.classList.add('hidden');
+    });
+
+    document.getElementById('btn-admin-refresh')?.addEventListener('click', async () => {
+      await this.fetchAdminDashboard();
+    });
+
+    // Admin Tab Switching
+    document.querySelectorAll<HTMLButtonElement>('.admin-tab-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const tabId = btn.dataset.tab;
+        document.querySelectorAll('.admin-tab-btn').forEach((b) => b.classList.remove('active'));
+        document.querySelectorAll('.admin-tab-panel').forEach((p) => p.classList.remove('active'));
+        btn.classList.add('active');
+        if (tabId) {
+          document.getElementById(tabId)?.classList.add('active');
+        }
+      });
+    });
+
+    // Admin Action: Close Tournament & Distribute Podium
+    document.getElementById('btn-close-tournament')?.addEventListener('click', async () => {
+      if (!confirm('¿Confirmas el cierre del torneo y liquidación definitiva del podio? Esta acción marcará el torneo como COMPLETADO.')) {
+        return;
+      }
+      await this.handleCloseTournamentPodium();
+    });
+
+    // Admin Action: Create Referral
+    document.getElementById('btn-create-referral')?.addEventListener('click', async () => {
+      await this.handleCreateReferral();
+    });
+
+    // Admin Action: Save Dynamic Config
+    document.getElementById('btn-save-config')?.addEventListener('click', async () => {
+      await this.handleSaveDynamicConfig();
+    });
+
+    // Admin Action: Clear Anti-Cheat Logs
+    document.getElementById('btn-clear-anticheat')?.addEventListener('click', async () => {
+      await this.handleClearAntiCheatLogs();
+    });
 
     this.syncModeButtons();
     this.syncRoleButtons();
@@ -875,6 +978,492 @@ class PacificSpeedClientApp {
     }
 
     this.renderLobbyPlayers();
+  }
+
+  // -------------------------------------------------------------
+  // Tournament & Payphone Public Flow
+  // -------------------------------------------------------------
+
+  private async fetchTournamentTelemetry(): Promise<void> {
+    try {
+      const res = await fetch('/api/tournament/status');
+      if (!res.ok) return;
+      const data: TournamentTelemetryStatus = await res.json();
+      this.activeTourneyStatus = data;
+
+      const couplesEl = document.getElementById('tourney-couples-count');
+      const prizeEl = document.getElementById('tourney-prize-pool');
+      const charityEl = document.getElementById('tourney-charity-pool');
+      const pod1El = document.getElementById('tourney-podium-1');
+      const pod2El = document.getElementById('tourney-podium-2');
+      const pod3El = document.getElementById('tourney-podium-3');
+      const statusPill = document.getElementById('tourney-status-pill');
+
+      if (couplesEl) couplesEl.textContent = `${data.tournament.registered_couples} / ${data.tournament.max_couples}`;
+      if (prizeEl) prizeEl.textContent = `$${data.tournament.accumulated_prize_pool.toFixed(2)}`;
+      if (charityEl) charityEl.textContent = `$${data.tournament.accumulated_charity.toFixed(2)}`;
+      if (pod1El) pod1El.textContent = `$${data.tournament.podium_preview.first_place.toFixed(2)}`;
+      if (pod2El) pod2El.textContent = `$${data.tournament.podium_preview.second_place.toFixed(2)}`;
+      if (pod3El) pod3El.textContent = `$${data.tournament.podium_preview.third_place.toFixed(2)}`;
+      if (statusPill) {
+        statusPill.textContent = data.tournament.status === 'completed' ? 'FINALIZADO' : 'REGISTRO ABIERTO';
+        statusPill.className = `status-badge ${data.tournament.status === 'completed' ? 'status-offline' : 'status-online'}`;
+      }
+    } catch {
+      // Offline fallback
+    }
+  }
+
+  private async handleSimulatePayphonePayment(): Promise<void> {
+    const feedback = document.getElementById('tourney-feedback');
+    const refInput = document.getElementById('tourney-referral-input') as HTMLInputElement | null;
+    const phoneInput = document.getElementById('tourney-phone-input') as HTMLInputElement | null;
+
+    const referralCode = refInput?.value.trim().toUpperCase() || undefined;
+    const driverName = this.pilotName || 'PILOT_A';
+    const navigatorName =
+      this.lobbyState?.players.find((p) => p.role === 'navigator')?.name ||
+      `CO_PILOT_${Math.floor(10 + Math.random() * 89)}`;
+
+    if (feedback) {
+      feedback.textContent = 'PROCESANDO TRANSACCIÓN SIMULADA EN PASARELA PAYPHONE...';
+      feedback.style.color = 'var(--accent)';
+    }
+
+    try {
+      const res = await fetch('/api/tournament/simulate-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          driver_name: driverName,
+          navigator_name: navigatorName,
+          referral_code: referralCode,
+          phone: phoneInput?.value.trim() || undefined
+        })
+      });
+
+      const result = await res.json();
+      if (!res.ok || !result.success) {
+        if (feedback) {
+          feedback.textContent = `❌ ERROR EN PAGO: ${result.error || 'No se pudo procesar'}`;
+          feedback.style.color = 'var(--danger)';
+        }
+        return;
+      }
+
+      if (feedback) {
+        feedback.textContent = `✓ PAGO DE $10.00 USD APROBADO // TX: ${result.audit.payphone_transaction_id.slice(0, 16)}... (Pozo +$6.00 | Refugio +$1.50 | Margin +$1.92)`;
+        feedback.style.color = 'var(--phosphor)';
+      }
+
+      await this.fetchTournamentTelemetry();
+      if (this.adminToken && !document.getElementById('modal-admin-deck')?.classList.contains('hidden')) {
+        await this.fetchAdminDashboard();
+      }
+    } catch (err) {
+      if (feedback) {
+        feedback.textContent = `❌ FALLO DE RED: ${(err as Error).message}`;
+        feedback.style.color = 'var(--danger)';
+      }
+    }
+  }
+
+  // -------------------------------------------------------------
+  // Secure Admin Command Deck Actions
+  // -------------------------------------------------------------
+
+  private async handleAdminLogin(): Promise<void> {
+    const input = document.getElementById('admin-password-input') as HTMLInputElement | null;
+    const errBox = document.getElementById('admin-login-error');
+    const pwd = input?.value || '';
+
+    if (errBox) errBox.textContent = '';
+
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pwd })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.token) {
+        if (errBox) errBox.textContent = data.error || 'Clave de administrador incorrecta';
+        return;
+      }
+
+      this.adminToken = data.token;
+      sessionStorage.setItem('ps_admin_token', this.adminToken!);
+      if (input) input.value = '';
+      document.getElementById('modal-admin-login')?.classList.add('hidden');
+      this.openAdminDeck();
+    } catch (err) {
+      if (errBox) errBox.textContent = `Error de red: ${(err as Error).message}`;
+    }
+  }
+
+  private openAdminDeck(): void {
+    document.getElementById('modal-admin-deck')?.classList.remove('hidden');
+    void this.fetchAdminDashboard();
+  }
+
+  private async fetchAdminDashboard(): Promise<void> {
+    if (!this.adminToken) return;
+
+    try {
+      const res = await fetch('/api/admin/dashboard', {
+        headers: { Authorization: `Bearer ${this.adminToken}` }
+      });
+
+      if (res.status === 401) {
+        this.adminToken = null;
+        sessionStorage.removeItem('ps_admin_token');
+        document.getElementById('modal-admin-deck')?.classList.add('hidden');
+        document.getElementById('modal-admin-login')?.classList.remove('hidden');
+        const errBox = document.getElementById('admin-login-error');
+        if (errBox) errBox.textContent = 'Sesión expirada. Ingresa de nuevo la clave secreta.';
+        return;
+      }
+
+      if (!res.ok) return;
+
+      const data: AdminDashboardData = await res.json();
+      this.adminDashboardData = data;
+      this.renderAdminDashboard(data);
+    } catch {
+      // Connection failure
+    }
+  }
+
+  private renderAdminDashboard(data: AdminDashboardData): void {
+    // 1. Tab Overview
+    const elCouples = document.getElementById('adm-couples');
+    const elGross = document.getElementById('adm-gross');
+    const elFee = document.getElementById('adm-payphone-fee');
+    const elPrize = document.getElementById('adm-prize-pool');
+    const elCharity = document.getElementById('adm-charity');
+    const elDev = document.getElementById('adm-dev-share');
+    const elCollab = document.getElementById('adm-collab-share');
+    const elStatus = document.getElementById('adm-status');
+
+    if (elCouples) elCouples.textContent = `${data.tournament.registered_couples_count} / ${data.tournament.max_couples}`;
+    if (elGross) elGross.textContent = `$${data.financial_summary.gross_collected_total.toFixed(2)} USD`;
+    if (elFee) elFee.textContent = `$${data.financial_summary.payphone_fees_total.toFixed(2)} USD`;
+    if (elPrize) elPrize.textContent = `$${data.financial_summary.prize_pool_total.toFixed(2)} USD`;
+    if (elCharity) elCharity.textContent = `$${data.financial_summary.charity_total.toFixed(2)} USD`;
+    if (elDev) elDev.textContent = `$${data.financial_summary.developer_net_total.toFixed(2)} USD`;
+    if (elCollab) elCollab.textContent = `$${data.financial_summary.collaborator_payouts_total.toFixed(2)} USD`;
+    if (elStatus) elStatus.textContent = data.tournament.status.toUpperCase();
+
+    // Live Podium Preview
+    const p1Amt = data.financial_summary.prize_pool_total * data.active_config.prize_podium_breakdown.first_place_percentage;
+    const p2Amt = data.financial_summary.prize_pool_total * data.active_config.prize_podium_breakdown.second_place_percentage;
+    const p3Amt = data.financial_summary.prize_pool_total * data.active_config.prize_podium_breakdown.third_place_percentage;
+
+    const p1ElAmt = document.getElementById('adm-podium-1-amount');
+    const p2ElAmt = document.getElementById('adm-podium-2-amount');
+    const p3ElAmt = document.getElementById('adm-podium-3-amount');
+    if (p1ElAmt) p1ElAmt.textContent = `$${p1Amt.toFixed(2)} USD`;
+    if (p2ElAmt) p2ElAmt.textContent = `$${p2Amt.toFixed(2)} USD`;
+    if (p3ElAmt) p3ElAmt.textContent = `$${p3Amt.toFixed(2)} USD`;
+
+    const topTeams = data.payments_audit.slice(0, 3);
+    const p1Name = document.getElementById('adm-podium-1-name');
+    const p2Name = document.getElementById('adm-podium-2-name');
+    const p3Name = document.getElementById('adm-podium-3-name');
+    if (p1Name) p1Name.textContent = topTeams[0] ? `${topTeams[0].pair_driver_name} / ${topTeams[0].pair_navigator_name}` : 'SIN PAREJA';
+    if (p2Name) p2Name.textContent = topTeams[1] ? `${topTeams[1].pair_driver_name} / ${topTeams[1].pair_navigator_name}` : 'SIN PAREJA';
+    if (p3Name) p3Name.textContent = topTeams[2] ? `${topTeams[2].pair_driver_name} / ${topTeams[2].pair_navigator_name}` : 'SIN PAREJA';
+
+    // 2. Tab Payments Audit Table
+    const payTbody = document.getElementById('adm-payments-tbody');
+    if (payTbody) {
+      if (data.payments_audit.length === 0) {
+        payTbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 12px;">No hay transacciones registradas aún.</td></tr>';
+      } else {
+        payTbody.innerHTML = data.payments_audit
+          .map((p) => `
+            <tr>
+              <td style="font-family: monospace; color: var(--accent);">${p.payphone_transaction_id.slice(0, 14)}...</td>
+              <td>${new Date(p.created_at).toLocaleTimeString()}</td>
+              <td>$${p.gross_amount.toFixed(2)}</td>
+              <td style="color: var(--danger);">$${p.payphone_fee.toFixed(2)}</td>
+              <td style="color: var(--phosphor);">$${p.prize_pool_share.toFixed(2)}</td>
+              <td style="color: var(--cyan);">$${p.charity_share.toFixed(2)}</td>
+              <td style="color: #ff00ff;">$${p.developer_share.toFixed(2)}</td>
+              <td style="color: #ffaa00;">${p.referral_code || '--'} ($${p.collaborator_share.toFixed(2)})</td>
+              <td><span class="status-badge ${p.status === 'APPROVED' ? 'status-online' : 'status-offline'}">${p.status}</span></td>
+            </tr>
+          `)
+          .join('');
+      }
+    }
+
+    // 3. Tab Referrals Table
+    const refTbody = document.getElementById('adm-referrals-tbody');
+    if (refTbody) {
+      if (data.referrals.length === 0) {
+        refTbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 12px;">No hay colaboradores registrados.</td></tr>';
+      } else {
+        refTbody.innerHTML = data.referrals
+          .map((r) => `
+            <tr>
+              <td style="color: var(--accent); font-weight: bold;">${r.referral_code}</td>
+              <td>${r.collaborator_name}</td>
+              <td>${r.collaborator_payphone_number || '--'}</td>
+              <td style="text-align: center;">${r.total_couples_referred}</td>
+              <td>$${r.accumulated_earnings_usd.toFixed(2)}</td>
+              <td style="color: var(--phosphor); font-weight: bold;">$${r.pending_earnings_usd.toFixed(2)}</td>
+              <td>
+                ${r.pending_earnings_usd > 0
+                  ? `<button class="btn btn-settle-ref" data-ref-id="${r.id}" style="padding: 2px 7px; font-size: 9px; border-color: var(--phosphor); color: var(--phosphor);">LIQUIDAR</button>`
+                  : '<span style="color: var(--text-muted); font-size: 9px;">AL DÍA</span>'
+                }
+              </td>
+            </tr>
+          `)
+          .join('');
+
+        // Attach event listeners for settle buttons
+        refTbody.querySelectorAll<HTMLButtonElement>('.btn-settle-ref').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const refId = btn.dataset.refId;
+            if (refId) await this.handleSettleReferral(refId);
+          });
+        });
+      }
+    }
+
+    // 4. Tab Dynamic Config Form (only populate if inputs not focused)
+    const activeElement = document.activeElement;
+    const isEditingConfig = activeElement && activeElement.id && activeElement.id.startsWith('cfg-');
+    if (!isEditingConfig) {
+      const cfg = data.active_config;
+      const setVal = (id: string, val: number | string) => {
+        const input = document.getElementById(id) as HTMLInputElement | null;
+        if (input) input.value = String(val);
+      };
+
+      setVal('cfg-entry-fee', cfg.entry_fee_per_pair);
+      setVal('cfg-max-couples', cfg.max_couples_limit);
+      setVal('cfg-prize-pool', cfg.pricing_structure.revenue_allocation_percentages.prize_pool.percentage_of_gross);
+      setVal('cfg-charity', cfg.pricing_structure.revenue_allocation_percentages.animal_charity.percentage_of_gross);
+      setVal('cfg-payphone-fee', cfg.pricing_structure.payphone_gateway.percentage_fee);
+      setVal('cfg-tax-fee', cfg.pricing_structure.payphone_gateway.tax_on_fee_percentage);
+      setVal('cfg-dev-share', cfg.pricing_structure.margin_sub_distribution.platform_developer_share.percentage_of_operating_margin);
+      setVal('cfg-collab-share', cfg.pricing_structure.margin_sub_distribution.collaborator_pool_share.percentage_of_operating_margin);
+    }
+
+    // 5. Tab Anti-Cheat Security Table
+    const secTbody = document.getElementById('adm-anticheat-tbody');
+    if (secTbody) {
+      if (data.security_logs.length === 0) {
+        secTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--phosphor); padding: 12px;">✓ Sistema seguro. No se han registrado violaciones de red ni anti-cheat.</td></tr>';
+      } else {
+        secTbody.innerHTML = data.security_logs
+          .map((log) => `
+            <tr>
+              <td>${new Date(log.timestamp).toLocaleTimeString()}</td>
+              <td><span class="${log.severity === 'critical' ? 'badge-crit' : 'badge-warn'}">${log.severity.toUpperCase()}</span></td>
+              <td style="color: var(--cyan);">${log.event_type}</td>
+              <td style="font-family: monospace;">${log.ip_address}</td>
+              <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${log.details}">${log.details}</td>
+            </tr>
+          `)
+          .join('');
+      }
+    }
+  }
+
+  private async handleCloseTournamentPodium(): Promise<void> {
+    if (!this.adminToken) return;
+
+    try {
+      const res = await fetch('/api/admin/tournament/close-podium', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.adminToken}` }
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(`Error al cerrar torneo: ${data.error || 'Operación fallida'}`);
+        return;
+      }
+
+      alert(
+        `🏆 TORNEO CERRADO CON ÉXITO!\n` +
+        `Pozo Total: $${data.podium_distribution.total_prize_pool.toFixed(2)} USD\n` +
+        `🥇 1er Lugar (66.66%): $${data.podium_distribution.podium.first_place.prize_usd.toFixed(2)} USD\n` +
+        `🥈 2do Lugar (23.33%): $${data.podium_distribution.podium.second_place.prize_usd.toFixed(2)} USD\n` +
+        `🥉 3er Lugar (10.01%): $${data.podium_distribution.podium.third_place.prize_usd.toFixed(2)} USD\n` +
+        `🐾 Donación Refugio Animal: $${data.charity_total_usd.toFixed(2)} USD`
+      );
+
+      await this.fetchAdminDashboard();
+      await this.fetchTournamentTelemetry();
+    } catch (err) {
+      alert(`Error de conexión: ${(err as Error).message}`);
+    }
+  }
+
+  private async handleCreateReferral(): Promise<void> {
+    if (!this.adminToken) return;
+
+    const codeInput = document.getElementById('new-ref-code') as HTMLInputElement | null;
+    const nameInput = document.getElementById('new-ref-name') as HTMLInputElement | null;
+    const phoneInput = document.getElementById('new-ref-phone') as HTMLInputElement | null;
+    const fb = document.getElementById('ref-create-feedback');
+
+    const code = codeInput?.value.trim().toUpperCase();
+    const name = nameInput?.value.trim();
+    const phone = phoneInput?.value.trim();
+
+    if (!code || !name) {
+      if (fb) {
+        fb.textContent = '❌ Por favor ingresa el código y nombre del colaborador.';
+        fb.style.color = 'var(--danger)';
+      }
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/admin/referrals', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.adminToken}`
+        },
+        body: JSON.stringify({
+          referral_code: code,
+          collaborator_name: name,
+          collaborator_payphone_number: phone || ''
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        if (fb) {
+          fb.textContent = `❌ ${data.error || 'No se pudo crear el referido'}`;
+          fb.style.color = 'var(--danger)';
+        }
+        return;
+      }
+
+      if (fb) {
+        fb.textContent = `✓ Colaborador ${code} registrado exitosamente!`;
+        fb.style.color = 'var(--phosphor)';
+      }
+
+      if (codeInput) codeInput.value = '';
+      if (nameInput) nameInput.value = '';
+      if (phoneInput) phoneInput.value = '';
+
+      await this.fetchAdminDashboard();
+    } catch (err) {
+      if (fb) {
+        fb.textContent = `❌ Error: ${(err as Error).message}`;
+        fb.style.color = 'var(--danger)';
+      }
+    }
+  }
+
+  private async handleSettleReferral(refId: string): Promise<void> {
+    if (!this.adminToken) return;
+    if (!confirm('¿Liquidar ganancias pendientes acumuladas para este colaborador?')) return;
+
+    try {
+      const res = await fetch(`/api/admin/referrals/${refId}/settle`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.adminToken}`
+        },
+        body: JSON.stringify({})
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(`Error al liquidar: ${data.error || 'Operación fallida'}`);
+        return;
+      }
+
+      await this.fetchAdminDashboard();
+    } catch (err) {
+      alert(`Error de conexión: ${(err as Error).message}`);
+    }
+  }
+
+  private async handleSaveDynamicConfig(): Promise<void> {
+    if (!this.adminToken) return;
+
+    const fb = document.getElementById('cfg-save-feedback');
+    const getVal = (id: string) => {
+      const el = document.getElementById(id) as HTMLInputElement | null;
+      return el ? parseFloat(el.value) : undefined;
+    };
+
+    const payload = {
+      entry_fee_per_pair: getVal('cfg-entry-fee'),
+      max_couples_limit: getVal('cfg-max-couples'),
+      prize_pool_percentage: getVal('cfg-prize-pool'),
+      charity_percentage: getVal('cfg-charity'),
+      effective_payphone_fee: getVal('cfg-payphone-fee'),
+      developer_share_of_margin: getVal('cfg-dev-share'),
+      collaborator_share_of_margin: getVal('cfg-collab-share')
+    };
+
+    if (fb) {
+      fb.textContent = 'GUARDANDO CAMBIOS...';
+      fb.style.color = 'var(--accent)';
+    }
+
+    try {
+      const res = await fetch('/api/admin/config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.adminToken}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        if (fb) {
+          fb.textContent = `❌ ${data.error || 'Error al guardar'}`;
+          fb.style.color = 'var(--danger)';
+        }
+        return;
+      }
+
+      if (fb) {
+        fb.textContent = '✓ Configuración financiera actualizada en tiempo real (hot reload)!';
+        fb.style.color = 'var(--phosphor)';
+      }
+
+      await this.fetchAdminDashboard();
+      await this.fetchTournamentTelemetry();
+    } catch (err) {
+      if (fb) {
+        fb.textContent = `❌ Error: ${(err as Error).message}`;
+        fb.style.color = 'var(--danger)';
+      }
+    }
+  }
+
+  private async handleClearAntiCheatLogs(): Promise<void> {
+    if (!this.adminToken) return;
+
+    try {
+      const res = await fetch('/api/admin/anticheat/clear', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${this.adminToken}` }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        await this.fetchAdminDashboard();
+      }
+    } catch {
+      // Ignore
+    }
   }
 }
 

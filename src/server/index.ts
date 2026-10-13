@@ -4,18 +4,39 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 import type { WsClientMessage } from '../shared/types.js';
+import {
+  checkAdminRateLimit,
+  generateAdminToken,
+  registerFailedAdminLogin,
+  requireAdminAuth,
+  resetAdminAttempts,
+  verifyAdminPassword
+} from './adminSecurity.js';
 import { RoomManager } from './roomManager.js';
+import { tournamentService } from './tournamentService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(express.json());
+
+// Capture rawBody for HMAC-SHA256 Payphone webhook signature validation
+app.use(
+  express.json({
+    verify: (req: express.Request & { rawBody?: string }, _res, buf) => {
+      req.rawBody = buf.toString('utf8');
+    }
+  })
+);
 
 const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 const roomManager = new RoomManager();
 
+// Initialize Database & Tournament Service
+void tournamentService.init();
+
+// Healthcheck endpoint for Railway deployment
 app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
@@ -25,6 +46,7 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+// Leaderboard endpoints
 app.get('/api/leaderboard', (_req, res) => {
   res.json({ entries: roomManager.getLeaderboard() });
 });
@@ -50,6 +72,178 @@ app.post('/api/leaderboard', (req, res) => {
   });
   res.json({ entries });
 });
+
+// -------------------------------------------------------------
+// Public Tournament & Payphone Webhook Endpoints
+// -------------------------------------------------------------
+
+app.get('/api/tournament/status', async (_req, res) => {
+  try {
+    const data = await tournamentService.getTournamentTelemetryStatus();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/webhooks/payphone', async (req, res) => {
+  try {
+    const rawBody = (req as express.Request & { rawBody?: string }).rawBody || JSON.stringify(req.body);
+    const signature = req.headers['x-payphone-signature'] as string | undefined;
+    const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
+
+    const result = await tournamentService.processPayphoneWebhook(
+      req.body,
+      rawBody,
+      signature,
+      clientIp
+    );
+
+    if (!result.success) {
+      res.status(400).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: (err as Error).message });
+  }
+});
+
+app.post('/api/tournament/simulate-payment', async (req, res) => {
+  try {
+    const { driver_name, navigator_name, referral_code } = req.body || {};
+    const clientIp = req.ip || req.socket.remoteAddress || '127.0.0.1';
+
+    const result = await tournamentService.simulateSandboxPayment(
+      driver_name,
+      navigator_name,
+      referral_code,
+      clientIp
+    );
+
+    if (!result.success) {
+      res.status(400).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: (err as Error).message });
+  }
+});
+
+app.get('/api/referrals/:code', async (req, res) => {
+  try {
+    const { dbProvider } = await import('./db.js');
+    const referral = await dbProvider.getReferralByCode(String(req.params.code));
+    if (!referral) {
+      res.status(404).json({ error: 'Referral code not found' });
+      return;
+    }
+    res.json({ referral });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// -------------------------------------------------------------
+// Secure Admin Command Deck Endpoints (/api/admin/*)
+// -------------------------------------------------------------
+
+app.post('/api/admin/login', (req, res) => {
+  const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+  if (!checkAdminRateLimit(ip)) {
+    res.status(429).json({ error: 'Too many failed login attempts. Please wait 15 minutes.' });
+    return;
+  }
+
+  const { password } = req.body || {};
+  if (!verifyAdminPassword(password)) {
+    registerFailedAdminLogin(ip);
+    res.status(401).json({ error: 'Invalid master administrator secret key.' });
+    return;
+  }
+
+  resetAdminAttempts(ip);
+  const tokenData = generateAdminToken();
+  res.json({
+    success: true,
+    ...tokenData,
+    message: 'Admin authorization granted. Session active for 8 hours.'
+  });
+});
+
+app.get('/api/admin/dashboard', requireAdminAuth, async (_req, res) => {
+  try {
+    const dashboard = await tournamentService.getAdminDashboardData();
+    res.json(dashboard);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/admin/config', requireAdminAuth, async (req, res) => {
+  try {
+    const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+    const updated = await tournamentService.updateDynamicConfig(req.body, ip);
+    res.json({ success: true, config: updated });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/admin/referrals', requireAdminAuth, async (req, res) => {
+  try {
+    const created = await tournamentService.createReferral(req.body);
+    res.json({ success: true, referral: created });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/admin/referrals/:id/settle', requireAdminAuth, async (req, res) => {
+  try {
+    const { settle_amount } = req.body || {};
+    const settled = await tournamentService.settleReferralPayout(
+      String(req.params.id),
+      settle_amount ? Number(settle_amount) : undefined
+    );
+    res.json({ success: true, referral: settled });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/admin/tournament/status', requireAdminAuth, async (req, res) => {
+  try {
+    const { status } = req.body || {};
+    const updated = await tournamentService.updateTournamentStatus(status);
+    res.json({ success: true, tournament: updated });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/admin/tournament/close-podium', requireAdminAuth, async (_req, res) => {
+  try {
+    const result = await tournamentService.closeTournamentAndDistributePodium();
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/admin/anticheat/clear', requireAdminAuth, (_req, res) => {
+  try {
+    tournamentService.clearSecurityLogs();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// -------------------------------------------------------------
+// WebSocket Handler
+// -------------------------------------------------------------
 
 wss.on('connection', (ws) => {
   ws.on('message', (raw) => {

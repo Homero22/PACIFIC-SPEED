@@ -1,5 +1,6 @@
 import type { WebSocket } from 'ws';
 import { GameSimulation } from '../shared/simulation.js';
+import { antiCheatEngine } from './antiCheat.js';
 import type {
   ClientInputPayload,
   CosmeticLoadout,
@@ -251,8 +252,15 @@ export class RoomManager {
     const player = room.players.get(meta.playerId);
     if (!player) return;
 
+    const mechaPos = room.simulation.getWorldStatePayload().entity_positions.mecha;
+    const { sanitized } = antiCheatEngine.sanitizeClientInput(
+      input,
+      mechaPos.x,
+      mechaPos.y
+    );
+
     room.simulation.applyPlayerInput({
-      ...input,
+      ...sanitized,
       role: player.role
     });
   }
