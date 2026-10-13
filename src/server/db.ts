@@ -90,12 +90,16 @@ function resolvePgConfig(): ResolvedPgConfig | null {
 
   // 2. Check discrete variables and aliases
   const host =
+    cleanEnv(process.env.DB_SERVER) ||
     cleanEnv(process.env.DB_HOST) ||
     cleanEnv(process.env.PGHOST) ||
     cleanEnv(process.env.POSTGRES_HOST) ||
+    cleanEnv(process.env.DATABASE_SERVER) ||
     cleanEnv(process.env.DATABASE_HOST) ||
     cleanEnv(process.env.DB_HOSTNAME) ||
-    cleanEnv(process.env.PG_HOST);
+    cleanEnv(process.env.PG_HOST) ||
+    cleanEnv(process.env.SERVER) ||
+    cleanEnv(process.env.HOST);
 
   const portRaw =
     cleanEnv(process.env.DB_PORT) ||

@@ -5,7 +5,8 @@ import { antiCheatEngine } from './antiCheat.js';
 const DEFAULT_DEV_ADMIN_KEY = 'admin_pacific_overdrive_2026';
 
 export function getAdminSecretKey(): string {
-  return process.env.ADMIN_SECRET_KEY || process.env.ADMIN_PASSWORD || DEFAULT_DEV_ADMIN_KEY;
+  const raw = process.env.ADMIN_SECRET_KEY || process.env.ADMIN_PASSWORD || DEFAULT_DEV_ADMIN_KEY;
+  return raw.trim().replace(/^["'](.*)["']$/, '$1').trim();
 }
 
 /**
