@@ -159,19 +159,47 @@ export interface ServerWorldStatePayload {
 }
 
 export interface RoomPlayerInfo {
+  /** Public, server-generated id. Not a credential (see session_token). */
   player_id: string;
   name: string;
   role: PlayerRole;
   ready: boolean;
   cosmetics: CosmeticLoadout;
+  is_host: boolean;
+  connected: boolean;
+  /** While disconnected: ms left before the seat is released. */
+  grace_remaining_ms?: number;
 }
 
 export interface RoomLobbyState {
   room_code: string;
   players: RoomPlayerInfo[];
+  max_players: number;
   status: 'lobby' | 'running' | 'ad_revive_prompt' | 'gameover';
   is_tournament_verified?: boolean;
+  pending_role_swap?: { from_player_id: string; to_player_id: string };
 }
+
+/** Room codes: 6 chars, no ambiguous 0/O/1/I. */
+export const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export const ROOM_CODE_LENGTH = 6;
+export const ROOM_CODE_PATTERN = /^[A-HJ-NP-Z2-9]{6}$/;
+
+export function normalizeRoomCode(raw: unknown): string {
+  return String(raw ?? '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 12);
+}
+
+export type RoomErrorCode =
+  | 'invalid_code'
+  | 'not_found'
+  | 'full'
+  | 'expired'
+  | 'server_full'
+  | 'not_in_room'
+  | 'not_allowed';
 
 export interface LeaderboardEntry {
   id: string;
@@ -289,6 +317,8 @@ export interface PendingRegistrationRecord {
   status: 'PENDING' | 'COMPLETED' | 'CANCELLED' | 'REFUND_REQUIRED';
   tournament_id?: string;
   created_at: string;
+  /** Room the payer was in, so the Payphone return lands in the same room. */
+  room_code?: string;
 }
 
 export interface TournamentTelemetryStatus {
@@ -355,14 +385,25 @@ export type UpdateConfigDto = FinancialConfigUpdate;
 
 export type WsClientMessage =
   | {
-      type: 'join_room';
-      room_code: string;
-      player_id: string;
+      type: 'create_room';
       name: string;
       preferred_role?: PlayerRole;
       cosmetics: CosmeticLoadout;
     }
+  | {
+      type: 'join_room';
+      room_code: string;
+      name: string;
+      cosmetics: CosmeticLoadout;
+      /** Issued by the server in room_joined; resumes the same seat. */
+      session_token?: string;
+      /** Take the seat even if another socket currently holds it (same tab reconnecting, Payphone return). */
+      takeover?: boolean;
+    }
+  | { type: 'leave_room' }
   | { type: 'switch_role'; role: PlayerRole }
+  | { type: 'respond_role_swap'; accept: boolean }
+  | { type: 'set_ready'; ready: boolean }
   | { type: 'update_cosmetics'; cosmetics: CosmeticLoadout }
   | { type: 'start_match' }
   | { type: 'instant_rematch' }
@@ -378,8 +419,15 @@ export type WsServerMessage =
       room_code: string;
       player_id: string;
       assigned_role: PlayerRole;
+      /** Secret per-seat credential; send it back in join_room to reconnect. */
+      session_token: string;
+      created: boolean;
+      resumed: boolean;
       lobby: RoomLobbyState;
     }
+  | { type: 'room_error'; code: RoomErrorCode; room_code?: string; message: string }
+  | { type: 'session_replaced'; message: string }
+  | { type: 'role_swap_request'; from_player_id: string; from_name: string; requested_role: PlayerRole }
   | { type: 'lobby_update'; lobby: RoomLobbyState }
   | { type: 'world_state'; payload: ServerWorldStatePayload }
   | { type: 'comms_broadcast'; event: TacticalCommsEvent }

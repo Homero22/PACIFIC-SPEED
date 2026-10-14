@@ -1,6 +1,9 @@
 import { escapeHtml, safeHttpUrl } from '../shared/escapeHtml.js';
 import { GameSimulation } from '../shared/simulation.js';
+import { normalizeRoomCode } from '../shared/types.js';
 import type {
+  RoomErrorCode,
+  RoomPlayerInfo,
   ClientInputPayload,
   CosmeticLoadout,
   GameMode,
@@ -29,6 +32,12 @@ class PacificSpeedClientApp {
   private playerId: string;
   private pilotName: string;
   private roomCode: string;
+  private roomFromUrl = false;
+  private isPaymentReturn = false;
+  private sessionReplaced = false;
+  private roomError: { code: RoomErrorCode; message: string } | null = null;
+  private pendingSwapRequest: { from_name: string; requested_role: PlayerRole } | null = null;
+  private lobbyReceivedAt = 0;
   private mode: GameMode = 'online';
   private activeRole: PlayerRole = 'driver';
   private cosmetics: CosmeticLoadout = {
@@ -71,14 +80,14 @@ class PacificSpeedClientApp {
   private isRecordingClip = false;
 
   constructor() {
-    this.playerId =
-      sessionStorage.getItem('ps_player_id') ||
-      `PILOT-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
-    sessionStorage.setItem('ps_player_id', this.playerId);
+    // The server assigns player_id and a secret session token on room_joined.
+    this.playerId = '';
 
     this.pilotName =
       localStorage.getItem('ps_pilot_name') ||
       `RAPTOR_${Math.floor(10 + Math.random() * 89)}`;
+    // Persist the generated callsign so a reload / Payphone return keeps the same name.
+    this.storageSet(localStorage, 'ps_pilot_name', this.pilotName);
 
     const savedCosmetics = localStorage.getItem('ps_cosmetics');
     if (savedCosmetics) {
@@ -90,13 +99,16 @@ class PacificSpeedClientApp {
     }
 
     const params = new URLSearchParams(window.location.search);
-    const urlRoom = params.get('room');
-    if (urlRoom && urlRoom.trim().length > 0) {
-      this.roomCode = urlRoom.trim().toUpperCase();
+    // Tolerate gateways that append "?x=y" to a URL that already had a query string.
+    const urlRoom = normalizeRoomCode((params.get('room') || '').split(/[?&#]/)[0]);
+    this.isPaymentReturn = params.has('payment');
+    if (urlRoom) {
+      this.roomCode = urlRoom;
+      this.roomFromUrl = true;
     } else {
-      const randomSuffix = Math.random().toString(36).substring(2, 5).toUpperCase();
-      this.roomCode = `NEURAL-${randomSuffix}`;
-      this.updateUrlRoomParam(this.roomCode);
+      // Fallback (e.g. Payphone return without ?room): last room this browser was in.
+      // Empty → a fresh room is created by the server on connect.
+      this.roomCode = normalizeRoomCode(this.storageGet(localStorage, 'ps_last_room'));
     }
 
     const urlRef = params.get('ref');
@@ -173,11 +185,47 @@ class PacificSpeedClientApp {
   }
 
   private updateUrlRoomParam(code: string): void {
+    // Keep only ?room=CODE so a reload never re-processes payment params.
     const url = new URL(window.location.href);
-    url.searchParams.set('room', code);
+    url.search = code ? `?room=${encodeURIComponent(code)}` : '';
     window.history.replaceState({}, '', url.toString());
     const roomInput = document.getElementById('room-code-input') as HTMLInputElement | null;
     if (roomInput) roomInput.value = code;
+  }
+
+  private getShareUrl(): string {
+    return `${window.location.origin}/?room=${encodeURIComponent(this.roomCode)}`;
+  }
+
+  private storageGet(store: Storage, key: string): string {
+    try {
+      return store.getItem(key) || '';
+    } catch {
+      return '';
+    }
+  }
+
+  private storageSet(store: Storage, key: string, value: string | null): void {
+    try {
+      if (value === null) store.removeItem(key);
+      else store.setItem(key, value);
+    } catch {
+      // Storage unavailable (private mode): reconnect falls back to joining as new player.
+    }
+  }
+
+  /**
+   * Session token for a room. sessionStorage = this tab (reload / reconnect →
+   * reclaim the seat). localStorage = backup for a new tab (Payphone return,
+   * reopened link); it only reclaims a seat that is disconnected, unless we
+   * are coming back from a payment.
+   */
+  private getStoredSession(room: string): { token?: string; takeover: boolean } {
+    const tabToken = this.storageGet(sessionStorage, `ps_session_${room}`);
+    if (tabToken) return { token: tabToken, takeover: true };
+    const backup = this.storageGet(localStorage, `ps_session_${room}`);
+    if (backup) return { token: backup, takeover: this.isPaymentReturn };
+    return { takeover: false };
   }
 
   private applyHudTheme(theme: CosmeticLoadout['hudTheme']): void {
@@ -211,18 +259,41 @@ class PacificSpeedClientApp {
 
     document.getElementById('btn-join-room')?.addEventListener('click', () => {
       this.audio.init();
-      if (roomInput && roomInput.value.trim()) {
-        this.roomCode = roomInput.value.trim().toUpperCase();
-        this.updateUrlRoomParam(this.roomCode);
+      const code = normalizeRoomCode(roomInput?.value);
+      if (code) {
+        this.roomCode = code;
+        this.roomFromUrl = true;
         this.mode = 'online';
         this.syncModeButtons();
         this.joinCurrentOnlineRoom();
       }
     });
 
+    document.getElementById('btn-create-room')?.addEventListener('click', () => {
+      this.audio.init();
+      this.createNewRoom();
+    });
+
+    document.getElementById('room-status-line')?.addEventListener('click', (e) => {
+      const action = (e.target as HTMLElement).dataset.roomAction;
+      if (action === 'create') this.createNewRoom();
+      if (action === 'reclaim') {
+        this.sessionReplaced = false;
+        this.renderRoomStatus();
+        if (this.wsConnected) this.joinCurrentOnlineRoom();
+        else this.connectWebSocket();
+      }
+      if (action === 'swap-accept' || action === 'swap-reject') {
+        this.sendWsMessage({ type: 'respond_role_swap', accept: action === 'swap-accept' });
+        this.pendingSwapRequest = null;
+        this.renderRoomStatus();
+      }
+    });
+    setInterval(() => this.renderRoomStatus(), 1000);
+
     document.getElementById('btn-copy-link')?.addEventListener('click', async () => {
-      this.updateUrlRoomParam(this.roomCode);
-      const shareUrl = window.location.href;
+      if (!this.roomCode || !this.lobbyState) return;
+      const shareUrl = this.getShareUrl();
       try {
         await navigator.clipboard.writeText(shareUrl);
         const btn = document.getElementById('btn-copy-link');
@@ -256,32 +327,21 @@ class PacificSpeedClientApp {
     });
 
     // Role Selection Buttons
-    document.getElementById('btn-role-driver')?.addEventListener('click', () => {
+    // Online, the server owns roles: a taken seat needs the partner's OK.
+    const requestRole = (role: PlayerRole) => {
       this.audio.init();
-      this.activeRole = 'driver';
-      this.syncRoleButtons();
       if (this.mode === 'online') {
-        this.sendWsMessage({ type: 'switch_role', role: 'driver' });
+        this.sendWsMessage({ type: 'switch_role', role });
+      } else {
+        this.activeRole = role;
+        this.syncRoleButtons();
       }
-    });
-
-    document.getElementById('btn-role-navigator')?.addEventListener('click', () => {
-      this.audio.init();
-      this.activeRole = 'navigator';
-      this.syncRoleButtons();
-      if (this.mode === 'online') {
-        this.sendWsMessage({ type: 'switch_role', role: 'navigator' });
-      }
-    });
-
-    document.getElementById('btn-hud-swap-role')?.addEventListener('click', () => {
-      this.audio.init();
-      this.activeRole = this.activeRole === 'driver' ? 'navigator' : 'driver';
-      this.syncRoleButtons();
-      if (this.mode === 'online') {
-        this.sendWsMessage({ type: 'switch_role', role: this.activeRole });
-      }
-    });
+    };
+    document.getElementById('btn-role-driver')?.addEventListener('click', () => requestRole('driver'));
+    document.getElementById('btn-role-navigator')?.addEventListener('click', () => requestRole('navigator'));
+    document.getElementById('btn-hud-swap-role')?.addEventListener('click', () =>
+      requestRole(this.activeRole === 'driver' ? 'navigator' : 'driver')
+    );
 
     // 9:16 TikTok Streamer Mode Toggle
     document.getElementById('btn-tiktok-mode')?.addEventListener('click', () => {
@@ -768,7 +828,11 @@ class PacificSpeedClientApp {
       this.ws.addEventListener('close', () => {
         this.wsConnected = false;
         this.updateConnectionBadge(false);
-        setTimeout(() => this.connectWebSocket(), 2500);
+        // Another tab took this seat: don't fight it back automatically.
+        if (!this.sessionReplaced) {
+          setTimeout(() => this.connectWebSocket(), 2500);
+        }
+        this.renderRoomStatus();
       });
     } catch {
       this.wsConnected = false;
@@ -777,14 +841,142 @@ class PacificSpeedClientApp {
   }
 
   private joinCurrentOnlineRoom(): void {
+    if (this.sessionReplaced) return;
+    if (!this.roomCode) {
+      this.createNewRoom();
+      return;
+    }
+    const session = this.getStoredSession(this.roomCode);
     this.sendWsMessage({
       type: 'join_room',
       room_code: this.roomCode,
-      player_id: this.playerId,
+      name: this.pilotName,
+      cosmetics: this.cosmetics,
+      session_token: session.token,
+      takeover: session.takeover
+    });
+  }
+
+  private createNewRoom(): void {
+    this.roomError = null;
+    this.roomFromUrl = false;
+    this.mode = 'online';
+    this.syncModeButtons();
+    this.sendWsMessage({
+      type: 'create_room',
       name: this.pilotName,
       preferred_role: this.activeRole,
       cosmetics: this.cosmetics
     });
+  }
+
+  /** In flight the lobby status line is hidden, so flash a callout instead. */
+  private notifyPartnerConnectionChange(prev: RoomLobbyState | null, next: RoomLobbyState): void {
+    if (!prev || next.status === 'lobby') return;
+    const before = prev.players.find((p) => p.player_id !== this.playerId);
+    const after = next.players.find((p) => p.player_id !== this.playerId);
+    if (before?.connected && after && !after.connected) {
+      this.renderer.triggerCustomCallout('PAREJA DESCONECTADA', 'IA AL MANDO // RECONECTANDO (30 S)', '#ffb703');
+    } else if (before && !before.connected && after?.connected) {
+      this.renderer.triggerCustomCallout('PAREJA RECONECTADA', `${after.name} DE VUELTA EN CABINA`, '#00ff9d');
+    } else if (before && !after) {
+      this.renderer.triggerCustomCallout('PAREJA FUERA DE LA SALA', 'IA AUXILIAR AL MANDO', '#ff2a54');
+    }
+  }
+
+  private handleRoomError(code: RoomErrorCode, message: string, room?: string): void {
+    if (code === 'not_allowed') {
+      this.roomError = { code, message };
+      this.renderRoomStatus();
+      setTimeout(() => {
+        if (this.roomError?.code === 'not_allowed') {
+          this.roomError = null;
+          this.renderRoomStatus();
+        }
+      }, 4000);
+      return;
+    }
+
+    // The room is gone: forget it. ("full" keeps it: the stored token may belong to another tab.)
+    if (room && (code === 'not_found' || code === 'expired')) {
+      if (this.storageGet(localStorage, 'ps_last_room') === room) {
+        this.storageSet(localStorage, 'ps_last_room', null);
+      }
+      this.storageSet(localStorage, `ps_session_${room}`, null);
+      this.storageSet(sessionStorage, `ps_session_${room}`, null);
+    }
+
+    // Stale "last room" fallback (not a link someone shared): just start a new room.
+    if (!this.roomFromUrl && (code === 'not_found' || code === 'invalid_code' || code === 'expired')) {
+      this.createNewRoom();
+      return;
+    }
+
+    this.roomError = { code, message };
+    this.lobbyState = null;
+    this.renderLobbyPlayers();
+    this.renderRoomStatus();
+  }
+
+  private renderRoomStatus(): void {
+    const el = document.getElementById('room-status-line');
+    if (!el) return;
+
+    const set = (html: string, tone: 'info' | 'ok' | 'warn' | 'error') => {
+      if (el.innerHTML !== html) el.innerHTML = html;
+      el.dataset.tone = tone;
+      el.classList.toggle('hidden', html === '');
+    };
+    const fmt = (ms: number) => {
+      const s = Math.max(0, Math.ceil(ms / 1000));
+      return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    };
+    const btn = (action: string, label: string) =>
+      `<button class="btn room-status-btn" data-room-action="${action}">${label}</button>`;
+
+    if (this.mode !== 'online') return set('', 'info');
+    if (this.sessionReplaced) {
+      return set(`⚠️ Esta sala se abrió en otra pestaña o dispositivo. ${btn('reclaim', 'Usar aquí')}`, 'warn');
+    }
+    if (this.roomError && this.roomError.code !== 'not_allowed') {
+      const icon = this.roomError.code === 'full' ? '⛔' : '⚠️';
+      return set(`${icon} ${escapeHtml(this.roomError.message)} ${btn('create', 'Crear sala nueva')}`, 'error');
+    }
+    if (!this.wsConnected) return set('📡 Reconectando con el servidor…', 'warn');
+    if (!this.lobbyState) return set('📡 Conectando a la sala…', 'info');
+
+    const transient = this.roomError ? ` <br>⚠️ ${escapeHtml(this.roomError.message)}` : '';
+    const roleName = (r: PlayerRole) => (r === 'driver' ? 'PILOTO' : 'NAVEGANTE');
+
+    if (this.pendingSwapRequest) {
+      return set(
+        `🔄 <strong>${escapeHtml(this.pendingSwapRequest.from_name)}</strong> quiere cambiar a ${roleName(this.pendingSwapRequest.requested_role)} (intercambiar roles). ${btn('swap-accept', 'Aceptar')} ${btn('swap-reject', 'Rechazar')}`,
+        'info'
+      );
+    }
+
+    const players = this.lobbyState.players;
+    const me = players.find((p) => p.player_id === this.playerId);
+    const partner = players.find((p) => p.player_id !== this.playerId);
+    const swap = this.lobbyState.pending_role_swap;
+
+    if (!partner) {
+      return set(`⏳ Esperando a tu pareja… comparte el enlace de la sala <strong>${this.roomCode}</strong>.${transient}`, 'info');
+    }
+    if (!partner.connected) {
+      const left = (partner.grace_remaining_ms ?? 0) - (Date.now() - this.lobbyReceivedAt);
+      return set(`⚠️ Tu pareja se desconectó (reconectando ${fmt(left)})${transient}`, 'warn');
+    }
+    if (swap && swap.from_player_id === this.playerId) {
+      return set(`🔄 Solicitud de cambio de rol enviada a ${escapeHtml(partner.name)}…${transient}`, 'info');
+    }
+    if (me?.ready && !partner.ready) {
+      return set(`✅ Listo. Esperando a que ${escapeHtml(partner.name)} confirme el despegue…${transient}`, 'ok');
+    }
+    if (partner.ready && !me?.ready) {
+      return set(`🚀 ${escapeHtml(partner.name)} está listo para despegar. Confirma tu despegue.${transient}`, 'ok');
+    }
+    return set(`🤝 Pareja conectada: <strong>${escapeHtml(partner.name)}</strong> (${roleName(partner.role)}).${transient}`, 'ok');
   }
 
   private sendWsMessage(msg: WsClientMessage): void {
@@ -797,8 +989,17 @@ class PacificSpeedClientApp {
     switch (msg.type) {
       case 'room_joined':
         this.roomCode = msg.room_code;
+        this.playerId = msg.player_id;
         this.activeRole = msg.assigned_role;
         this.lobbyState = msg.lobby;
+        this.lobbyReceivedAt = Date.now();
+        this.roomError = null;
+        this.roomFromUrl = true;
+        this.isPaymentReturn = false;
+        this.storageSet(sessionStorage, `ps_session_${msg.room_code}`, msg.session_token);
+        this.storageSet(localStorage, `ps_session_${msg.room_code}`, msg.session_token);
+        this.storageSet(localStorage, 'ps_last_room', msg.room_code);
+        this.updateConnectionBadge(this.wsConnected);
         if (this.tournamentPass) {
           // Bind our own pass to this room (the server never broadcasts pass codes)
           this.sendWsMessage({ type: 'set_tournament_pass', pass_code: this.tournamentPass });
@@ -809,11 +1010,31 @@ class PacificSpeedClientApp {
         this.updateUrlRoomParam(this.roomCode);
         this.syncRoleButtons();
         this.renderLobbyPlayers();
+        this.renderRoomStatus();
         this.updateOverlayVisibility();
         break;
 
+      case 'room_error':
+        this.handleRoomError(msg.code, msg.message, msg.room_code);
+        break;
+
+      case 'session_replaced':
+        this.sessionReplaced = true;
+        this.lobbyState = null;
+        this.renderRoomStatus();
+        break;
+
+      case 'role_swap_request':
+        this.pendingSwapRequest = { from_name: msg.from_name, requested_role: msg.requested_role };
+        this.renderRoomStatus();
+        break;
+
       case 'lobby_update':
+        if (msg.lobby.room_code !== this.roomCode) break;
+        this.notifyPartnerConnectionChange(this.lobbyState, msg.lobby);
         this.lobbyState = msg.lobby;
+        this.lobbyReceivedAt = Date.now();
+        if (!msg.lobby.pending_role_swap) this.pendingSwapRequest = null;
         if (msg.lobby.is_tournament_verified && !this.isTournamentVerified) {
           // A teammate activated their pass in this room; we do not receive the code itself
           this.isTournamentVerified = true;
@@ -825,6 +1046,7 @@ class PacificSpeedClientApp {
           this.syncRoleButtons();
         }
         this.renderLobbyPlayers();
+        this.renderRoomStatus();
         this.updateOverlayVisibility();
         break;
 
@@ -1043,14 +1265,21 @@ class PacificSpeedClientApp {
     const driver = players.find((p) => p.role === 'driver');
     const navigator = players.find((p) => p.role === 'navigator');
 
+    const seatLabel = (p: RoomPlayerInfo | undefined, empty: string) => {
+      if (!p) return empty;
+      const you = p.player_id === this.playerId ? ' (TÚ)' : '';
+      const state = !p.connected ? ' · ⚠️ DESCONECTADO' : p.ready ? ' · ✅ LISTO' : '';
+      return `${escapeHtml(p.name)}${you}${state}`;
+    };
+
     container.innerHTML = `
       <div class="crew-slot ${driver ? 'filled' : ''}">
         <span class="slot-role">SEAT 01 // STEALTH DRIVER</span>
-        <span class="slot-name">${escapeHtml(driver ? driver.name : 'AI AUTO-PILOT STANDBY')}</span>
+        <span class="slot-name">${seatLabel(driver, 'AI AUTO-PILOT STANDBY')}</span>
       </div>
       <div class="crew-slot ${navigator ? 'filled' : ''}">
         <span class="slot-role">SEAT 02 // TACTICAL NAVIGATOR</span>
-        <span class="slot-name">${escapeHtml(navigator ? navigator.name : 'AI AWACS STANDBY')}</span>
+        <span class="slot-name">${seatLabel(navigator, 'AI AWACS STANDBY')}</span>
       </div>
     `;
   }
@@ -1314,7 +1543,8 @@ class PacificSpeedClientApp {
             this.lobbyState?.players.find((p) => p.role === 'navigator')?.name ||
             `CO_PILOT_${Math.floor(10 + Math.random() * 89)}`,
           referral_code: refInput?.value.trim().toUpperCase() || undefined,
-          phone: phoneInput?.value.trim() || undefined
+          phone: phoneInput?.value.trim() || undefined,
+          room_code: this.roomCode || undefined
         })
       });
 

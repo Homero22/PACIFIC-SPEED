@@ -15,7 +15,13 @@ import { DatabaseProvider, DatabaseUnavailableError } from '../db.js';
 import { generateClientTransactionId, validateConfirmAgainstPending } from '../payphoneSecurity.js';
 import { collectProductionConfigErrors } from '../runtimeConfig.js';
 import { TournamentService } from '../tournamentService.js';
-import { isAllowedWsOrigin, parseClientMessage, sanitizeCosmetics, SocketRateLimiter } from '../wsValidation.js';
+import {
+  isAllowedWsOrigin,
+  parseClientMessage,
+  rejectionReply,
+  sanitizeCosmetics,
+  SocketRateLimiter
+} from '../wsValidation.js';
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pacific-speed-test-'));
 afterAll(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
@@ -349,7 +355,7 @@ describe('WebSocket message validation', () => {
       hudTheme: 'tactical_amber'
     });
     const join = parseClientMessage(
-      JSON.stringify({ type: 'join_room', room_code: 'NEURAL-01', player_id: 'p1', name: '<b>x</b>"onload', cosmetics: null })
+      JSON.stringify({ type: 'join_room', room_code: 'abcdef', name: '<b>x</b>"onload', cosmetics: null })
     );
     expect(join?.type).toBe('join_room');
     if (join?.type === 'join_room') {
@@ -369,6 +375,55 @@ describe('WebSocket message validation', () => {
     );
     expect(input?.type === 'player_input' && input.payload.input_vector).toEqual({ x: 0, y: 0 });
     expect(input?.type === 'player_input' && input.payload.action_flags.ping_lane).toBeNull();
+  });
+
+  it('validates the room lifecycle messages', () => {
+    const p = (m: unknown) => parseClientMessage(JSON.stringify(m));
+
+    const create = p({ type: 'create_room', name: '<img src=x>', preferred_role: 'pilot', cosmetics: { paintJob: 'x' } });
+    expect(create).toMatchObject({
+      type: 'create_room',
+      preferred_role: 'driver',
+      cosmetics: { paintJob: 'crimson_jaeger', neonTrail: 'plasma_cyan', hudTheme: 'tactical_amber' }
+    });
+    expect(create?.type === 'create_room' && create.name).not.toMatch(/[<>=]/);
+
+    // join_room: code normalized and checked against ROOM_CODE_PATTERN; legacy player_id is dropped
+    const join = p({
+      type: 'join_room',
+      room_code: ' ab-cd ef ',
+      player_id: 'P1',
+      name: 'ana',
+      session_token: 'abc_DEF-123',
+      takeover: true
+    });
+    expect(join).toMatchObject({ type: 'join_room', room_code: 'ABCDEF', name: 'ANA', session_token: 'abc_DEF-123', takeover: true });
+    expect(join && 'player_id' in join).toBe(false);
+    expect(p({ type: 'join_room', room_code: 'ABCDEF' })).toMatchObject({ takeover: false, session_token: undefined });
+    expect(p({ type: 'join_room', room_code: 'NEURAL-01' })).toBeNull(); // legacy code
+    expect(p({ type: 'join_room', room_code: 'ABCDE0' })).toBeNull(); // ambiguous character
+    expect(p({ type: 'join_room', room_code: 123456 })).toBeNull();
+    expect(p({ type: 'join_room', room_code: 'ABCDEF', takeover: 'true' })).toBeNull();
+    expect(p({ type: 'join_room', room_code: 'ABCDEF', takeover: 1 })).toBeNull();
+    expect(p({ type: 'join_room', room_code: 'ABCDEF', session_token: 'x'.repeat(65) })).toBeNull();
+    expect(p({ type: 'join_room', room_code: 'ABCDEF', session_token: '<script>' })).toBeNull();
+    expect(p({ type: 'join_room', room_code: 'ABCDEF', session_token: 42 })).toBeNull();
+
+    expect(p({ type: 'leave_room', extra: 'ignored' })).toEqual({ type: 'leave_room' });
+    expect(p({ type: 'respond_role_swap', accept: false })).toEqual({ type: 'respond_role_swap', accept: false });
+    expect(p({ type: 'respond_role_swap', accept: 'yes' })).toBeNull();
+    expect(p({ type: 'respond_role_swap' })).toBeNull();
+    expect(p({ type: 'set_ready', ready: true })).toEqual({ type: 'set_ready', ready: true });
+    expect(p({ type: 'set_ready', ready: 1 })).toBeNull();
+  });
+
+  it('answers a bad room code with a room_error the client can show', () => {
+    expect(rejectionReply(JSON.stringify({ type: 'join_room', room_code: 'NEURAL-X' }))).toMatchObject({
+      type: 'room_error',
+      code: 'invalid_code'
+    });
+    expect(rejectionReply('not json')).toEqual({ type: 'error', message: 'Invalid WS payload' });
+    expect(rejectionReply(JSON.stringify({ type: 'set_ready', ready: 'x' }))).toMatchObject({ type: 'error' });
   });
 
   it('rate limits per socket and flags floods', () => {

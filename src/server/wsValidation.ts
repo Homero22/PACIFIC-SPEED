@@ -4,10 +4,15 @@ import type {
   LaneIndex,
   PlayerRole,
   TacticalCommsPreset,
-  WsClientMessage
+  WsClientMessage,
+  WsServerMessage
 } from '../shared/types.js';
+import { normalizeRoomCode, ROOM_CODE_PATTERN } from '../shared/types.js';
 
 export const WS_MAX_PAYLOAD_BYTES = 16 * 1024;
+/** Server tokens are 24 random bytes in base64url (32 chars); allow some headroom. */
+const SESSION_TOKEN_MAX = 64;
+const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 const PAINT_JOBS: readonly CosmeticLoadout['paintJob'][] = ['crimson_jaeger', 'cyber_gold', 'phantom_stealth'];
 const NEON_TRAILS: readonly CosmeticLoadout['neonTrail'][] = ['plasma_cyan', 'overdrive_magenta', 'solar_flare'];
@@ -82,6 +87,32 @@ function parseInput(raw: unknown): ClientInputPayload | null {
   };
 }
 
+function parseRoomCode(raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw.length > 32) return null;
+  const code = normalizeRoomCode(raw);
+  return ROOM_CODE_PATTERN.test(code) ? code : null;
+}
+
+/**
+ * Reply for a message parseClientMessage rejected. A join_room with a bad code gets a
+ * room_error the client can show ("código no válido") instead of the generic error.
+ */
+export function rejectionReply(raw: string): WsServerMessage {
+  try {
+    const msg = JSON.parse(raw);
+    if (isObject(msg) && msg.type === 'join_room' && !parseRoomCode(msg.room_code)) {
+      return {
+        type: 'room_error',
+        code: 'invalid_code',
+        message: 'El código de sala no es válido. Debe tener 6 caracteres (letras y números).'
+      };
+    }
+  } catch {
+    // fall through
+  }
+  return { type: 'error', message: 'Invalid WS payload' };
+}
+
 /**
  * Parses and validates one client WebSocket message. Returns null for anything malformed.
  */
@@ -95,20 +126,41 @@ export function parseClientMessage(raw: string): WsClientMessage | null {
   if (!isObject(msg) || typeof msg.type !== 'string') return null;
 
   switch (msg.type) {
-    case 'join_room': {
-      const roomCode = shortString(msg.room_code, 32);
-      const playerId = shortString(msg.player_id, 64);
-      if (!roomCode || !playerId) return null;
+    case 'create_room':
       return {
-        type: 'join_room',
-        room_code: roomCode,
-        player_id: playerId,
+        type: 'create_room',
         name: sanitizePlayerName(msg.name),
         preferred_role:
           msg.preferred_role === undefined ? undefined : pick(msg.preferred_role, ROLES, 'driver'),
         cosmetics: sanitizeCosmetics(msg.cosmetics)
       };
+    case 'join_room': {
+      const roomCode = parseRoomCode(msg.room_code);
+      if (!roomCode) return null;
+      let sessionToken: string | undefined;
+      if (msg.session_token !== undefined) {
+        const token = shortString(msg.session_token, SESSION_TOKEN_MAX);
+        if (!token || !SESSION_TOKEN_PATTERN.test(token)) return null;
+        sessionToken = token;
+      }
+      if (msg.takeover !== undefined && typeof msg.takeover !== 'boolean') return null;
+      return {
+        type: 'join_room',
+        room_code: roomCode,
+        name: sanitizePlayerName(msg.name),
+        cosmetics: sanitizeCosmetics(msg.cosmetics),
+        session_token: sessionToken,
+        takeover: msg.takeover === true
+      };
     }
+    case 'leave_room':
+      return { type: 'leave_room' };
+    case 'respond_role_swap':
+      if (typeof msg.accept !== 'boolean') return null;
+      return { type: 'respond_role_swap', accept: msg.accept };
+    case 'set_ready':
+      if (typeof msg.ready !== 'boolean') return null;
+      return { type: 'set_ready', ready: msg.ready };
     case 'switch_role':
       if (!(ROLES as readonly unknown[]).includes(msg.role)) return null;
       return { type: 'switch_role', role: msg.role as PlayerRole };

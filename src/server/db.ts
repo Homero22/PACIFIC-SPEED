@@ -301,7 +301,8 @@ function mapPendingRow(row: any): PendingRegistrationRecord {
     amount_usd: parseFloat(row.amount_usd),
     status: row.status,
     tournament_id: row.tournament_id || undefined,
-    created_at: row.created_at
+    created_at: row.created_at,
+    room_code: row.room_code || undefined
   };
 }
 
@@ -691,6 +692,8 @@ export class DatabaseProvider {
         CREATE UNIQUE INDEX IF NOT EXISTS payments_audit_pass_token_key ON payments_audit (pass_token);
         ALTER TABLE payments_audit ADD COLUMN IF NOT EXISTS client_transaction_id VARCHAR(100);
         ALTER TABLE pending_registrations ADD COLUMN IF NOT EXISTS tournament_id VARCHAR(100);
+        -- Room the payer was in, so the Payphone return lands in the same room
+        ALTER TABLE pending_registrations ADD COLUMN IF NOT EXISTS room_code VARCHAR(20);
       `);
 
       // Backfill pass tokens for payments approved before tokens existed (admin can hand them out)
@@ -1159,8 +1162,8 @@ export class DatabaseProvider {
       // Insert only: an existing registration (possibly COMPLETED) must never be overwritten
       await pool.query(
         `INSERT INTO pending_registrations (
-          client_transaction_id, driver_name, navigator_name, referral_code, phone, amount_usd, status, tournament_id, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          client_transaction_id, driver_name, navigator_name, referral_code, phone, amount_usd, status, tournament_id, created_at, room_code
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           record.client_transaction_id,
           record.driver_name,
@@ -1170,7 +1173,8 @@ export class DatabaseProvider {
           record.amount_usd,
           record.status,
           record.tournament_id || null,
-          record.created_at
+          record.created_at,
+          record.room_code || null
         ]
       );
       return;

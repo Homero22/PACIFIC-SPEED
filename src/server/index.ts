@@ -24,10 +24,12 @@ import {
 } from './payphoneSecurity.js';
 import { DatabaseUnavailableError, dbProvider } from './db.js';
 import { RoomManager } from './roomManager.js';
+import { roomFromQuery, withRoomParam } from './roomUrls.js';
 import { sanitizePairName, tournamentService } from './tournamentService.js';
 import {
   isAllowedWsOrigin,
   parseClientMessage,
+  rejectionReply,
   SocketRateLimiter,
   WS_MAX_PAYLOAD_BYTES
 } from './wsValidation.js';
@@ -223,6 +225,7 @@ app.post('/api/payphone/create-link', paymentLinkLimiter, async (req, res) => {
       res.status(503).json({ success: false, message: 'Pasarela de pago no configurada.' });
       return;
     }
+    const roomCode = roomFromQuery(req.body?.room_code);
 
     // 1. Capacity and tournament status are checked BEFORE preparing any charge
     const gate = await tournamentService.checkRegistrationOpen();
@@ -255,13 +258,16 @@ app.post('/api/payphone/create-link', paymentLinkLimiter, async (req, res) => {
       amount_usd: tournament.entry_fee_usd,
       status: 'PENDING',
       tournament_id: tournament.id,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      room_code: roomCode
     });
 
     // 3. Prepare Payphone Button V2 Transaction
-    // Compatible with both /payphone/callback (Payphone portal) and /api/payphone/callback
+    // Compatible with both /payphone/callback (Payphone portal) and /api/payphone/callback.
+    // responseUrl stays query-free (Payphone appends ?id=&clientTransactionId=); the callback
+    // recovers the room from pending_registrations so the payer returns to the same room.
     const responseUrl = process.env.PAYPHONE_RESPONSE_URL || `${baseUrl}/payphone/callback`;
-    const cancellationUrl = `${baseUrl}/?payment=cancelled`;
+    const cancellationUrl = withRoomParam(`${baseUrl}/?payment=cancelled`, roomCode);
 
     const linkResult = await preparePayphoneTransaction({
       amountUsd: tournament.entry_fee_usd,
@@ -294,10 +300,17 @@ app.get(['/payphone/callback', '/api/payphone/callback'], async (req, res) => {
   try {
     const id = String(req.query.id || req.query.transactionId || '');
     const clientTransactionId = String(req.query.clientTransactionId || req.query.clientTxId || '');
+    let roomCode = roomFromQuery(req.query.room);
 
     if (!id || !clientTransactionId) {
-      res.redirect('/?payment=cancelled');
+      res.redirect(withRoomParam('/?payment=cancelled', roomCode));
       return;
+    }
+
+    try {
+      roomCode = (await dbProvider.getPendingRegistration(String(clientTransactionId)))?.room_code || roomCode;
+    } catch {
+      // Fall back to the room carried in the URL
     }
 
     const result = await tournamentService.handlePayphoneCallback(
@@ -307,11 +320,13 @@ app.get(['/payphone/callback', '/api/payphone/callback'], async (req, res) => {
     );
 
     if (result.success && result.auditRecord?.pass_token) {
-      res.redirect(`/?payment=success&pass=${encodeURIComponent(result.auditRecord.pass_token)}`);
+      res.redirect(
+        withRoomParam(`/?payment=success&pass=${encodeURIComponent(result.auditRecord.pass_token)}`, roomCode)
+      );
     } else if (result.success) {
-      res.redirect('/?payment=success');
+      res.redirect(withRoomParam('/?payment=success', roomCode));
     } else {
-      res.redirect(`/?payment=error&reason=${encodeURIComponent(result.message)}`);
+      res.redirect(withRoomParam(`/?payment=error&reason=${encodeURIComponent(result.message)}`, roomCode));
     }
   } catch (err: any) {
     console.error('[PAYPHONE CALLBACK] Error:', err);
@@ -319,7 +334,7 @@ app.get(['/payphone/callback', '/api/payphone/callback'], async (req, res) => {
       err instanceof DatabaseUnavailableError
         ? 'Servicio temporalmente no disponible. Tu pago no fue confirmado y será revertido por Payphone.'
         : 'Error procesando cobro';
-    res.redirect(`/?payment=error&reason=${encodeURIComponent(reason)}`);
+    res.redirect(withRoomParam(`/?payment=error&reason=${encodeURIComponent(reason)}`, roomFromQuery(req.query.room)));
   }
 });
 
@@ -470,24 +485,36 @@ wss.on('connection', (ws, req) => {
 
     const msg = parseClientMessage(raw.toString());
     if (!msg) {
-      ws.send(JSON.stringify({ type: 'error', message: 'Invalid WS payload' }));
+      ws.send(JSON.stringify(rejectionReply(raw.toString())));
       return;
     }
 
     try {
       switch (msg.type) {
+        case 'create_room':
+          roomManager.createRoom(ws, msg.name, msg.preferred_role, msg.cosmetics);
+          break;
         case 'join_room':
           roomManager.joinRoom(
             ws,
             msg.room_code,
-            msg.player_id,
             msg.name,
-            msg.preferred_role,
-            msg.cosmetics
+            msg.cosmetics,
+            msg.session_token,
+            msg.takeover === true
           );
+          break;
+        case 'leave_room':
+          roomManager.leaveRoom(ws);
           break;
         case 'switch_role':
           roomManager.switchRole(ws, msg.role);
+          break;
+        case 'respond_role_swap':
+          roomManager.respondRoleSwap(ws, msg.accept === true);
+          break;
+        case 'set_ready':
+          roomManager.setReady(ws, msg.ready === true);
           break;
         case 'update_cosmetics':
           roomManager.updateCosmetics(ws, msg.cosmetics);
