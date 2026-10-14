@@ -1027,6 +1027,74 @@ export class DatabaseProvider {
       }
     }
   }
+
+  public async verifyTournamentPass(passCode: string): Promise<{
+    valid: boolean;
+    passCode: string;
+    driver_name?: string;
+    navigator_name?: string;
+    tournament_id?: string;
+    status?: string;
+    message?: string;
+  }> {
+    if (!passCode) {
+      return { valid: false, passCode, message: 'Código de pase no proporcionado.' };
+    }
+    const clean = passCode.trim().toUpperCase();
+
+    // 1. Check in pending_registrations where status = 'COMPLETED'
+    const pending = await this.getPendingRegistration(clean);
+    if (pending && pending.status === 'COMPLETED') {
+      return {
+        valid: true,
+        passCode: pending.client_transaction_id,
+        driver_name: pending.driver_name,
+        navigator_name: pending.navigator_name,
+        status: 'ACTIVE'
+      };
+    }
+
+    // 2. Check in payments_audit by payphone_transaction_id or id
+    if (this.isPostgres && this.pgPool) {
+      const res = await this.pgPool.query(
+        'SELECT * FROM payments_audit WHERE UPPER(payphone_transaction_id) = $1 OR UPPER(id) = $1 LIMIT 1',
+        [clean]
+      );
+      if (res.rows.length > 0) {
+        const row = res.rows[0];
+        return {
+          valid: true,
+          passCode: row.payphone_transaction_id,
+          driver_name: row.pair_driver_name,
+          navigator_name: row.pair_navigator_name,
+          tournament_id: row.tournament_id,
+          status: 'ACTIVE'
+        };
+      }
+    } else if (this.localData) {
+      const found = this.localData.payments.find(
+        (p) =>
+          p.payphone_transaction_id.toUpperCase() === clean ||
+          p.id.toUpperCase() === clean
+      );
+      if (found) {
+        return {
+          valid: true,
+          passCode: found.payphone_transaction_id,
+          driver_name: found.pair_driver_name,
+          navigator_name: found.pair_navigator_name,
+          tournament_id: found.tournament_id,
+          status: 'ACTIVE'
+        };
+      }
+    }
+
+    return {
+      valid: false,
+      passCode: clean,
+      message: 'Código de pase no encontrado o inscripción no completada.'
+    };
+  }
 }
 
 export const dbProvider = new DatabaseProvider();

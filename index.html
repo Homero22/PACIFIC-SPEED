@@ -337,6 +337,63 @@
         transition: max-width 0.25s ease, padding 0.25s ease;
       }
 
+      /* Step Confirmation Sub-modals */
+      .submodal-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        background: rgba(1, 4, 8, 0.86);
+        backdrop-filter: blur(14px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+
+      .submodal-card {
+        width: 100%;
+        max-width: 500px;
+        background: rgba(7, 14, 25, 0.96);
+        border: 1.5px solid var(--accent);
+        box-shadow: 0 25px 60px rgba(0, 0, 0, 0.95), 0 0 30px var(--accent-glow);
+        padding: 22px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        border-radius: 4px;
+        max-height: 90vh;
+        overflow-y: auto;
+      }
+
+      .practice-badge-active {
+        background: rgba(0, 255, 157, 0.12);
+        border: 1px solid var(--phosphor);
+        color: var(--phosphor);
+        padding: 8px 12px;
+        font-size: 11px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 6px;
+      }
+
+      .tourney-badge-active {
+        background: linear-gradient(90deg, rgba(255, 183, 3, 0.25), rgba(255, 85, 0, 0.25));
+        border: 1px solid var(--accent);
+        color: #ffb703;
+        padding: 8px 12px;
+        font-size: 11px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 6px;
+        box-shadow: 0 0 15px rgba(255, 183, 3, 0.2);
+      }
+
       .game-title {
         font-family: var(--font-display);
         font-size: 20px;
@@ -926,42 +983,50 @@
         </div>
       </footer>
 
-      <!-- Modal 1: Clean & Intuitive Stealth Hangar Command Lobby -->
+      <!-- Modal 1: Clean & Intuitive Guided Hangar Deck -->
       <section id="modal-lobby" class="modal-overlay">
         <div class="modal-card">
           <!-- Hangar Header -->
           <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.12); padding-bottom: 10px;">
             <div>
               <h1 class="game-title">PACIFIC SPEED // OVERDRIVE</h1>
-              <p class="subtitle">ESTACIÓN DE MANDO TÁCTICO &bull; 60 HZ SERVER-AUTHORITATIVE</p>
+              <p class="subtitle">HANGAR DE OPERACIONES &bull; MODOS PRÁCTICA LIBRE Y TORNEO OFICIAL</p>
             </div>
             <span id="ws-status-badge" class="status-badge status-offline">CONECTANDO...</span>
           </div>
 
-          <!-- Hangar Navigation Tabs (Clean Horizontal Layout, No Scrollbar) -->
+          <!-- Step Navigation Tabs (Intuitive 01 -> 02 -> 03 -> 04) -->
           <nav class="hangar-nav">
             <button class="hangar-tab-btn active" data-hangar-tab="hangar-tab-play">
-              🚀 1. JUGAR AHORA
+              🚀 01 JUGAR &amp; TRIPULACIÓN
             </button>
             <button class="hangar-tab-btn" data-hangar-tab="hangar-tab-tournament">
-              🏆 2. TORNEO OFICIAL ($10 USD)
+              🏆 02 TORNEO OFICIAL ($10 USD)
             </button>
             <button class="hangar-tab-btn" data-hangar-tab="hangar-tab-chassis">
-              🛠️ 3. CHASIS &amp; ARMERÍA
+              🛠️ 03 NAVE &amp; ARMERÍA
             </button>
             <button class="hangar-tab-btn" data-hangar-tab="hangar-tab-leaderboard">
-              🏅 4. SALÓN DE LA FAMA
+              🏅 04 SALÓN DE LA FAMA
             </button>
           </nav>
 
-          <!-- TAB 1: JUGAR AHORA (WIDESCREEN 2-COLUMN SPLIT DECK) -->
+          <!-- TAB 1: 01 JUGAR & TRIPULACIÓN -->
           <div id="hangar-tab-play" class="hangar-panel active">
+            <!-- Dynamic Mode Indicator Banner -->
+            <div id="mode-status-banner" class="practice-badge-active">
+              <span id="mode-status-text">🧪 MODO ACTUAL: <strong>PRÁCTICA LIBRE (100% GRATUITO)</strong></span>
+              <button id="btn-banner-action" class="btn" style="font-size: 9px; border-color: var(--accent); color: #ffb703;">
+                🏆 Inscribirse al Torneo ($10 USD) &rarr;
+              </button>
+            </div>
+
             <div class="hangar-grid-split">
               <!-- Left Column: Squad & Role Readiness -->
               <div class="hangar-col">
                 <!-- 01: Callsign & Squad Code -->
                 <div class="section-box">
-                  <span class="section-title">01 // TU IDENTIFICACIÓN Y ESCUADRÓN</span>
+                  <span class="section-title">01 // TU CALLSIGN Y CÓDIGO DE SALA</span>
                   <div class="input-row">
                     <input id="pilot-name-input" type="text" placeholder="TU CALLSIGN (EJ: RAPTOR_22)" maxlength="16" />
                     <input id="room-code-input" type="text" placeholder="CÓDIGO SALA" maxlength="16" />
@@ -979,7 +1044,7 @@
                     <div id="btn-role-driver" class="role-card-btn active">
                       <span class="role-card-title">🏎️ PILOTO // DRIVER</span>
                       <p class="role-card-desc">
-                        Control de vuelo y dirección Mach 2. Evasión de colisiones y reflejos en pista.
+                        Control de vuelo y timón Mach 2. Evasión de colisiones y reflejos en pista.
                       </p>
                       <span class="role-tag-pill">WASD / FLECHAS — TIMÓN DIRECTO</span>
                     </div>
@@ -995,9 +1060,9 @@
 
                 <!-- 03: Mode Selector -->
                 <div class="section-box" style="padding: 8px 10px;">
-                  <span class="section-title" style="font-size: 10px;">03 // MODO DE DESPLIEGUE</span>
+                  <span class="section-title" style="font-size: 10px;">03 // MODO DE CONEXIÓN</span>
                   <div class="input-row">
-                    <button class="btn active" data-mode="online" style="flex: 1; font-size: 9px;">ONLINE CO-OP (WS)</button>
+                    <button class="btn active" data-mode="online" style="flex: 1; font-size: 9px;">ONLINE CO-OP (DÚO)</button>
                     <button class="btn" data-mode="local_bot" style="flex: 1; font-size: 9px;">SOLO + IA CO-PILOTO</button>
                     <button class="btn" data-mode="local_coop" style="flex: 1; font-size: 9px;">2P LOCAL TECLADO</button>
                   </div>
@@ -1013,12 +1078,12 @@
                     <span class="intel-badge">AMENAZA: ALTA</span>
                   </div>
                   <div style="font-size: 10px; color: var(--text-primary); line-height: 1.45;">
-                    <strong style="color: var(--accent);">PACIFIC COASTAL HIGHWAY:</strong> Tormenta nocturna en curso. Viento cruzado y tráfico hostil masivo a 250+ KT.
+                    <strong style="color: var(--accent);">PACIFIC HIGHWAY:</strong> Vuelo aéreo a 250+ KT. Esquiva tráfico hostil, activa escudos y alcanza la máxima distancia en pareja.
                   </div>
                   <div class="stat-chip-row">
                     <div class="stat-chip">
-                      <span class="stat-chip-label">TICK RATE</span>
-                      <span class="stat-chip-value" style="color: var(--phosphor);">60 HZ SYNC</span>
+                      <span class="stat-chip-label">SISTEMA</span>
+                      <span class="stat-chip-value" style="color: var(--phosphor);">VUELO DÚO</span>
                     </div>
                     <div class="stat-chip">
                       <span class="stat-chip-label">BLINDAJE</span>
@@ -1029,7 +1094,7 @@
                       <span class="stat-chip-value" style="color: #ffb703;">ESCUDO ION</span>
                     </div>
                     <div class="stat-chip">
-                      <span class="stat-chip-label">SOBREMARCHA</span>
+                      <span class="stat-chip-label">TURBO</span>
                       <span class="stat-chip-value" style="color: #ff0055;">MACH 2.0</span>
                     </div>
                   </div>
@@ -1043,17 +1108,17 @@
 
                 <!-- Hero Launch CTA Action Button -->
                 <button id="btn-start-match" class="btn btn-primary btn-launch-hero">
-                  <span>DESPLEGAR INTERCEPTOR // INICIAR MISIÓN</span>
-                  <span class="launch-hotkey-hint">⚡ [PRESIONA ESPACIO O HAZ CLIC PARA DESPEGAR]</span>
+                  <span>🚀 PREPARAR DESPEGUE // VERIFICAR TRIPULACIÓN</span>
+                  <span class="launch-hotkey-hint">⚡ [CONFIRMA TUS DATOS ANTES DE SALIR A PISTA]</span>
                 </button>
               </div>
             </div>
           </div>
 
-          <!-- TAB 2: TORNEO OFICIAL -->
+          <!-- TAB 2: 02 TORNEO OFICIAL ($10 USD) -->
           <div id="hangar-tab-tournament" class="hangar-panel">
             <div class="hangar-tournament-split">
-              <!-- Left Column: Tournament Telemetry & Podium -->
+              <!-- Left Column: Tournament Telemetry & Rules -->
               <div class="hangar-col">
                 <div class="section-box" style="border: 1px solid var(--accent); background: rgba(14, 25, 42, 0.9);">
                   <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -1061,7 +1126,7 @@
                     <span id="tourney-status-pill" class="status-badge status-online">REGISTRO ABIERTO</span>
                   </div>
                   <p style="font-size: 10px; color: var(--text-muted); line-height: 1.45; margin-top: 4px;">
-                    Compitan en pareja a máxima velocidad. El <strong>60%</strong> del pozo se entrega al Top 3 y el <strong>15%</strong> se dona a alimento y medicina animal.
+                    Compitan en pareja por el podio. El <strong>60%</strong> del pozo se reparte al Top 3 y el <strong>15%</strong> se dona a refugios y rescate animal.
                   </p>
 
                   <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin: 10px 0;">
@@ -1085,39 +1150,57 @@
                     <span>🥉 3º (10.01%): <strong id="tourney-podium-3" style="color: #cd7f32;">$0.00</strong></span>
                   </div>
 
-                  <div style="font-size: 9px; color: var(--text-muted); margin-top: 8px; display: flex; align-items: center; gap: 6px;">
-                    <span>🛡️ SERVIDOR AUTORITATIVO 60 HZ &bull; FIRMA PAYPHONE HMAC-SHA256 &bull; ANTI-CHEAT ACTIVO</span>
+                  <!-- How Tournament Works -->
+                  <div style="margin-top: 10px; padding: 8px 10px; background: rgba(0,0,0,0.3); border-radius: 4px; border-left: 2px solid var(--phosphor);">
+                    <div style="font-size: 10px; font-weight: 700; color: var(--phosphor); margin-bottom: 4px;">¿CÓMO FUNCIONA EL TORNEO?</div>
+                    <ol style="font-size: 9.5px; color: var(--text-muted); line-height: 1.5; padding-left: 14px;">
+                      <li>Practiquen gratis todas las veces que quieran en el <strong>Paso 01</strong>.</li>
+                      <li>Inscriban a la pareja por <strong>$10 USD</strong> para recibir su <strong>Pase de Torneo</strong> único.</li>
+                      <li>Compartan el código de Pase con su copiloto en cualquier navegador.</li>
+                      <li>Las partidas con Pase activo compiten en la <strong>Clasificación Oficial</strong> por el podio.</li>
+                    </ol>
                   </div>
                 </div>
               </div>
 
-              <!-- Right Column: Registration & Payment Gateway -->
+              <!-- Right Column: Registration & Redeem Pass Box -->
               <div class="hangar-col">
+                <!-- Box 1: Register with Payphone -->
                 <div class="section-box" style="background: rgba(8, 16, 28, 0.88);">
-                  <span class="section-title">INSCRIPCIÓN DE PAREJA EN PASARELA</span>
+                  <span class="section-title">INSCRIPCIÓN DE PAREJA ($10.00 USD)</span>
                   <p style="font-size: 10px; color: var(--text-muted); line-height: 1.4; margin-top: 2px;">
-                    Ingresa el código de referido del creador o streamer para atribución de comisiones directas:
+                    Ingresa tus datos para generar tu enlace seguro de pago en Payphone:
                   </p>
                   <div class="input-row" style="margin-top: 6px;">
-                    <input id="tourney-referral-input" type="text" placeholder="CÓDIGO REFERIDO (OPCIONAL)" maxlength="30" />
+                    <input id="tourney-referral-input" type="text" placeholder="CÓDIGO DE REFERIDO (OPCIONAL)" maxlength="30" />
                     <input id="tourney-phone-input" type="text" placeholder="TELÉFONO O CUENTA PAYPHONE" maxlength="40" />
                   </div>
 
-                  <div style="display: flex; gap: 6px; margin-top: 8px;">
-                    <button id="btn-tourney-pay" class="btn" style="flex: 2; background: linear-gradient(90deg, #ff8800, #ffb703); color: #020509; font-weight: 800; padding: 11px;">
-                      💳 INSCRIBIR ($10.00 USD PAYPHONE)
-                    </button>
-                    <button id="btn-tourney-simulate-pay" class="btn" style="flex: 1; border-color: var(--cyan); font-size: 9px;" title="Simular pasarela Payphone para testing rápido">
-                      🧪 SANDBOX PAY
+                  <button id="btn-tourney-pay" class="btn btn-primary" style="margin-top: 8px; width: 100%; font-size: 12px; padding: 12px;">
+                    💳 INSCRIBIR PAREJA ($10.00 USD PAYPHONE)
+                  </button>
+                  <div id="tourney-feedback" style="font-size: 10px; color: var(--phosphor); text-align: center; min-height: 16px; margin-top: 6px;"></div>
+                </div>
+
+                <!-- Box 2: Redeem existing pass or re-enter -->
+                <div class="section-box" style="background: rgba(4, 10, 20, 0.9); border: 1px solid rgba(0, 240, 255, 0.3);">
+                  <span class="section-title" style="color: var(--cyan);">🔑 ¿YA PAGASTE O TIENES UN PASE?</span>
+                  <p style="font-size: 10px; color: var(--text-muted); line-height: 1.4;">
+                    Si pagaste desde tu móvil o tu copiloto te envió un código de pase, ingrésalo aquí para activar tu torneo:
+                  </p>
+                  <div class="input-row" style="margin-top: 6px;">
+                    <input id="tourney-pass-redeem-input" type="text" placeholder="EJ: PS-1728... O ID DE PAGO" maxlength="60" />
+                    <button id="btn-redeem-pass" class="btn" style="border-color: var(--cyan); color: var(--cyan); font-weight: 700;">
+                      ACTIVAR PASE
                     </button>
                   </div>
-                  <div id="tourney-feedback" style="font-size: 10px; color: var(--phosphor); text-align: center; min-height: 16px; margin-top: 6px;"></div>
+                  <div id="redeem-feedback" style="font-size: 10px; min-height: 14px; margin-top: 4px;"></div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- TAB 3: CHASIS & ARMERÍA -->
+          <!-- TAB 3: 03 NAVE & ARMERÍA -->
           <div id="hangar-tab-chassis" class="hangar-panel">
             <div class="hangar-chassis-split">
               <!-- Left Column: Customization Selectors -->
@@ -1150,6 +1233,10 @@
                       </select>
                     </div>
                   </div>
+
+                  <button id="btn-save-loadout" class="btn btn-primary" style="margin-top: 10px; width: 100%;">
+                    💾 CONFIRMAR Y APLICAR EQUIPAMIENTO
+                  </button>
                 </div>
               </div>
 
@@ -1180,13 +1267,21 @@
             </div>
           </div>
 
-          <!-- TAB 4: SALÓN DE LA FAMA (LEADERBOARD) -->
+          <!-- TAB 4: 04 SALÓN DE LA FAMA (LEADERBOARD) -->
           <div id="hangar-tab-leaderboard" class="hangar-panel">
             <div class="section-box">
               <div style="display: flex; justify-content: space-between; align-items: center;">
                 <span class="section-title">REGISTRO GLOBAL DE ESCUADRONES</span>
-                <span style="font-size: 9px; color: var(--text-muted);">CLASIFICACIÓN OFICIAL AUTORITATIVA</span>
+                <span style="font-size: 9px; color: var(--text-muted);">CLASIFICACIÓN OFICIAL EN VIVO</span>
               </div>
+
+              <!-- Filter Buttons -->
+              <div class="input-row" style="margin-top: 8px;">
+                <button id="btn-lb-filter-all" class="btn active" style="flex: 1; font-size: 9px;">TODOS LOS VUELOS</button>
+                <button id="btn-lb-filter-tourney" class="btn" style="flex: 1; font-size: 9px; border-color: var(--accent);">🏆 PODIO TORNEO OFICIAL</button>
+                <button id="btn-lb-filter-practice" class="btn" style="flex: 1; font-size: 9px; border-color: var(--phosphor);">🧪 RÉCORDS DE PRÁCTICA</button>
+              </div>
+
               <table class="leaderboard-table" style="margin-top: 8px;">
                 <thead>
                   <tr>
@@ -1194,7 +1289,7 @@
                     <th>TRIPULACIÓN</th>
                     <th>SCORE</th>
                     <th>TELEMETRÍA</th>
-                    <th>SECTOR</th>
+                    <th>MODO</th>
                   </tr>
                 </thead>
                 <tbody id="leaderboard-body"></tbody>
@@ -1202,12 +1297,171 @@
             </div>
           </div>
 
-          <!-- Discrete Footer with Link to Admin Portal -->
+          <!-- Clean User Footer (No raw links or tech jargon) -->
           <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; margin-top: 4px;">
-            <span style="font-size: 10px; color: var(--text-muted);">PACIFIC SPEED: OVERDRIVE &bull; v1.0.0 &bull; 60 HZ SERVER ENGINE</span>
-            <a href="/admin" target="_blank" class="footer-portal-link">
-              <span>⚙️ Consola de Administración (/admin) &rarr;</span>
-            </a>
+            <span style="font-size: 10px; color: var(--text-muted);">PACIFIC SPEED: OVERDRIVE &bull; Competición Táctica 2026</span>
+            <span style="font-size: 10px; color: var(--cyan); font-weight: 700;">🐾 15% Donado a Rescate y Alimento Animal</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- SUB-MODAL 1: Confirmación de Despegue y Tripulación -->
+      <section id="modal-confirm-crew" class="submodal-overlay hidden">
+        <div class="submodal-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.12); padding-bottom: 8px;">
+            <h2 class="game-title" style="font-size: 16px;">🚀 VERIFICACIÓN PRE-VUELO</h2>
+            <button id="btn-close-confirm-crew" class="btn" style="padding: 3px 8px;">✕</button>
+          </div>
+          <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">
+            Confirma la asignación de tu tripulación y modo antes de encender motores:
+          </p>
+          <div class="section-box" style="background: rgba(3, 8, 16, 0.85); gap: 8px;">
+            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+              <span style="color: var(--text-muted);">TU CALLSIGN:</span>
+              <strong id="confirm-pilot-name" style="color: #ffffff;">PILOT</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+              <span style="color: var(--text-muted);">ROL EN CABINA:</span>
+              <strong id="confirm-pilot-role" style="color: var(--accent);">PILOTO</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+              <span style="color: var(--text-muted);">SALA / ESCUADRÓN:</span>
+              <strong id="confirm-room-code" style="color: var(--cyan);">NEURAL-01</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+              <span style="color: var(--text-muted);">COPILOTO:</span>
+              <strong id="confirm-copilot-status" style="color: var(--phosphor);">CONECTADO</strong>
+            </div>
+            <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px; display: flex; justify-content: space-between; font-size: 11px;">
+              <span style="color: var(--text-muted);">TIPO DE VUELO:</span>
+              <strong id="confirm-flight-mode" style="color: var(--phosphor);">PRÁCTICA LIBRE (GRATIS)</strong>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+            <button id="btn-execute-launch" class="btn btn-primary" style="padding: 14px; font-size: 13px;">
+              🚀 CONFIRMAR Y DESPEGAR AHORA
+            </button>
+            <button id="btn-crew-goto-tourney" class="btn" style="border-color: var(--accent); color: var(--accent); padding: 9px; font-size: 10px;">
+              🏆 CAMBIAR A TORNEO OFICIAL ($10 USD)
+            </button>
+            <button id="btn-cancel-launch" class="btn" style="padding: 8px; font-size: 10px;">
+              ✕ VOLVER AL HANGAR
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SUB-MODAL 2: Confirmación de Inscripción al Torneo Oficial -->
+      <section id="modal-confirm-tourney" class="submodal-overlay hidden">
+        <div class="submodal-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.12); padding-bottom: 8px;">
+            <h2 class="game-title" style="font-size: 16px; color: var(--accent);">🏆 CONFIRMAR INSCRIPCIÓN AL TORNEO</h2>
+            <button id="btn-close-confirm-tourney" class="btn" style="padding: 3px 8px;">✕</button>
+          </div>
+          <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">
+            Revisa los detalles de tu registro antes de abrir la pasarela de pago Payphone:
+          </p>
+          <div class="section-box" style="background: rgba(3, 8, 16, 0.85); gap: 7px;">
+            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+              <span style="color: var(--text-muted);">PILOTO TITULAR:</span>
+              <strong id="confirm-tourney-pilot" style="color: #ffffff;">PILOT</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+              <span style="color: var(--text-muted);">COPILOTO:</span>
+              <strong id="confirm-tourney-copilot" style="color: var(--cyan);">CO-PILOTO</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+              <span style="color: var(--text-muted);">CÓDIGO DE REFERIDO:</span>
+              <strong id="confirm-tourney-ref" style="color: var(--text-primary);">NINGUNO</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+              <span style="color: var(--text-muted);">TELÉFONO PAYPHONE:</span>
+              <strong id="confirm-tourney-phone" style="color: var(--text-primary);">POR DEFECTO</strong>
+            </div>
+            <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
+              <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 800; color: #ffb703;">
+                <span>TOTAL A PAGAR:</span>
+                <span>$10.00 USD</span>
+              </div>
+              <div style="font-size: 9.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">
+                &bull; $6.00 (60%) al Pozo de Premios Top 3<br>
+                &bull; $1.50 (15%) Donación al Refugio Animal<br>
+                &bull; $2.50 (25%) Operaciones y Pasarela
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <button id="btn-execute-tourney-pay" class="btn btn-primary" style="padding: 13px; font-size: 12px;">
+              💳 PROCEDER AL PAGO CON PAYPHONE ($10 USD)
+            </button>
+            <button id="btn-open-redeem-from-tourney" class="btn" style="border-color: var(--cyan); color: var(--cyan); padding: 9px; font-size: 10px;">
+              🔑 YA PAGUÉ / INGRESAR MI PASE DE TORNEO
+            </button>
+            <button id="btn-cancel-confirm-tourney" class="btn" style="padding: 8px; font-size: 10px;">
+              ✕ CANCELAR
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SUB-MODAL 3: Canjear o Reingresar Pase de Torneo -->
+      <section id="modal-redeem-pass-view" class="submodal-overlay hidden">
+        <div class="submodal-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.12); padding-bottom: 8px;">
+            <h2 class="game-title" style="font-size: 16px; color: var(--cyan);">🔑 ACTIVAR PASE DE TORNEO</h2>
+            <button id="btn-close-redeem-modal" class="btn" style="padding: 3px 8px;">✕</button>
+          </div>
+          <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">
+            Ingresa tu código de Pase Oficial (`PS-XXXX...`) o el ID de transacción de Payphone para verificar tu inscripción:
+          </p>
+          <div class="input-row" style="margin-top: 4px;">
+            <input id="modal-pass-input" type="text" placeholder="EJ: PS-1728... O ID PAYPHONE" maxlength="60" style="padding: 10px; font-size: 12px;" />
+          </div>
+          <div id="modal-redeem-feedback" style="font-size: 10px; min-height: 16px;"></div>
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;">
+            <button id="btn-execute-modal-redeem" class="btn btn-primary" style="padding: 12px; font-size: 12px;">
+              ✓ VALIDAR Y VINCULAR PASE A ESTA SALA
+            </button>
+            <button id="btn-cancel-redeem-modal" class="btn" style="padding: 8px; font-size: 10px;">
+              ✕ CANCELAR
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SUB-MODAL 4: Confirmación de Armería y Equipamiento -->
+      <section id="modal-confirm-loadout" class="submodal-overlay hidden">
+        <div class="submodal-card">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.12); padding-bottom: 8px;">
+            <h2 class="game-title" style="font-size: 16px;">🛠️ EQUIPAMIENTO DE CABINA</h2>
+            <button id="btn-close-confirm-loadout" class="btn" style="padding: 3px 8px;">✕</button>
+          </div>
+          <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">
+            Configuración personalizada lista para calibrar en los sistemas del interceptor:
+          </p>
+          <div class="section-box" style="background: rgba(3, 8, 16, 0.85); gap: 8px;">
+            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+              <span style="color: var(--text-muted);">BLINDAJE Y PINTURA:</span>
+              <strong id="confirm-loadout-paint" style="color: var(--accent);">Crimson Raptor</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+              <span style="color: var(--text-muted);">ESTELA DE TURBO:</span>
+              <strong id="confirm-loadout-trail" style="color: var(--cyan);">Ion Cyan</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+              <span style="color: var(--text-muted);">PALETA DE AVIÓNICA:</span>
+              <strong id="confirm-loadout-theme" style="color: var(--phosphor);">Mil-Spec Amber</strong>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+            <button id="btn-execute-save-loadout" class="btn btn-primary" style="padding: 12px; font-size: 12px;">
+              ✓ APLICAR Y CALIBRAR AHORA
+            </button>
+            <button id="btn-cancel-confirm-loadout" class="btn" style="padding: 8px; font-size: 10px;">
+              ✕ VOLVER
+            </button>
           </div>
         </div>
       </section>

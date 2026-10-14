@@ -1,6 +1,7 @@
 import type { WebSocket } from 'ws';
 import { GameSimulation } from '../shared/simulation.js';
 import { antiCheatEngine } from './antiCheat.js';
+import { dbProvider } from './db.js';
 import type {
   ClientInputPayload,
   CosmeticLoadout,
@@ -23,6 +24,8 @@ interface GameRoom {
   simulation: GameSimulation;
   lastStatus: 'lobby' | 'running' | 'ad_revive_prompt' | 'gameover';
   scoreRecorded: boolean;
+  isTournamentVerified?: boolean;
+  tournamentPass?: string;
 }
 
 export const COMMS_PRESET_MAP: Record<TacticalCommsPreset, { code: string; label: string }> = {
@@ -355,6 +358,34 @@ export class RoomManager {
     }
   }
 
+  public setRoomTournamentPass(roomCode: string, passCode: string, verified: boolean = true): boolean {
+    const room = this.rooms.get(roomCode.toUpperCase());
+    if (!room) return false;
+    room.isTournamentVerified = verified;
+    room.tournamentPass = passCode.trim().toUpperCase();
+    this.broadcastToRoom(room, {
+      type: 'lobby_update',
+      lobby: this.buildLobbyState(room)
+    });
+    return true;
+  }
+
+  public async handleSetTournamentPass(ws: WebSocket, passCode: string): Promise<void> {
+    const meta = this.clientToRoom.get(ws);
+    if (!meta) return;
+    const room = this.rooms.get(meta.roomCode);
+    if (!room) return;
+    const check = await dbProvider.verifyTournamentPass(passCode);
+    if (check.valid) {
+      room.isTournamentVerified = true;
+      room.tournamentPass = passCode.trim().toUpperCase();
+      this.broadcastToRoom(room, {
+        type: 'lobby_update',
+        lobby: this.buildLobbyState(room)
+      });
+    }
+  }
+
   private recordRoomScore(
     room: GameRoom,
     state: ReturnType<GameSimulation['getWorldStatePayload']>
@@ -371,7 +402,8 @@ export class RoomManager {
       total_score: state.world_state.total_score,
       distance_traveled: state.world_state.distance_traveled,
       survival_time: state.world_state.survival_time,
-      region: 'PACIFIC-NET'
+      region: 'PACIFIC-NET',
+      is_tournament: Boolean(room.isTournamentVerified)
     });
 
     this.broadcastToRoom(room, {
@@ -384,6 +416,8 @@ export class RoomManager {
     return {
       room_code: room.code,
       status: room.simulation.getStatus(),
+      is_tournament_verified: Boolean(room.isTournamentVerified),
+      tournament_pass: room.tournamentPass,
       players: Array.from(room.players.values()).map((p) => ({
         player_id: p.player_id,
         name: p.name,

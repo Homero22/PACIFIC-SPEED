@@ -43,6 +43,11 @@ class PacificSpeedClientApp {
   private currentWorldState: ServerWorldStatePayload;
   private lobbyState: RoomLobbyState | null = null;
   private leaderboard: LeaderboardEntry[] = [];
+  private leaderboardFilter: 'all' | 'tourney' | 'practice' = 'all';
+
+  // Tournament Pass & Verification State
+  private tournamentPass: string | null = null;
+  private isTournamentVerified = false;
 
   // Tournament Public Telemetry State
   private activeTourneyStatus: TournamentTelemetryStatus | null = null;
@@ -133,6 +138,16 @@ class PacificSpeedClientApp {
       document.querySelectorAll('.hangar-panel').forEach((p) => p.classList.remove('active'));
       document.querySelector('[data-hangar-tab="hangar-tab-tournament"]')?.classList.add('active');
       document.getElementById('hangar-tab-tournament')?.classList.add('active');
+    }
+
+    // Check for Tournament Pass in URL or localStorage
+    const urlPass = params.get('pass');
+    const savedPass = localStorage.getItem('ps_tournament_pass');
+    const candidatePass = urlPass || (paymentStatus === 'success' && paymentTx ? paymentTx : null) || savedPass;
+    if (candidatePass) {
+      void this.verifyTournamentPass(candidatePass.trim());
+    } else {
+      this.updateModeBanner();
     }
 
     const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
@@ -334,13 +349,56 @@ class PacificSpeedClientApp {
       });
     }
 
-    // Start Match & Instant Rematch
+    // Banner Quick Action (Share pass or Switch to Tournament)
+    document.getElementById('btn-banner-action')?.addEventListener('click', async () => {
+      this.audio.init();
+      if (this.isTournamentVerified && this.tournamentPass) {
+        const passUrl = `${window.location.origin}/?pass=${encodeURIComponent(this.tournamentPass)}&room=${encodeURIComponent(this.roomCode)}`;
+        try {
+          await navigator.clipboard.writeText(passUrl);
+          const btn = document.getElementById('btn-banner-action');
+          if (btn) {
+            const prev = btn.textContent;
+            btn.textContent = '✓ ENLACE DE TORNEO COPIADO';
+            setTimeout(() => {
+              btn.textContent = prev;
+            }, 2000);
+          }
+        } catch {
+          prompt('Copia este enlace para tu copiloto:', passUrl);
+        }
+      } else {
+        this.switchHangarTab('hangar-tab-tournament');
+      }
+    });
+
+    // STEP 01: Pre-Flight Verification Modal Trigger
     document.getElementById('btn-start-match')?.addEventListener('click', () => {
       this.audio.init();
+      this.openLaunchConfirmationModal();
+    });
+
+    // Step 01 Modal Buttons
+    document.getElementById('btn-execute-launch')?.addEventListener('click', () => {
+      this.closeModal('modal-confirm-crew');
       this.audio.playNarratorCue('athena_online', true);
       this.triggerStartOrRematch();
     });
 
+    document.getElementById('btn-crew-goto-tourney')?.addEventListener('click', () => {
+      this.closeModal('modal-confirm-crew');
+      this.switchHangarTab('hangar-tab-tournament');
+    });
+
+    document.getElementById('btn-close-confirm-crew')?.addEventListener('click', () => {
+      this.closeModal('modal-confirm-crew');
+    });
+
+    document.getElementById('btn-cancel-launch')?.addEventListener('click', () => {
+      this.closeModal('modal-confirm-crew');
+    });
+
+    // Instant Rematch & Back to Lobby
     document.getElementById('btn-instant-rematch')?.addEventListener('click', () => {
       this.audio.init();
       this.audio.playNarratorCue('athena_online', true);
@@ -360,7 +418,7 @@ class PacificSpeedClientApp {
       }
     });
 
-    // Rewarded Ad 5s Placeholder Hook
+    // Rewarded Ad 5s Emergency Field Repair Hook
     document.getElementById('btn-watch-ad')?.addEventListener('click', () => {
       this.audio.init();
       this.startRewardedAdCountdown();
@@ -403,65 +461,99 @@ class PacificSpeedClientApp {
       btn.addEventListener('click', () => {
         this.audio.init();
         const tabId = btn.dataset.hangarTab;
-        document.querySelectorAll('[data-hangar-tab]').forEach((b) => b.classList.remove('active'));
-        document.querySelectorAll('.hangar-panel').forEach((p) => p.classList.remove('active'));
-        btn.classList.add('active');
-        if (tabId) {
-          document.getElementById(tabId)?.classList.add('active');
-        }
+        if (tabId) this.switchHangarTab(tabId);
       });
     });
 
-    // Tournament & Payphone Sandbox UI Handlers
-    document.getElementById('btn-tourney-simulate-pay')?.addEventListener('click', async () => {
+    // STEP 02: Tournament Payment Confirmation Modal Trigger
+    document.getElementById('btn-tourney-pay')?.addEventListener('click', () => {
       this.audio.init();
-      await this.handleSimulatePayphonePayment();
+      this.openTourneyConfirmationModal();
     });
 
-    document.getElementById('btn-tourney-pay')?.addEventListener('click', async () => {
+    // Step 02 Modal Buttons
+    document.getElementById('btn-execute-tourney-pay')?.addEventListener('click', async () => {
+      this.closeModal('modal-confirm-tourney');
+      await this.executePayphoneLinkCreation();
+    });
+
+    document.getElementById('btn-open-redeem-from-tourney')?.addEventListener('click', () => {
+      this.closeModal('modal-confirm-tourney');
+      this.openModal('modal-redeem-pass-view');
+    });
+
+    document.getElementById('btn-close-confirm-tourney')?.addEventListener('click', () => {
+      this.closeModal('modal-confirm-tourney');
+    });
+
+    document.getElementById('btn-cancel-confirm-tourney')?.addEventListener('click', () => {
+      this.closeModal('modal-confirm-tourney');
+    });
+
+    // Redeem Pass Logic (Tab 2 Inline Box & Dedicated Sub-Modal)
+    document.getElementById('btn-redeem-pass')?.addEventListener('click', async () => {
       this.audio.init();
-      const feedback = document.getElementById('tourney-feedback');
-      const refInput = document.getElementById('tourney-referral-input') as HTMLInputElement | null;
-      const phoneInput = document.getElementById('tourney-phone-input') as HTMLInputElement | null;
-
-      if (feedback) {
-        feedback.textContent = 'CONECTANDO CON PASARELA PAYPHONE...';
-        feedback.style.color = 'var(--accent)';
+      const input = document.getElementById('tourney-pass-redeem-input') as HTMLInputElement | null;
+      const feedback = document.getElementById('redeem-feedback');
+      if (input && feedback) {
+        await this.handlePassRedemption(input.value, feedback);
       }
+    });
 
-      try {
-        const res = await fetch('/api/payphone/create-link', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            driver_name: this.pilotName || 'PILOT_A',
-            navigator_name:
-              this.lobbyState?.players.find((p) => p.role === 'navigator')?.name ||
-              `CO_PILOT_${Math.floor(10 + Math.random() * 89)}`,
-            referral_code: refInput?.value.trim().toUpperCase() || undefined,
-            phone: phoneInput?.value.trim() || undefined
-          })
-        });
-
-        const data = await res.json();
-        const checkoutUrl = data.payWithCard || data.payUrl || data.payWithPayPhone;
-        if (data.success && checkoutUrl) {
-          if (feedback) {
-            feedback.innerHTML = `✓ ENLACE DE PAGO GENERADO // <a href="${checkoutUrl}" target="_blank" style="color:var(--phosphor);font-weight:700;text-decoration:underline;">ABRIR COBRO PAYPHONE ($${data.entry_fee_usd.toFixed(2)} USD)</a>`;
-          }
-          window.open(checkoutUrl, '_blank');
-        } else {
-          if (feedback) {
-            feedback.innerHTML = `⚡ <strong>PASARELA PAYPHONE:</strong> ${data.message || 'Configura PAYPHONE_TOKEN en variables de entorno para cobros reales en vivo.'} <br><em>Consejo: Puedes usar el botón <strong>SANDBOX PAY</strong> para probar la acreditación completa en vivo.</em>`;
-            feedback.style.color = 'var(--accent)';
-          }
-        }
-      } catch (err: any) {
-        if (feedback) {
-          feedback.textContent = `Error conectando con la pasarela: ${err?.message || 'Fallo de red'}`;
-          feedback.style.color = 'var(--danger)';
+    document.getElementById('btn-execute-modal-redeem')?.addEventListener('click', async () => {
+      this.audio.init();
+      const input = document.getElementById('modal-pass-input') as HTMLInputElement | null;
+      const feedback = document.getElementById('modal-redeem-feedback');
+      if (input && feedback) {
+        const ok = await this.handlePassRedemption(input.value, feedback);
+        if (ok) {
+          setTimeout(() => this.closeModal('modal-redeem-pass-view'), 1500);
         }
       }
+    });
+
+    document.getElementById('btn-close-redeem-modal')?.addEventListener('click', () => {
+      this.closeModal('modal-redeem-pass-view');
+    });
+
+    document.getElementById('btn-cancel-redeem-modal')?.addEventListener('click', () => {
+      this.closeModal('modal-redeem-pass-view');
+    });
+
+    // STEP 03: Armory Loadout Confirmation
+    document.getElementById('btn-save-loadout')?.addEventListener('click', () => {
+      this.audio.init();
+      this.openLoadoutConfirmationModal();
+    });
+
+    document.getElementById('btn-execute-save-loadout')?.addEventListener('click', () => {
+      this.saveCosmetics();
+      this.closeModal('modal-confirm-loadout');
+      this.audio.playNarratorCue('athena_online', false);
+    });
+
+    document.getElementById('btn-close-confirm-loadout')?.addEventListener('click', () => {
+      this.closeModal('modal-confirm-loadout');
+    });
+
+    document.getElementById('btn-cancel-confirm-loadout')?.addEventListener('click', () => {
+      this.closeModal('modal-confirm-loadout');
+    });
+
+    // STEP 04: Leaderboard Filter Controls
+    document.getElementById('btn-lb-filter-all')?.addEventListener('click', () => {
+      this.audio.init();
+      this.setLeaderboardFilter('all');
+    });
+
+    document.getElementById('btn-lb-filter-tourney')?.addEventListener('click', () => {
+      this.audio.init();
+      this.setLeaderboardFilter('tourney');
+    });
+
+    document.getElementById('btn-lb-filter-practice')?.addEventListener('click', () => {
+      this.audio.init();
+      this.setLeaderboardFilter('practice');
     });
 
     this.syncModeButtons();
@@ -700,6 +792,14 @@ class PacificSpeedClientApp {
         this.roomCode = msg.room_code;
         this.activeRole = msg.assigned_role;
         this.lobbyState = msg.lobby;
+        if (msg.lobby.is_tournament_verified && msg.lobby.tournament_pass) {
+          this.isTournamentVerified = true;
+          this.tournamentPass = msg.lobby.tournament_pass;
+          localStorage.setItem('ps_tournament_pass', msg.lobby.tournament_pass);
+          this.updateModeBanner();
+        } else if (this.isTournamentVerified && this.tournamentPass) {
+          this.sendWsMessage({ type: 'set_tournament_pass', pass_code: this.tournamentPass });
+        }
         this.updateUrlRoomParam(this.roomCode);
         this.syncRoleButtons();
         this.renderLobbyPlayers();
@@ -708,6 +808,12 @@ class PacificSpeedClientApp {
 
       case 'lobby_update':
         this.lobbyState = msg.lobby;
+        if (msg.lobby.is_tournament_verified && msg.lobby.tournament_pass) {
+          this.isTournamentVerified = true;
+          this.tournamentPass = msg.lobby.tournament_pass;
+          localStorage.setItem('ps_tournament_pass', msg.lobby.tournament_pass);
+          this.updateModeBanner();
+        }
         const me = msg.lobby.players.find((p) => p.player_id === this.playerId);
         if (me) {
           this.activeRole = me.role;
@@ -763,7 +869,8 @@ class PacificSpeedClientApp {
         total_score: ws.total_score,
         distance_traveled: ws.distance_traveled,
         survival_time: ws.survival_time,
-        region: 'LOCAL-SIM'
+        region: 'LOCAL-SIM',
+        is_tournament: this.isTournamentVerified
       })
     })
       .then((r) => r.json())
@@ -952,8 +1059,21 @@ class PacificSpeedClientApp {
   private renderLeaderboard(): void {
     const tbody = document.getElementById('leaderboard-body');
     if (!tbody) return;
-    tbody.innerHTML = this.leaderboard
-      .slice(0, 6)
+
+    let entries = this.leaderboard;
+    if (this.leaderboardFilter === 'tourney') {
+      entries = entries.filter((e) => Boolean(e.is_tournament));
+    } else if (this.leaderboardFilter === 'practice') {
+      entries = entries.filter((e) => !e.is_tournament);
+    }
+
+    if (entries.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:14px;">No hay registros para este filtro</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = entries
+      .slice(0, 10)
       .map(
         (entry, idx) => `
         <tr>
@@ -961,11 +1081,257 @@ class PacificSpeedClientApp {
           <td>${entry.driver_name} / ${entry.navigator_name}</td>
           <td style="color: var(--accent); font-weight: 700">${entry.total_score.toLocaleString()}</td>
           <td>${entry.distance_traveled.toFixed(0)}m (${entry.survival_time.toFixed(1)}s)</td>
-          <td>${entry.region}</td>
+          <td>${entry.is_tournament ? '<span style="color:var(--accent);font-weight:700;">🏆 TORNEO</span>' : '<span style="color:var(--phosphor);">🧪 PRÁCTICA</span>'}</td>
         </tr>
       `
       )
       .join('');
+  }
+
+  private setLeaderboardFilter(filter: 'all' | 'tourney' | 'practice'): void {
+    this.leaderboardFilter = filter;
+    document.getElementById('btn-lb-filter-all')?.classList.toggle('active', filter === 'all');
+    document.getElementById('btn-lb-filter-tourney')?.classList.toggle('active', filter === 'tourney');
+    document.getElementById('btn-lb-filter-practice')?.classList.toggle('active', filter === 'practice');
+    this.renderLeaderboard();
+  }
+
+  public openModal(modalId: string): void {
+    const el = document.getElementById(modalId);
+    if (el) el.classList.remove('hidden');
+  }
+
+  public closeModal(modalId: string): void {
+    const el = document.getElementById(modalId);
+    if (el) el.classList.add('hidden');
+  }
+
+  public switchHangarTab(tabId: string): void {
+    document.querySelectorAll('[data-hangar-tab]').forEach((b) => b.classList.remove('active'));
+    document.querySelectorAll('.hangar-panel').forEach((p) => p.classList.remove('active'));
+    const btn = document.querySelector(`[data-hangar-tab="${tabId}"]`);
+    btn?.classList.add('active');
+    document.getElementById(tabId)?.classList.add('active');
+  }
+
+  private openLaunchConfirmationModal(): void {
+    const pilotNameEl = document.getElementById('confirm-pilot-name');
+    const pilotRoleEl = document.getElementById('confirm-pilot-role');
+    const roomCodeEl = document.getElementById('confirm-room-code');
+    const copilotStatusEl = document.getElementById('confirm-copilot-status');
+    const flightModeEl = document.getElementById('confirm-flight-mode');
+    const execBtn = document.getElementById('btn-execute-launch');
+    const tourneyGotoBtn = document.getElementById('btn-crew-goto-tourney');
+
+    if (pilotNameEl) pilotNameEl.textContent = this.pilotName;
+    if (pilotRoleEl) {
+      pilotRoleEl.textContent = this.activeRole === 'driver' ? '🏎️ PILOTO // DRIVER' : '🛰️ NAVEGANTE // AWACS';
+    }
+    if (roomCodeEl) roomCodeEl.textContent = this.roomCode;
+
+    if (copilotStatusEl) {
+      const players = this.lobbyState?.players || [];
+      const copilot = players.find((p) => p.player_id !== this.playerId);
+      if (this.mode !== 'online') {
+        copilotStatusEl.textContent = this.mode === 'local_coop' ? 'OPERADOR LOCAL (TECLADO)' : 'IA AUXILIAR INTEGRADA';
+        copilotStatusEl.style.color = 'var(--cyan)';
+      } else if (copilot) {
+        copilotStatusEl.textContent = `CONECTADO // ${copilot.name} (${copilot.role === 'driver' ? 'DRIVER' : 'NAV'})`;
+        copilotStatusEl.style.color = 'var(--phosphor)';
+      } else {
+        copilotStatusEl.textContent = 'EN ESPERA (IA AUXILIAR LISTA PARA VUELO)';
+        copilotStatusEl.style.color = 'var(--accent)';
+      }
+    }
+
+    if (this.isTournamentVerified && this.tournamentPass) {
+      if (flightModeEl) {
+        flightModeEl.textContent = `🏆 TORNEO OFICIAL // PASE #${this.tournamentPass}`;
+        flightModeEl.style.color = '#ffb703';
+      }
+      if (execBtn) execBtn.textContent = '🏆 CONFIRMAR DESPEGUE (TORNEO OFICIAL)';
+      if (tourneyGotoBtn) tourneyGotoBtn.style.display = 'none';
+    } else {
+      if (flightModeEl) {
+        flightModeEl.textContent = '🧪 PRÁCTICA LIBRE (100% GRATIS)';
+        flightModeEl.style.color = 'var(--phosphor)';
+      }
+      if (execBtn) execBtn.textContent = '🚀 CONFIRMAR DESPEGUE (PRÁCTICA GRATIS)';
+      if (tourneyGotoBtn) tourneyGotoBtn.style.display = 'block';
+    }
+
+    this.openModal('modal-confirm-crew');
+  }
+
+  private openTourneyConfirmationModal(): void {
+    const pilotEl = document.getElementById('confirm-tourney-pilot');
+    const copilotEl = document.getElementById('confirm-tourney-copilot');
+    const refEl = document.getElementById('confirm-tourney-ref');
+    const phoneEl = document.getElementById('confirm-tourney-phone');
+
+    const refInput = document.getElementById('tourney-referral-input') as HTMLInputElement | null;
+    const phoneInput = document.getElementById('tourney-phone-input') as HTMLInputElement | null;
+
+    const players = this.lobbyState?.players || [];
+    const copilot = players.find((p) => p.player_id !== this.playerId);
+
+    if (pilotEl) pilotEl.textContent = this.pilotName;
+    if (copilotEl) copilotEl.textContent = copilot ? copilot.name : 'POR ASIGNAR EN SALA';
+    if (refEl) refEl.textContent = refInput?.value.trim().toUpperCase() || 'NINGUNO';
+    if (phoneEl) phoneEl.textContent = phoneInput?.value.trim() || 'POR DEFECTO';
+
+    this.openModal('modal-confirm-tourney');
+  }
+
+  private openLoadoutConfirmationModal(): void {
+    const paintSelect = document.getElementById('select-paint') as HTMLSelectElement | null;
+    const trailSelect = document.getElementById('select-trail') as HTMLSelectElement | null;
+    const themeSelect = document.getElementById('select-theme') as HTMLSelectElement | null;
+
+    const paintEl = document.getElementById('confirm-loadout-paint');
+    const trailEl = document.getElementById('confirm-loadout-trail');
+    const themeEl = document.getElementById('confirm-loadout-theme');
+
+    if (paintEl && paintSelect) {
+      paintEl.textContent = paintSelect.options[paintSelect.selectedIndex]?.text || this.cosmetics.paintJob;
+    }
+    if (trailEl && trailSelect) {
+      trailEl.textContent = trailSelect.options[trailSelect.selectedIndex]?.text || this.cosmetics.neonTrail;
+    }
+    if (themeEl && themeSelect) {
+      themeEl.textContent = themeSelect.options[themeSelect.selectedIndex]?.text || this.cosmetics.hudTheme;
+    }
+
+    this.openModal('modal-confirm-loadout');
+  }
+
+  private async handlePassRedemption(rawCode: string, feedbackEl: HTMLElement): Promise<boolean> {
+    const code = rawCode.trim().toUpperCase();
+    if (!code) {
+      feedbackEl.textContent = 'Por favor ingresa un código de pase o ID de transacción.';
+      feedbackEl.style.color = 'var(--danger)';
+      return false;
+    }
+
+    feedbackEl.textContent = 'Verificando pase con el servidor...';
+    feedbackEl.style.color = 'var(--accent)';
+
+    const ok = await this.verifyTournamentPass(code);
+    if (ok) {
+      feedbackEl.innerHTML = `✓ ¡PASE VÁLIDO! Código: <code>${code}</code> vinculado a esta sala.`;
+      feedbackEl.style.color = 'var(--phosphor)';
+      return true;
+    } else {
+      feedbackEl.textContent = '❌ Pase no encontrado o inválido. Revisa el código o realiza tu inscripción.';
+      feedbackEl.style.color = 'var(--danger)';
+      return false;
+    }
+  }
+
+  private async verifyTournamentPass(passCode: string): Promise<boolean> {
+    const cleanCode = passCode.trim().toUpperCase();
+    if (!cleanCode) return false;
+
+    try {
+      const res = await fetch('/api/tournament/verify-pass', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pass_code: cleanCode,
+          room_code: this.roomCode
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.valid) {
+        this.tournamentPass = cleanCode;
+        this.isTournamentVerified = true;
+        localStorage.setItem('ps_tournament_pass', cleanCode);
+        this.updateModeBanner();
+        this.sendWsMessage({ type: 'set_tournament_pass', pass_code: cleanCode });
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  private updateModeBanner(): void {
+    const banner = document.getElementById('mode-status-banner');
+    const bannerText = document.getElementById('mode-status-text');
+    const bannerBtn = document.getElementById('btn-banner-action');
+
+    if (this.isTournamentVerified && this.tournamentPass) {
+      if (banner) {
+        banner.className = 'tourney-badge-active';
+      }
+      if (bannerText) {
+        bannerText.innerHTML = `🏆 MODO ACTUAL: <strong>TORNEO OFICIAL ACTIVO</strong> // PASE: <code>${this.tournamentPass}</code>`;
+      }
+      if (bannerBtn) {
+        bannerBtn.textContent = '📋 Compartir Pase con Copiloto';
+        bannerBtn.style.color = '#ffb703';
+        bannerBtn.style.borderColor = 'var(--accent)';
+      }
+    } else {
+      if (banner) {
+        banner.className = 'practice-badge-active';
+      }
+      if (bannerText) {
+        bannerText.innerHTML = `🧪 MODO ACTUAL: <strong>PRÁCTICA LIBRE (100% GRATUITO)</strong>`;
+      }
+      if (bannerBtn) {
+        bannerBtn.textContent = '🏆 Inscribirse al Torneo ($10 USD) →';
+        bannerBtn.style.color = '#ffb703';
+        bannerBtn.style.borderColor = 'var(--accent)';
+      }
+    }
+  }
+
+  private async executePayphoneLinkCreation(): Promise<void> {
+    const feedback = document.getElementById('tourney-feedback');
+    const refInput = document.getElementById('tourney-referral-input') as HTMLInputElement | null;
+    const phoneInput = document.getElementById('tourney-phone-input') as HTMLInputElement | null;
+
+    if (feedback) {
+      feedback.textContent = 'GENERANDO ENLACE SEGURO DE PAGO PAYPHONE...';
+      feedback.style.color = 'var(--accent)';
+    }
+
+    try {
+      const res = await fetch('/api/payphone/create-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          driver_name: this.pilotName || 'PILOT_A',
+          navigator_name:
+            this.lobbyState?.players.find((p) => p.role === 'navigator')?.name ||
+            `CO_PILOT_${Math.floor(10 + Math.random() * 89)}`,
+          referral_code: refInput?.value.trim().toUpperCase() || undefined,
+          phone: phoneInput?.value.trim() || undefined
+        })
+      });
+
+      const data = await res.json();
+      const checkoutUrl = data.payWithCard || data.payUrl || data.payWithPayPhone;
+      if (data.success && checkoutUrl) {
+        if (feedback) {
+          feedback.innerHTML = `✓ ENLACE GENERADO // <a href="${checkoutUrl}" target="_blank" style="color:var(--phosphor);font-weight:700;text-decoration:underline;">ABRIR PASARELA PAYPHONE ($${data.entry_fee_usd.toFixed(2)} USD)</a>`;
+        }
+        window.open(checkoutUrl, '_blank');
+      } else {
+        if (feedback) {
+          feedback.innerHTML = `⚠️ <strong>AVISO:</strong> ${data.message || 'No se pudo generar el enlace de cobro. Revisa tus datos e intenta nuevamente.'}`;
+          feedback.style.color = 'var(--danger)';
+        }
+      }
+    } catch (err: any) {
+      if (feedback) {
+        feedback.textContent = `Error conectando con la pasarela: ${err?.message || 'Fallo de conexión'}`;
+        feedback.style.color = 'var(--danger)';
+      }
+    }
   }
 
   private updateOverlayVisibility(): void {
@@ -1023,57 +1389,6 @@ class PacificSpeedClientApp {
       }
     } catch {
       // Offline fallback
-    }
-  }
-
-  private async handleSimulatePayphonePayment(): Promise<void> {
-    const feedback = document.getElementById('tourney-feedback');
-    const refInput = document.getElementById('tourney-referral-input') as HTMLInputElement | null;
-    const phoneInput = document.getElementById('tourney-phone-input') as HTMLInputElement | null;
-
-    const referralCode = refInput?.value.trim().toUpperCase() || undefined;
-    const driverName = this.pilotName || 'PILOT_A';
-    const navigatorName =
-      this.lobbyState?.players.find((p) => p.role === 'navigator')?.name ||
-      `CO_PILOT_${Math.floor(10 + Math.random() * 89)}`;
-
-    if (feedback) {
-      feedback.textContent = 'PROCESANDO TRANSACCIÓN SIMULADA EN PASARELA PAYPHONE...';
-      feedback.style.color = 'var(--accent)';
-    }
-
-    try {
-      const res = await fetch('/api/tournament/simulate-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          driver_name: driverName,
-          navigator_name: navigatorName,
-          referral_code: referralCode,
-          phone: phoneInput?.value.trim() || undefined
-        })
-      });
-
-      const result = await res.json();
-      if (!res.ok || !result.success) {
-        if (feedback) {
-          feedback.textContent = `❌ ERROR EN PAGO: ${result.error || 'No se pudo procesar'}`;
-          feedback.style.color = 'var(--danger)';
-        }
-        return;
-      }
-
-      if (feedback) {
-        feedback.textContent = `✓ PAGO DE $10.00 USD APROBADO // TX: ${result.audit.payphone_transaction_id.slice(0, 16)}... (Pozo +$6.00 | Refugio +$1.50 | Margin +$1.92)`;
-        feedback.style.color = 'var(--phosphor)';
-      }
-
-      await this.fetchTournamentTelemetry();
-    } catch (err) {
-      if (feedback) {
-        feedback.textContent = `❌ FALLO DE RED: ${(err as Error).message}`;
-        feedback.style.color = 'var(--danger)';
-      }
     }
   }
 }

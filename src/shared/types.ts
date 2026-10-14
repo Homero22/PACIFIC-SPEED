@@ -169,6 +169,8 @@ export interface RoomLobbyState {
   room_code: string;
   players: RoomPlayerInfo[];
   status: 'lobby' | 'running' | 'ad_revive_prompt' | 'gameover';
+  is_tournament_verified?: boolean;
+  tournament_pass?: string;
 }
 
 export interface LeaderboardEntry {
@@ -181,6 +183,7 @@ export interface LeaderboardEntry {
   survival_time: number;
   region: string;
   created_at: string;
+  is_tournament?: boolean;
 }
 
 // -------------------------------------------------------------
@@ -366,6 +369,7 @@ export type WsClientMessage =
   | { type: 'update_cosmetics'; cosmetics: CosmeticLoadout }
   | { type: 'start_match' }
   | { type: 'instant_rematch' }
+  | { type: 'set_tournament_pass'; pass_code: string }
   | { type: 'watch_rewarded_ad' }
   | { type: 'decline_rewarded_ad' }
   | { type: 'send_comms'; preset: TacticalCommsPreset }

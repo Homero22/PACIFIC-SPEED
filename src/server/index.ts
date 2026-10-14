@@ -44,14 +44,18 @@ const roomManager = new RoomManager();
 // Initialize Database & Tournament Service
 void tournamentService.init();
 
-// Healthcheck endpoint for Railway deployment
+// Healthcheck endpoint for Railway deployment (strictly sanitized, no secret keys/tokens)
 app.get('/api/health', (_req, res) => {
+  const cfg = getPayphoneConfig();
   res.json({
     status: 'ok',
     game: 'PACIFIC SPEED: OVERDRIVE',
     version: '1.0.0',
     database: tournamentService.getDatabaseStatus(),
-    payphone: getPayphoneConfig(),
+    payphone: {
+      configured: cfg.isConfigured,
+      storeId: cfg.storeId ? 'SET' : 'NOT_SET'
+    },
     timestamp: new Date().toISOString()
   });
 });
@@ -125,6 +129,23 @@ app.post('/api/webhooks/payphone', async (req, res) => {
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, error: (err as Error).message });
+  }
+});
+
+app.post('/api/tournament/verify-pass', async (req, res) => {
+  try {
+    const { pass_code, room_code } = req.body || {};
+    if (!pass_code) {
+      res.status(400).json({ valid: false, message: 'Código de pase o ID de transacción requerido.' });
+      return;
+    }
+    const result = await dbProvider.verifyTournamentPass(String(pass_code));
+    if (result.valid && room_code) {
+      roomManager.setRoomTournamentPass(String(room_code), String(pass_code), true);
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ valid: false, message: (err as Error).message });
   }
 });
 
@@ -387,6 +408,11 @@ wss.on('connection', (ws) => {
           break;
         case 'player_input':
           roomManager.handlePlayerInput(ws, msg.payload);
+          break;
+        case 'set_tournament_pass':
+          if (msg.pass_code) {
+            void roomManager.handleSetTournamentPass(ws, msg.pass_code);
+          }
           break;
       }
     } catch (err) {
