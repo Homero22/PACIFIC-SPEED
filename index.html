@@ -12,15 +12,18 @@
     />
     <style>
       :root {
-        --bg-obsidian: #020509;
-        --panel-glass: rgba(7, 13, 22, 0.84);
+        --bg-obsidian: #020611;
+        --panel-glass: rgba(8, 17, 32, 0.94);
         --accent: #ffb703;
-        --accent-glow: rgba(255, 183, 3, 0.35);
+        --accent-glow: rgba(255, 183, 3, 0.4);
         --phosphor: #00ff9d;
+        --phosphor-glow: rgba(0, 255, 157, 0.35);
         --cyan: #00f0ff;
+        --cyan-glow: rgba(0, 240, 255, 0.35);
         --danger: #ff2a54;
-        --text-primary: #e6f2ff;
-        --text-muted: #8aa4c0;
+        --text-primary: #f8fafc;
+        --text-muted: #94a3b8;
+        --border-glass: rgba(255, 255, 255, 0.16);
         --font-display: 'Orbitron', sans-serif;
         --font-tactical: 'JetBrains Mono', monospace;
         --font-ui: 'Rajdhani', sans-serif;
@@ -28,15 +31,15 @@
 
       body[data-hud-theme='tactical_amber'] {
         --accent: #ffb703;
-        --accent-glow: rgba(255, 183, 3, 0.35);
+        --accent-glow: rgba(255, 183, 3, 0.4);
       }
       body[data-hud-theme='neural_green'] {
         --accent: #00ff9d;
-        --accent-glow: rgba(0, 255, 157, 0.35);
+        --accent-glow: rgba(0, 255, 157, 0.4);
       }
       body[data-hud-theme='abyssal_violet'] {
         --accent: #00f0ff;
-        --accent-glow: rgba(0, 240, 255, 0.35);
+        --accent-glow: rgba(0, 240, 255, 0.4);
       }
 
       * {
@@ -44,11 +47,28 @@
         margin: 0;
         padding: 0;
         user-select: none;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(0, 240, 255, 0.35) rgba(2, 6, 14, 0.7);
+      }
+
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: rgba(2, 6, 14, 0.7);
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(0, 240, 255, 0.35);
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--accent);
       }
 
       body {
         background-color: var(--bg-obsidian);
-        background-image: linear-gradient(rgba(2, 6, 12, 0.72), rgba(2, 5, 10, 0.92)),
+        background-image: linear-gradient(rgba(2, 6, 17, 0.76), rgba(2, 5, 14, 0.94)),
           url('/assets/hangar_hero.jpg');
         background-size: cover;
         background-position: center;
@@ -66,39 +86,39 @@
       #app-shell {
         position: relative;
         width: 100%;
-        max-width: 600px;
+        max-width: 640px;
         height: 100vh;
         display: flex;
         flex-direction: column;
-        background: rgba(2, 5, 10, 0.94);
-        border-left: 1px solid rgba(255, 183, 3, 0.25);
-        border-right: 1px solid rgba(255, 183, 3, 0.25);
+        background: rgba(3, 8, 18, 0.96);
+        border-left: 1.5px solid rgba(255, 183, 3, 0.3);
+        border-right: 1.5px solid rgba(255, 183, 3, 0.3);
         box-shadow: 0 0 65px rgba(0, 0, 0, 0.95);
         transition: all 0.25s ease;
       }
 
       body.tiktok-916-mode #app-shell {
-        max-width: 506px;
-        height: 900px;
+        max-width: 520px;
+        height: 920px;
         max-height: 96vh;
         border: 2px solid var(--accent);
-        border-radius: 12px;
+        border-radius: 14px;
         overflow: hidden;
-        box-shadow: 0 0 40px var(--accent-glow);
+        box-shadow: 0 0 45px var(--accent-glow);
       }
 
-      /* Top Stealth Fighter HUD */
+      /* Top Flight Telemetry HUD */
       .hud-top {
         position: absolute;
         top: 0;
         left: 0;
         right: 0;
         z-index: 15;
-        padding: 10px 14px;
-        background: linear-gradient(180deg, rgba(2, 6, 12, 0.96) 0%, rgba(2, 6, 12, 0) 100%);
+        padding: 12px 16px;
+        background: linear-gradient(180deg, rgba(3, 8, 18, 0.98) 0%, rgba(3, 8, 18, 0) 100%);
         display: flex;
         flex-direction: column;
-        gap: 6px;
+        gap: 8px;
         pointer-events: none;
       }
 
@@ -106,34 +126,36 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
       }
 
       .hud-interactive {
         pointer-events: auto;
         display: flex;
-        gap: 4px;
+        gap: 6px;
       }
 
       .metric-box {
-        background: rgba(6, 13, 24, 0.85);
-        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(8, 17, 32, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.16);
         border-left: 3px solid var(--accent);
-        padding: 4px 10px;
+        padding: 6px 12px;
         backdrop-filter: blur(8px);
-        clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%);
+        border-radius: 4px;
       }
 
       .metric-label {
-        font-size: 9px;
-        letter-spacing: 1px;
+        font-size: 11px;
+        letter-spacing: 0.8px;
         color: var(--text-muted);
         display: block;
+        font-weight: 700;
+        text-transform: uppercase;
       }
 
       .metric-value {
         font-family: var(--font-display);
-        font-size: 15px;
+        font-size: 18px;
         font-weight: 800;
         color: var(--accent);
       }
@@ -141,13 +163,14 @@
       .bars-row {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 10px;
+        gap: 12px;
       }
 
       .bar-container {
-        background: rgba(255, 255, 255, 0.07);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        height: 9px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        height: 11px;
+        border-radius: 3px;
         overflow: hidden;
         position: relative;
       }
@@ -167,22 +190,24 @@
       }
 
       .bar-label {
-        font-size: 9px;
+        font-size: 11px;
         letter-spacing: 0.5px;
         color: var(--text-muted);
         display: flex;
         justify-content: space-between;
-        margin-bottom: 2px;
+        margin-bottom: 3px;
+        font-weight: 600;
       }
 
       .role-banner {
-        font-size: 10px;
+        font-size: 12px;
         letter-spacing: 0.8px;
-        padding: 3px 8px;
-        background: rgba(0, 255, 157, 0.08);
-        border: 1px solid rgba(0, 255, 157, 0.3);
+        padding: 5px 10px;
+        background: rgba(0, 255, 157, 0.12);
+        border: 1px solid rgba(0, 255, 157, 0.4);
         color: var(--phosphor);
-        font-weight: 700;
+        font-weight: 800;
+        border-radius: 4px;
       }
 
       .overdrive-pill {
@@ -190,36 +215,39 @@
         color: #02050a;
         font-family: var(--font-display);
         font-weight: 900;
-        font-size: 10px;
-        padding: 3px 9px;
-        box-shadow: 0 0 15px rgba(255, 183, 3, 0.6);
+        font-size: 12px;
+        padding: 5px 12px;
+        border-radius: 4px;
+        box-shadow: 0 0 16px rgba(255, 183, 3, 0.6);
       }
 
-      /* Live Tactical Comms Strip (TikTok 9:16 Quick Reactions) */
+      /* Tactical Comms Strip */
       .comms-strip {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 5px;
+        gap: 6px;
         pointer-events: auto;
-        margin-top: 2px;
+        margin-top: 4px;
       }
 
       .comms-btn {
-        background: rgba(5, 12, 22, 0.82);
-        border: 1px solid rgba(0, 240, 255, 0.28);
+        background: rgba(7, 16, 30, 0.88);
+        border: 1px solid rgba(0, 240, 255, 0.35);
         color: var(--text-primary);
         font-family: var(--font-tactical);
-        font-size: 9px;
-        font-weight: 600;
-        padding: 4px 4px;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 6px 4px;
         cursor: pointer;
-        transition: all 0.14s ease;
+        border-radius: 4px;
+        transition: all 0.15s ease;
         text-align: center;
       }
 
       .comms-btn:hover {
         border-color: var(--accent);
-        background: rgba(255, 183, 3, 0.18);
+        background: rgba(255, 183, 3, 0.2);
+        color: #ffffff;
       }
 
       /* Canvas Wrapper */
@@ -243,9 +271,9 @@
       /* Bottom Touch Controls */
       .hud-bottom {
         position: absolute;
-        bottom: 10px;
-        left: 12px;
-        right: 12px;
+        bottom: 12px;
+        left: 14px;
+        right: 14px;
         z-index: 15;
         display: flex;
         justify-content: space-between;
@@ -254,11 +282,11 @@
       }
 
       .joystick-zone {
-        width: 104px;
-        height: 104px;
+        width: 110px;
+        height: 110px;
         border-radius: 50%;
-        border: 1.5px dashed rgba(255, 183, 3, 0.45);
-        background: rgba(4, 10, 18, 0.6);
+        border: 2px dashed rgba(255, 183, 3, 0.5);
+        background: rgba(4, 10, 20, 0.65);
         backdrop-filter: blur(4px);
         display: flex;
         align-items: center;
@@ -268,31 +296,32 @@
       }
 
       .joystick-knob {
-        width: 38px;
-        height: 38px;
+        width: 42px;
+        height: 42px;
         border-radius: 50%;
         background: radial-gradient(circle, #ffffff 0%, var(--accent) 70%);
-        box-shadow: 0 0 14px var(--accent);
+        box-shadow: 0 0 16px var(--accent);
       }
 
       .navigator-buttons {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 6px;
+        gap: 8px;
         pointer-events: auto;
       }
 
       .tac-btn {
-        background: rgba(6, 14, 26, 0.88);
-        border: 1px solid rgba(0, 240, 255, 0.45);
+        background: rgba(7, 16, 30, 0.92);
+        border: 1px solid rgba(0, 240, 255, 0.5);
         color: var(--text-primary);
         font-family: var(--font-tactical);
-        font-size: 10px;
-        font-weight: 700;
-        padding: 10px 10px;
+        font-size: 12px;
+        font-weight: 800;
+        padding: 12px 14px;
         cursor: pointer;
         backdrop-filter: blur(6px);
-        clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%);
+        border-radius: 6px;
+        transition: all 0.12s ease;
       }
 
       .tac-btn:active {
@@ -300,129 +329,133 @@
         color: #02050a;
       }
 
-      /* Modals with Realistic Hangar Glassmorphism */
+      /* Modals with Clean Glassmorphism & High Readability */
       .modal-overlay {
         position: fixed;
         inset: 0;
         z-index: 50;
         width: 100vw;
         height: 100vh;
-        background: linear-gradient(180deg, rgba(2, 6, 12, 0.72) 0%, rgba(2, 5, 10, 0.94) 100%),
+        background: linear-gradient(180deg, rgba(2, 6, 14, 0.8) 0%, rgba(2, 5, 12, 0.96) 100%),
           url('/assets/hangar_hero.jpg');
         background-size: cover;
         background-position: center;
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 16px;
+        padding: 18px;
         overflow-x: hidden;
         overflow-y: auto;
       }
 
       .modal-card {
         width: 100%;
-        max-width: 560px;
+        max-width: 660px;
         background: var(--panel-glass);
-        backdrop-filter: blur(20px) saturate(160%);
-        border: 1px solid rgba(255, 183, 3, 0.42);
-        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85), 0 0 25px var(--accent-glow);
-        padding: 16px;
+        backdrop-filter: blur(24px) saturate(160%);
+        border: 1.5px solid rgba(255, 183, 3, 0.45);
+        box-shadow: 0 25px 65px rgba(0, 0, 0, 0.92), 0 0 35px var(--accent-glow);
+        padding: 16px 20px;
         display: flex;
         flex-direction: column;
         gap: 12px;
-        max-height: 94vh;
+        max-height: 92vh;
         overflow-x: hidden;
         overflow-y: auto;
-        clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+        border-radius: 12px;
         transition: max-width 0.25s ease, padding 0.25s ease;
       }
 
-      /* Step Confirmation Sub-modals */
+      /* Sub-modals */
       .submodal-overlay {
         position: fixed;
         inset: 0;
         z-index: 70;
-        background: rgba(1, 4, 8, 0.86);
-        backdrop-filter: blur(14px);
+        background: rgba(1, 4, 10, 0.88);
+        backdrop-filter: blur(16px);
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 16px;
+        padding: 18px;
       }
 
       .submodal-card {
         width: 100%;
-        max-width: 500px;
-        background: rgba(7, 14, 25, 0.96);
-        border: 1.5px solid var(--accent);
-        box-shadow: 0 25px 60px rgba(0, 0, 0, 0.95), 0 0 30px var(--accent-glow);
-        padding: 22px;
+        max-width: 560px;
+        background: rgba(8, 17, 34, 0.98);
+        border: 2px solid var(--accent);
+        box-shadow: 0 30px 70px rgba(0, 0, 0, 0.95), 0 0 35px var(--accent-glow);
+        padding: 24px 26px;
         display: flex;
         flex-direction: column;
-        gap: 14px;
-        border-radius: 4px;
+        gap: 16px;
+        border-radius: 10px;
         max-height: 90vh;
         overflow-y: auto;
+        font-size: 15px;
       }
 
       .practice-badge-active {
-        background: rgba(0, 255, 157, 0.12);
-        border: 1px solid var(--phosphor);
+        background: rgba(0, 255, 157, 0.1);
+        border: 1.5px solid var(--phosphor);
         color: var(--phosphor);
-        padding: 8px 12px;
-        font-size: 11px;
+        padding: 8px 14px;
+        font-size: 13.5px;
         font-weight: 700;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 8px;
-        margin-bottom: 6px;
+        gap: 10px;
+        border-radius: 8px;
       }
 
       .tourney-badge-active {
-        background: linear-gradient(90deg, rgba(255, 183, 3, 0.25), rgba(255, 85, 0, 0.25));
-        border: 1px solid var(--accent);
+        background: linear-gradient(90deg, rgba(255, 183, 3, 0.2), rgba(255, 85, 0, 0.2));
+        border: 1.5px solid var(--accent);
         color: #ffb703;
-        padding: 8px 12px;
-        font-size: 11px;
+        padding: 8px 14px;
+        font-size: 13.5px;
         font-weight: 700;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 8px;
-        margin-bottom: 6px;
-        box-shadow: 0 0 15px rgba(255, 183, 3, 0.2);
+        gap: 10px;
+        border-radius: 8px;
+        box-shadow: 0 0 16px rgba(255, 183, 3, 0.2);
       }
 
       .game-title {
         font-family: var(--font-display);
-        font-size: 20px;
+        font-size: 24px;
         font-weight: 900;
         letter-spacing: 1.5px;
         color: #ffffff;
-        text-shadow: 0 0 14px var(--accent-glow);
+        text-shadow: 0 0 16px var(--accent-glow);
       }
 
       .subtitle {
-        font-size: 10px;
-        letter-spacing: 1.2px;
+        font-size: 13px;
+        letter-spacing: 1px;
         color: var(--accent);
         text-transform: uppercase;
+        font-weight: 700;
+        margin-top: 2px;
       }
 
       .section-box {
-        background: rgba(3, 8, 15, 0.72);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        padding: 9px 11px;
+        background: rgba(5, 12, 24, 0.85);
+        border: 1.5px solid var(--border-glass);
+        padding: 14px 16px;
         display: flex;
         flex-direction: column;
-        gap: 7px;
+        gap: 10px;
+        border-radius: 8px;
       }
 
       .section-title {
         font-family: var(--font-ui);
-        font-size: 12px;
-        font-weight: 700;
+        font-size: 14px;
+        font-weight: 800;
         letter-spacing: 1px;
         color: var(--cyan);
         text-transform: uppercase;
@@ -430,44 +463,57 @@
 
       .input-row {
         display: flex;
-        gap: 6px;
+        gap: 8px;
         flex-wrap: wrap;
       }
 
       input[type='text'],
       select {
-        background: rgba(2, 6, 12, 0.92);
-        border: 1px solid rgba(0, 240, 255, 0.35);
+        background: rgba(2, 6, 14, 0.95);
+        border: 1.5px solid rgba(0, 240, 255, 0.4);
         color: var(--text-primary);
         font-family: var(--font-tactical);
-        font-size: 11px;
-        padding: 7px 9px;
+        font-size: 15px;
+        font-weight: 600;
+        padding: 11px 14px;
+        border-radius: 6px;
         flex: 1;
+        outline: none;
+        transition: border-color 0.15s ease;
+      }
+
+      input[type='text']:focus,
+      select:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 10px var(--accent-glow);
       }
 
       .btn {
-        background: rgba(12, 24, 40, 0.85);
-        border: 1px solid rgba(0, 240, 255, 0.4);
+        background: rgba(14, 28, 48, 0.9);
+        border: 1.5px solid rgba(0, 240, 255, 0.45);
         color: var(--text-primary);
         font-family: var(--font-tactical);
-        font-size: 10px;
+        font-size: 14px;
         font-weight: 700;
-        padding: 7px 10px;
+        padding: 10px 16px;
         cursor: pointer;
-        transition: all 0.15s ease;
-        clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 0 100%);
+        transition: all 0.18s ease;
+        border-radius: 6px;
+        text-align: center;
       }
 
       .btn:hover {
         border-color: var(--accent);
-        background: rgba(255, 183, 3, 0.16);
+        background: rgba(255, 183, 3, 0.22);
+        color: #ffffff;
       }
 
       .btn.active {
         background: var(--accent);
         border-color: var(--accent);
         color: #02050a;
-        box-shadow: 0 0 14px var(--accent-glow);
+        font-weight: 800;
+        box-shadow: 0 0 16px var(--accent-glow);
       }
 
       .recording-active {
@@ -479,85 +525,103 @@
 
       @keyframes recPulse {
         from {
-          box-shadow: 0 0 4px var(--danger);
+          box-shadow: 0 0 6px var(--danger);
         }
         to {
-          box-shadow: 0 0 16px var(--danger);
+          box-shadow: 0 0 20px var(--danger);
         }
       }
 
       .btn-primary {
-        background: linear-gradient(90deg, var(--accent), #ff8800);
+        background: linear-gradient(90deg, #ff9500 0%, #ffb703 100%);
         border: none;
         color: #02050a;
         font-family: var(--font-display);
-        font-size: 13px;
+        font-size: 16px;
         font-weight: 900;
         letter-spacing: 1px;
-        padding: 12px;
+        padding: 14px 20px;
         text-align: center;
-        box-shadow: 0 0 20px var(--accent-glow);
+        border-radius: 8px;
+        box-shadow: 0 0 22px var(--accent-glow);
       }
 
       .btn-primary:hover {
-        filter: brightness(1.12);
+        filter: brightness(1.15);
+        box-shadow: 0 0 30px var(--accent-glow);
       }
 
       .crew-slot {
         display: flex;
         justify-content: space-between;
-        padding: 6px 8px;
-        background: rgba(0, 0, 0, 0.45);
-        border-left: 3px solid var(--phosphor);
-        font-size: 10px;
+        align-items: center;
+        padding: 10px 14px;
+        background: rgba(2, 6, 14, 0.65);
+        border-left: 4px solid var(--phosphor);
+        font-size: 14px;
+        font-weight: 600;
+        border-radius: 4px;
       }
 
       .cosmetics-grid {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: 6px;
+        gap: 10px;
       }
 
       .cosmetic-field label {
-        font-size: 9px;
+        font-size: 12px;
+        font-weight: 700;
         color: var(--text-muted);
         display: block;
-        margin-bottom: 3px;
+        margin-bottom: 5px;
+        text-transform: uppercase;
       }
 
       .leaderboard-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 10px;
+        font-size: 14px;
       }
 
       .leaderboard-table th,
       .leaderboard-table td {
         text-align: left;
-        padding: 6px 8px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .leaderboard-table th {
+        font-size: 12px;
+        letter-spacing: 1px;
+        color: var(--cyan);
+        text-transform: uppercase;
       }
 
       .status-badge {
-        font-size: 9px;
-        font-weight: 700;
-        padding: 3px 7px;
-        border: 1px solid currentColor;
+        font-size: 12px;
+        font-weight: 800;
+        padding: 6px 12px;
+        border: 1.5px solid currentColor;
+        border-radius: 4px;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
       }
       .status-online {
         background: rgba(0, 255, 157, 0.14);
         color: var(--phosphor);
       }
       .status-offline {
-        background: rgba(255, 183, 3, 0.15);
+        background: rgba(255, 183, 3, 0.16);
         color: var(--accent);
       }
 
       .ad-progress-outer {
         width: 100%;
-        height: 12px;
+        height: 14px;
         background: #060d18;
-        border: 1px solid var(--accent);
+        border: 1.5px solid var(--accent);
+        border-radius: 4px;
         overflow: hidden;
       }
 
@@ -572,7 +636,7 @@
         display: none !important;
       }
 
-      /* Ocultar HUD de combate y controles táctiles mientras se está en el Hangar */
+      /* Hide combat HUD when inside the Hangar */
       body:not(.in-flight) .hud-top,
       body:not(.in-flight) .hud-bottom {
         display: none !important;
@@ -580,42 +644,43 @@
 
       /* Hangar Navigation Tabs */
       .hangar-nav {
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
         gap: 8px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.14);
-        padding-bottom: 10px;
-        margin-bottom: 6px;
-        overflow-x: hidden;
+        border-bottom: 1.5px solid rgba(255, 255, 255, 0.12);
+        padding-bottom: 8px;
+        margin-bottom: 4px;
       }
 
       .hangar-tab-btn {
-        background: rgba(8, 16, 28, 0.85);
-        border: 1px solid rgba(0, 240, 255, 0.25);
+        background: rgba(10, 20, 36, 0.9);
+        border: 1.5px solid rgba(0, 240, 255, 0.3);
         color: var(--text-muted);
         font-family: var(--font-tactical);
-        font-size: 11px;
-        font-weight: 700;
-        padding: 8px 12px;
+        font-size: 13.5px;
+        font-weight: 800;
+        padding: 9px 12px;
         cursor: pointer;
         white-space: nowrap;
-        transition: all 0.15s ease;
-        clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 5px, 100% 100%, 0 100%);
-        display: inline-flex;
+        transition: all 0.18s ease;
+        border-radius: 6px;
+        display: flex;
         align-items: center;
-        gap: 6px;
+        justify-content: center;
+        text-align: center;
       }
 
       .hangar-tab-btn:hover {
         color: var(--text-primary);
         border-color: var(--accent);
+        background: rgba(255, 183, 3, 0.12);
       }
 
       .hangar-tab-btn.active {
         background: var(--accent);
         color: #020509;
         border-color: var(--accent);
-        box-shadow: 0 0 14px var(--accent-glow);
+        box-shadow: 0 0 16px var(--accent-glow);
       }
 
       .hangar-panel {
@@ -634,7 +699,7 @@
       .hangar-chassis-split {
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 12px;
       }
 
       .hangar-col {
@@ -652,16 +717,16 @@
       }
 
       .role-card-btn {
-        background: rgba(4, 10, 20, 0.85);
+        background: rgba(5, 12, 24, 0.9);
         border: 1.5px solid rgba(255, 255, 255, 0.14);
-        padding: 12px;
+        padding: 10px 12px;
         cursor: pointer;
-        transition: all 0.18s ease;
+        transition: all 0.2s ease;
         text-align: left;
         display: flex;
         flex-direction: column;
-        gap: 6px;
-        clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%);
+        gap: 4px;
+        border-radius: 8px;
         position: relative;
       }
 
@@ -678,7 +743,7 @@
 
       .role-card-title {
         font-family: var(--font-display);
-        font-size: 11px;
+        font-size: 15px;
         font-weight: 800;
         color: var(--text-primary);
         display: flex;
@@ -691,46 +756,36 @@
       }
 
       .role-card-desc {
-        font-size: 9.5px;
+        font-size: 12.5px;
         color: var(--text-muted);
-        line-height: 1.45;
+        line-height: 1.35;
+        margin: 0;
       }
 
       .role-tag-pill {
         display: inline-block;
-        padding: 2px 6px;
+        padding: 2px 7px;
         background: rgba(0, 240, 255, 0.12);
         border: 1px solid rgba(0, 240, 255, 0.3);
         color: var(--cyan);
-        font-size: 8.5px;
+        font-size: 11px;
         font-weight: 700;
         letter-spacing: 0.5px;
-        border-radius: 2px;
-        margin-top: 2px;
+        border-radius: 4px;
       }
 
-      /* Holographic Mission Briefing Card */
+      /* Mission Briefing Card */
       .mission-briefing-card {
-        background: linear-gradient(145deg, rgba(4, 12, 24, 0.9) 0%, rgba(2, 6, 12, 0.95) 100%);
-        border: 1px solid rgba(0, 240, 255, 0.35);
-        border-left: 3px solid var(--cyan);
-        padding: 12px 14px;
+        background: linear-gradient(145deg, rgba(6, 16, 32, 0.95) 0%, rgba(3, 8, 18, 0.98) 100%);
+        border: 1.5px solid rgba(0, 240, 255, 0.4);
+        border-left: 4px solid var(--cyan);
+        padding: 16px 18px;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 10px;
         position: relative;
         overflow: hidden;
-      }
-
-      .mission-briefing-card::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        right: 0;
-        width: 60px;
-        height: 60px;
-        background: radial-gradient(circle, rgba(0, 240, 255, 0.15) 0%, transparent 70%);
-        pointer-events: none;
+        border-radius: 8px;
       }
 
       .intel-header {
@@ -740,49 +795,52 @@
       }
 
       .intel-badge {
-        font-size: 8.5px;
+        font-size: 11px;
         font-weight: 800;
         letter-spacing: 1px;
-        padding: 2px 7px;
+        padding: 3px 9px;
         background: rgba(255, 42, 84, 0.18);
         border: 1px solid var(--danger);
         color: var(--danger);
+        border-radius: 4px;
         text-transform: uppercase;
       }
 
       .stat-chip-row {
         display: grid;
         grid-template-columns: repeat(2, 1fr);
-        gap: 6px;
+        gap: 8px;
       }
 
       .stat-chip {
-        background: rgba(0, 0, 0, 0.45);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 5px 7px;
+        background: rgba(2, 6, 14, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        padding: 8px 10px;
         display: flex;
         flex-direction: column;
-        gap: 2px;
+        gap: 3px;
+        border-radius: 4px;
       }
 
       .stat-chip-label {
-        font-size: 8px;
+        font-size: 11px;
         color: var(--text-muted);
         letter-spacing: 0.5px;
+        font-weight: 600;
       }
 
       .stat-chip-value {
         font-family: var(--font-display);
-        font-size: 11px;
+        font-size: 14px;
         color: var(--text-primary);
-        font-weight: 700;
+        font-weight: 800;
       }
 
       /* Hero Launch Button with Pulsing Glow */
       .btn-launch-hero {
-        font-size: 14px !important;
-        padding: 16px 18px !important;
-        letter-spacing: 1.5px !important;
+        font-size: 17px !important;
+        padding: 18px 24px !important;
+        letter-spacing: 1.2px !important;
         background: linear-gradient(90deg, #ff9500 0%, #ffb703 50%, #ff5500 100%) !important;
         border: none !important;
         color: #020509 !important;
@@ -792,35 +850,37 @@
         flex-direction: column !important;
         align-items: center !important;
         justify-content: center !important;
-        gap: 3px !important;
+        gap: 5px !important;
+        border-radius: 10px !important;
         animation: launchPulse 2.4s infinite alternate ease-in-out;
       }
 
       @keyframes launchPulse {
         0% {
-          box-shadow: 0 0 15px rgba(255, 183, 3, 0.45);
+          box-shadow: 0 0 18px rgba(255, 183, 3, 0.45);
         }
         100% {
-          box-shadow: 0 0 35px rgba(255, 183, 3, 0.85), 0 0 15px rgba(255, 85, 0, 0.6);
+          box-shadow: 0 0 40px rgba(255, 183, 3, 0.9), 0 0 20px rgba(255, 85, 0, 0.6);
         }
       }
 
       .launch-hotkey-hint {
-        font-size: 9px;
+        font-size: 12px;
         font-weight: 700;
-        letter-spacing: 1px;
-        opacity: 0.85;
+        letter-spacing: 0.8px;
+        opacity: 0.9;
       }
 
       .footer-portal-link {
         color: var(--text-muted);
-        font-size: 10px;
+        font-size: 13px;
         text-decoration: none;
-        padding: 5px 10px;
-        border: 1px solid rgba(255, 255, 255, 0.12);
+        padding: 6px 12px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 4px;
         display: inline-flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
         transition: all 0.15s ease;
       }
 
@@ -832,80 +892,98 @@
       /* WIDESCREEN PC DESKTOP (1024px+) */
       @media (min-width: 1024px) {
         #modal-lobby .modal-card {
-          max-width: 1240px;
-          padding: 24px 28px;
-          gap: 16px;
-          max-height: 92vh;
-          border: 1.5px solid rgba(255, 183, 3, 0.55);
-          box-shadow: 0 30px 70px rgba(0, 0, 0, 0.94), 0 0 35px rgba(255, 183, 3, 0.25);
+          max-width: 1060px;
+          padding: 18px 24px;
+          gap: 12px;
+          max-height: 90vh;
+          border: 1.5px solid rgba(255, 183, 3, 0.5);
+          box-shadow: 0 35px 80px rgba(0, 0, 0, 0.95), 0 0 30px rgba(255, 183, 3, 0.25);
         }
 
         .game-title {
-          font-size: 23px;
+          font-size: 24px;
+        }
+
+        .subtitle {
+          font-size: 13.5px;
         }
 
         .hangar-nav {
-          flex-wrap: nowrap;
-          overflow-x: hidden;
-          gap: 12px;
-          padding-bottom: 12px;
-          margin-bottom: 14px;
+          gap: 8px;
+          padding-bottom: 8px;
+          margin-bottom: 4px;
         }
 
         .hangar-tab-btn {
-          flex: 1;
-          justify-content: center;
-          font-size: 12px;
-          padding: 11px 16px;
-          letter-spacing: 0.8px;
+          font-size: 14px;
+          padding: 10px 14px;
         }
 
         .hangar-grid-split {
           display: grid;
-          grid-template-columns: 1.15fr 0.85fr;
-          gap: 18px;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
           align-items: stretch;
         }
 
         .hangar-tournament-split {
           display: grid;
           grid-template-columns: 1.05fr 0.95fr;
-          gap: 18px;
+          gap: 16px;
           align-items: stretch;
         }
 
         .hangar-chassis-split {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 18px;
+          gap: 16px;
           align-items: stretch;
         }
 
         .role-card-title {
-          font-size: 12px;
+          font-size: 15px;
         }
 
         .role-card-desc {
-          font-size: 10px;
+          font-size: 12.5px;
         }
 
         .stat-chip-row {
           grid-template-columns: repeat(4, 1fr);
         }
       }
+
       .room-status-line {
-        margin-top: 6px;
-        padding: 8px 10px;
-        border: 1px solid var(--cyan);
-        border-radius: 4px;
-        font-size: 12px;
+        margin-top: 8px;
+        padding: 12px 14px;
+        border: 1.5px solid var(--cyan);
+        border-radius: 6px;
+        font-size: 14px;
         line-height: 1.5;
         color: var(--cyan);
+        background: rgba(0, 240, 255, 0.08);
       }
-      .room-status-line[data-tone='ok'] { border-color: var(--phosphor); color: var(--phosphor); }
-      .room-status-line[data-tone='warn'] { border-color: var(--accent); color: var(--accent); }
-      .room-status-line[data-tone='error'] { border-color: var(--danger); color: var(--danger); }
-      .room-status-line .room-status-btn { padding: 2px 10px; margin-left: 4px; font-size: 11px; }
+      .room-status-line[data-tone='ok'] {
+        border-color: var(--phosphor);
+        color: var(--phosphor);
+        background: rgba(0, 255, 157, 0.08);
+      }
+      .room-status-line[data-tone='warn'] {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: rgba(255, 183, 3, 0.08);
+      }
+      .room-status-line[data-tone='error'] {
+        border-color: var(--danger);
+        color: var(--danger);
+        background: rgba(255, 42, 84, 0.08);
+      }
+      .room-status-line .room-status-btn {
+        padding: 4px 12px;
+        margin-left: 6px;
+        font-size: 13px;
+        font-weight: 700;
+      }
     </style>
   </head>
   <body data-hud-theme="tactical_amber">
@@ -927,7 +1005,7 @@
           </div>
           <div class="hud-interactive">
             <button id="btn-record-clip" class="btn" title="Grabar video vertical 9:16 (.webm) directo para TikTok/Reels">
-              🔴 REC CLIP
+              REC CLIP
             </button>
             <button id="btn-tiktok-mode" class="btn" title="Encuadre 9:16 para TikTok / Reels">
               9:16 STREAM
@@ -970,10 +1048,10 @@
 
         <!-- Live Holographic Comms Reactions Bar -->
         <div class="comms-strip">
-          <button class="comms-btn" data-comms="bogey_alert">⚠️ BOGEY INBOUND</button>
-          <button class="comms-btn" data-comms="nice_deflect">🛡️ GOOD INTERCEPT</button>
-          <button class="comms-btn" data-comms="engage_overdrive">⚡ FULL AFTERBURNER</button>
-          <button class="comms-btn" data-comms="mayday_panic">💀 PULL UP / STALL</button>
+          <button class="comms-btn" data-comms="bogey_alert">ALERTA OBSTACULO</button>
+          <button class="comms-btn" data-comms="nice_deflect">ESCUDO DEFLECTOR</button>
+          <button class="comms-btn" data-comms="engage_overdrive">TURBO ACELERADOR</button>
+          <button class="comms-btn" data-comms="mayday_panic">VELOCIDAD CRITICA</button>
         </div>
       </header>
 
@@ -1000,133 +1078,121 @@
       <section id="modal-lobby" class="modal-overlay">
         <div class="modal-card">
           <!-- Hangar Header -->
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.12); padding-bottom: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid rgba(255, 255, 255, 0.12); padding-bottom: 10px;">
             <div>
-              <h1 class="game-title">PACIFIC SPEED // OVERDRIVE</h1>
-              <p class="subtitle">HANGAR DE OPERACIONES &bull; MODOS PRÁCTICA LIBRE Y TORNEO OFICIAL</p>
+              <h1 class="game-title" style="font-size: 22px;">PACIFIC SPEED // PATRULLA DE RESCATE</h1>
+              <p class="subtitle" style="font-size: 13px;">MISIÓN SOLIDARIA &bull; MODO PRÁCTICA Y TORNEO OFICIAL</p>
             </div>
             <span id="ws-status-badge" class="status-badge status-offline">CONECTANDO...</span>
           </div>
 
-          <!-- Step Navigation Tabs (Intuitive 01 -> 02 -> 03 -> 04) -->
+          <!-- Navigation Tabs -->
           <nav class="hangar-nav">
             <button class="hangar-tab-btn active" data-hangar-tab="hangar-tab-play">
-              🚀 01 JUGAR &amp; TRIPULACIÓN
+              JUGAR
             </button>
             <button class="hangar-tab-btn" data-hangar-tab="hangar-tab-tournament">
-              🏆 02 TORNEO OFICIAL (<span data-bind="fee">$10</span> USD)
+              TORNEO (<span data-bind="fee">$10</span>)
             </button>
             <button class="hangar-tab-btn" data-hangar-tab="hangar-tab-chassis">
-              🛠️ 03 NAVE &amp; ARMERÍA
+              NAVE
             </button>
             <button class="hangar-tab-btn" data-hangar-tab="hangar-tab-leaderboard">
-              🏅 04 SALÓN DE LA FAMA
+              RANKING
             </button>
           </nav>
 
-          <!-- TAB 1: 01 JUGAR & TRIPULACIÓN -->
+          <!-- TAB 1: 01 JUGAR Y TRIPULACIÓN -->
           <div id="hangar-tab-play" class="hangar-panel active">
             <!-- Dynamic Mode Indicator Banner -->
             <div id="mode-status-banner" class="practice-badge-active">
-              <span id="mode-status-text">🧪 MODO ACTUAL: <strong>PRÁCTICA LIBRE (100% GRATUITO)</strong></span>
-              <button id="btn-banner-action" class="btn" style="font-size: 9px; border-color: var(--accent); color: #ffb703;">
-                🏆 Inscribirse al Torneo (<span data-bind="fee">$10</span> USD) &rarr;
+              <span id="mode-status-text">MODO ACTUAL: <strong>PRACTICA LIBRE</strong> (GRATIS)</span>
+              <button id="btn-banner-action" class="btn" style="border-color: var(--accent); color: #ffb703; font-weight: 800; padding: 6px 14px; font-size: 13.5px;">
+                Inscribirse al Torneo (<span data-bind="fee">$10</span> USD) &rarr;
               </button>
             </div>
 
             <div class="hangar-grid-split">
               <!-- Left Column: Squad & Role Readiness -->
               <div class="hangar-col">
-                <!-- 01: Callsign & Squad Code -->
-                <div class="section-box">
-                  <span class="section-title">01 // TU CALLSIGN Y CÓDIGO DE SALA</span>
-                  <div class="input-row">
-                    <input id="pilot-name-input" type="text" placeholder="TU CALLSIGN (EJ: RAPTOR_22)" maxlength="16" />
-                    <input id="room-code-input" type="text" placeholder="CÓDIGO (6)" maxlength="12" autocapitalize="characters" spellcheck="false" />
-                    <button id="btn-join-room" class="btn">SINCRONIZAR</button>
-                  </div>
-                  <button id="btn-copy-link" class="btn" style="width: 100%; border-color: var(--cyan); margin-top: 4px;">
-                    📋 COPIAR ENLACE DE ESCUADRÓN (WHATSAPP / DISCORD)
-                  </button>
-                  <button id="btn-create-room" class="btn" style="width: 100%; margin-top: 4px;">
-                    ➕ CREAR SALA NUEVA
-                  </button>
-                  <div id="room-status-line" class="room-status-line hidden" role="status" aria-live="polite"></div>
-                </div>
-
-                <!-- 02: Asymmetric Role Selection Cards -->
-                <div class="section-box">
-                  <span class="section-title">02 // SELECCIONA TU ROL EN CABINA</span>
-                  <div class="role-cards-grid">
-                    <div id="btn-role-driver" class="role-card-btn active">
-                      <span class="role-card-title">🏎️ PILOTO // DRIVER</span>
-                      <p class="role-card-desc">
-                        Control de vuelo y timón Mach 2. Evasión de colisiones y reflejos en pista.
-                      </p>
-                      <span class="role-tag-pill">WASD / FLECHAS — TIMÓN DIRECTO</span>
-                    </div>
-                    <div id="btn-role-navigator" class="role-card-btn">
-                      <span class="role-card-title">🛰️ NAVEGANTE // AWACS</span>
-                      <p class="role-card-desc">
-                        Radar de largo alcance, pulsos de escudos deflectores y marcación de carril.
-                      </p>
-                      <span class="role-tag-pill">J / K / L / SPACE — RADAR &amp; ESCUDOS</span>
-                    </div>
+                <!-- 01: Mode Selector (Segmented buttons) -->
+                <div class="section-box" style="padding: 10px 14px; gap: 8px;">
+                  <span class="section-title">MODO DE PARTIDA</span>
+                  <div class="input-row" style="gap: 6px;">
+                    <button class="btn active" data-mode="online" style="flex: 1; padding: 9px 8px; font-size: 13px;">DUO ONLINE</button>
+                    <button class="btn" data-mode="local_bot" style="flex: 1; padding: 9px 8px; font-size: 13px;">SOLO + IA</button>
+                    <button class="btn" data-mode="local_coop" style="flex: 1; padding: 9px 8px; font-size: 13px;">LOCAL 2P</button>
                   </div>
                 </div>
 
-                <!-- 03: Mode Selector -->
-                <div class="section-box" style="padding: 8px 10px;">
-                  <span class="section-title" style="font-size: 10px;">03 // MODO DE CONEXIÓN</span>
-                  <div class="input-row">
-                    <button class="btn active" data-mode="online" style="flex: 1; font-size: 9px;">ONLINE CO-OP (DÚO)</button>
-                    <button class="btn" data-mode="local_bot" style="flex: 1; font-size: 9px;">SOLO + IA CO-PILOTO</button>
-                    <button class="btn" data-mode="local_coop" style="flex: 1; font-size: 9px;">2P LOCAL TECLADO</button>
+                <!-- 02: Callsign & Room -->
+                <div class="section-box" style="padding: 10px 14px; gap: 8px;">
+                  <span class="section-title">PILOTO Y SALA ONLINE</span>
+                  <div class="input-row" style="gap: 6px;">
+                    <input id="pilot-name-input" type="text" placeholder="CALLSIGN (EJ: RAPTOR)" maxlength="16" style="flex: 1.2; padding: 9px 12px; font-size: 14px;" />
+                    <input id="room-code-input" type="text" placeholder="SALA (6)" maxlength="12" autocapitalize="characters" spellcheck="false" style="flex: 0.9; padding: 9px 12px; font-size: 14px; text-transform: uppercase;" />
+                    <button id="btn-join-room" class="btn" style="padding: 9px 14px; font-size: 13px;">UNIRSE</button>
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                    <button id="btn-copy-link" class="btn" style="border-color: var(--cyan); padding: 8px 10px; font-size: 12.5px;">
+                      COPIAR ENLACE
+                    </button>
+                    <button id="btn-create-room" class="btn" style="padding: 8px 10px; font-size: 12.5px;">
+                      NUEVA SALA
+                    </button>
+                  </div>
+                  <div id="room-status-line" class="room-status-line hidden" role="status" aria-live="polite" style="padding: 8px 12px; font-size: 13px; margin-top: 2px;"></div>
+                </div>
+
+                <!-- 03: Roles -->
+                <div class="section-box" style="padding: 10px 14px; gap: 8px;">
+                  <span class="section-title">ELIGE TU ROL EN CABINA</span>
+                  <div class="role-cards-grid" style="gap: 8px;">
+                    <div id="btn-role-driver" class="role-card-btn active" style="padding: 10px 12px; gap: 4px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span class="role-card-title" style="font-size: 15px;">PILOTO</span>
+                        <span class="role-tag-pill" style="margin: 0; padding: 3px 6px; font-size: 11px;">WASD</span>
+                      </div>
+                      <p class="role-card-desc" style="font-size: 12.5px; margin: 0;">Timón, velocidad y maniobras evasivas</p>
+                    </div>
+                    <div id="btn-role-navigator" class="role-card-btn" style="padding: 10px 12px; gap: 4px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span class="role-card-title" style="font-size: 15px;">NAVEGANTE</span>
+                        <span class="role-tag-pill" style="margin: 0; padding: 3px 6px; font-size: 11px;">ESPACIO</span>
+                      </div>
+                      <p class="role-card-desc" style="font-size: 12.5px; margin: 0;">Escudos deflectores y radar táctico</p>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <!-- Right Column: Mission Briefing & Launch Deck -->
+              <!-- Right Column: Briefing & Launch Deck -->
               <div class="hangar-col">
-                <!-- Mission Briefing Hologram Card -->
-                <div class="mission-briefing-card">
+                <!-- Mission Cause Card (Compact & inspiring) -->
+                <div class="mission-briefing-card" style="padding: 12px 14px; gap: 6px;">
                   <div class="intel-header">
-                    <span class="section-title" style="color: var(--cyan); margin: 0;">BRIEFING DE MISIÓN // SECTOR 07</span>
-                    <span class="intel-badge">AMENAZA: ALTA</span>
+                    <span class="section-title" style="color: var(--cyan); margin: 0; font-size: 13px;">PATRULLA DE RESCATE</span>
+                    <span class="intel-badge" style="font-size: 11px; padding: 2px 7px;">MISIÓN SOLIDARIA</span>
                   </div>
-                  <div style="font-size: 10px; color: var(--text-primary); line-height: 1.45;">
-                    <strong style="color: var(--accent);">PACIFIC HIGHWAY:</strong> Vuelo aéreo a 250+ KT. Esquiva tráfico hostil, activa escudos y alcanza la máxima distancia en pareja.
-                  </div>
-                  <div class="stat-chip-row">
-                    <div class="stat-chip">
-                      <span class="stat-chip-label">SISTEMA</span>
-                      <span class="stat-chip-value" style="color: var(--phosphor);">VUELO DÚO</span>
-                    </div>
-                    <div class="stat-chip">
-                      <span class="stat-chip-label">BLINDAJE</span>
-                      <span class="stat-chip-value" style="color: #00f0ff;">TITANIO 100%</span>
-                    </div>
-                    <div class="stat-chip">
-                      <span class="stat-chip-label">DEFLECTOR</span>
-                      <span class="stat-chip-value" style="color: #ffb703;">ESCUDO ION</span>
-                    </div>
-                    <div class="stat-chip">
-                      <span class="stat-chip-label">TURBO</span>
-                      <span class="stat-chip-value" style="color: #ff0055;">MACH 2.0</span>
-                    </div>
+                  <p style="font-size: 13px; color: var(--text-primary); line-height: 1.4; margin: 0;">
+                    15% de cada inscripción apoya el rescate y alimento animal en refugios.
+                  </p>
+                  <div style="display: flex; gap: 12px; font-size: 12px; font-weight: 700; color: var(--accent); margin-top: 2px;">
+                    <span style="color: var(--phosphor);">&bull; PUNTOS DOBLES EN PAREJA</span>
+                    <span style="color: var(--cyan);">&bull; PODIO CON PREMIOS TOP 3</span>
                   </div>
                 </div>
 
-                <!-- Cockpit Crew Status -->
-                <div class="section-box">
-                  <span class="section-title" style="font-size: 10px;">ASIENTOS DE CABINA [DATALINK]</span>
-                  <div id="lobby-players-list" style="display: flex; flex-direction: column; gap: 4px;"></div>
+                <!-- Cabin Seats Status -->
+                <div class="section-box" style="padding: 10px 14px; gap: 8px;">
+                  <span class="section-title">TRIPULACIÓN ACTIVA</span>
+                  <div id="lobby-players-list" style="display: flex; flex-direction: column; gap: 6px;"></div>
                 </div>
 
                 <!-- Hero Launch CTA Action Button -->
-                <button id="btn-start-match" class="btn btn-primary btn-launch-hero">
-                  <span>🚀 PREPARAR DESPEGUE // VERIFICAR TRIPULACIÓN</span>
-                  <span class="launch-hotkey-hint">⚡ [CONFIRMA TUS DATOS ANTES DE SALIR A PISTA]</span>
+                <button id="btn-start-match" class="btn btn-primary btn-launch-hero" style="padding: 14px 20px !important;">
+                  <span style="font-size: 18px; letter-spacing: 1px;">DESPEGAR AHORA</span>
+                  <span class="launch-hotkey-hint" style="font-size: 11.5px; opacity: 0.85;">[ SALIR A PISTA CON TU TRIPULACIÓN ]</span>
                 </button>
               </div>
             </div>
@@ -1137,96 +1203,91 @@
             <div class="hangar-tournament-split">
               <!-- Left Column: Tournament Telemetry & Rules -->
               <div class="hangar-col">
-                <div class="section-box" style="border: 1px solid var(--accent); background: rgba(14, 25, 42, 0.9);">
+                <div class="section-box" style="border: 1.5px solid var(--accent); background: rgba(12, 22, 38, 0.95);">
                   <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span class="section-title" style="color: var(--accent);">CAMPEONATO OFICIAL // <span data-bind="fee">$10</span> USD POR PAREJA</span>
+                    <span class="section-title" style="color: var(--accent); font-size: 15px;">CAMPEONATO OFICIAL // <span data-bind="fee">$10</span> USD POR PAREJA</span>
                     <span id="tourney-status-pill" class="status-badge status-online">REGISTRO ABIERTO</span>
                   </div>
-                  <p style="font-size: 10px; color: var(--text-muted); line-height: 1.45; margin-top: 4px;">
-                    Compitan en pareja por el podio. El <strong data-bind="pct-prize">60%</strong> de cada inscripción va al pozo del Top 3 y el <strong data-bind="pct-charity">15%</strong> se dona a refugios y rescate animal.
+                  <p style="font-size: 13.5px; color: var(--text-muted); line-height: 1.5; margin-top: 4px;">
+                    Compitan en pareja por el podio. El <strong data-bind="pct-prize" style="color: var(--phosphor);">60%</strong> de cada inscripcion va al pozo del Top 3 y el <strong data-bind="pct-charity" style="color: var(--cyan);">15%</strong> se dona a refugios y rescate animal.
                   </p>
 
-                  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin: 10px 0;">
-                    <div class="metric-box" style="padding: 6px;">
+                  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 12px 0;">
+                    <div class="metric-box" style="padding: 10px;">
                       <span class="metric-label">CUPOS OCUPADOS</span>
-                      <span id="tourney-couples-count" class="metric-value" style="font-size: 14px;">0 / 50</span>
+                      <span id="tourney-couples-count" class="metric-value" style="font-size: 20px;">0 / 50</span>
                     </div>
-                    <div class="metric-box" style="padding: 6px; border-left-color: var(--phosphor);">
+                    <div class="metric-box" style="padding: 10px; border-left-color: var(--phosphor);">
                       <span class="metric-label">POZO PREMIOS (<span data-bind="pct-prize">60%</span>)</span>
-                      <span id="tourney-prize-pool" class="metric-value" style="font-size: 14px; color: var(--phosphor);">$0.00</span>
+                      <span id="tourney-prize-pool" class="metric-value" style="font-size: 20px; color: var(--phosphor);">$0.00</span>
                     </div>
-                    <div class="metric-box" style="padding: 6px; border-left-color: var(--cyan);">
+                    <div class="metric-box" style="padding: 10px; border-left-color: var(--cyan);">
                       <span class="metric-label">REFUGIO ANIMAL (<span data-bind="pct-charity">15%</span>)</span>
-                      <span id="tourney-charity-pool" class="metric-value" style="font-size: 14px; color: var(--cyan);">$0.00</span>
+                      <span id="tourney-charity-pool" class="metric-value" style="font-size: 20px; color: var(--cyan);">$0.00</span>
                     </div>
                   </div>
 
-                  <div style="font-size: 10px; color: var(--text-muted); display: flex; justify-content: space-between; background: rgba(0,0,0,0.4); padding: 8px 10px; border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.08);">
-                    <span>🥇 1º (<span data-bind="pct-podium-1">66.66%</span>): <strong id="tourney-podium-1" style="color: #ffb703;">$0.00</strong></span>
-                    <span>🥈 2º (<span data-bind="pct-podium-2">23.33%</span>): <strong id="tourney-podium-2" style="color: #e6f2ff;">$0.00</strong></span>
-                    <span>🥉 3º (<span data-bind="pct-podium-3">10.01%</span>): <strong id="tourney-podium-3" style="color: #cd7f32;">$0.00</strong></span>
+                  <div style="font-size: 13.5px; color: var(--text-muted); display: flex; justify-content: space-between; background: rgba(0,0,0,0.5); padding: 10px 14px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1);">
+                    <span>1º (<span data-bind="pct-podium-1">66.66%</span>): <strong id="tourney-podium-1" style="color: #ffb703;">$0.00</strong></span>
+                    <span>2º (<span data-bind="pct-podium-2">23.33%</span>): <strong id="tourney-podium-2" style="color: #e6f2ff;">$0.00</strong></span>
+                    <span>3º (<span data-bind="pct-podium-3">10.01%</span>): <strong id="tourney-podium-3" style="color: #cd7f32;">$0.00</strong></span>
                   </div>
 
-                  <!-- How Tournament Works -->
-                  <div style="margin-top: 10px; padding: 8px 10px; background: rgba(0,0,0,0.3); border-radius: 4px; border-left: 2px solid var(--phosphor);">
-                    <div style="font-size: 10px; font-weight: 700; color: var(--phosphor); margin-bottom: 4px;">¿CÓMO FUNCIONA EL TORNEO?</div>
-                    <ol style="font-size: 9.5px; color: var(--text-muted); line-height: 1.5; padding-left: 14px;">
-                      <li>Practiquen gratis todas las veces que quieran en el <strong>Paso 01</strong>.</li>
-                      <li>Inscriban a la pareja por <strong><span data-bind="fee">$10</span> USD</strong> para recibir su <strong>Pase de Torneo</strong> único.</li>
-                      <li>Compartan el código de Pase con su copiloto en cualquier navegador.</li>
-                      <li>Las partidas con Pase activo compiten en la <strong>Clasificación Oficial</strong> por el podio.</li>
-                    </ol>
+                  <div style="margin-top: 12px; padding: 12px 14px; background: rgba(0,0,0,0.4); border-radius: 6px; border-left: 3px solid var(--phosphor);">
+                    <div style="font-size: 13.5px; font-weight: 800; color: var(--phosphor); margin-bottom: 6px;">PUNTOS CLAVE DEL TORNEO</div>
+                    <ul style="font-size: 13px; color: var(--text-muted); line-height: 1.6; padding-left: 18px; list-style-type: square;">
+                      <li>Practiquen gratis todas las veces que quieran en la pestana de Jugar.</li>
+                      <li>Inscriban a la pareja por <strong><span data-bind="fee">$10</span> USD</strong> para recibir su <strong>Pase de Torneo</strong> unico.</li>
+                      <li>El <strong data-bind="pct-charity">15%</strong> de cada inscripcion se dona directamente a rescate y alimento animal.</li>
+                    </ul>
                   </div>
                 </div>
               </div>
 
               <!-- Right Column: Registration & Redeem Pass Box -->
               <div class="hangar-col">
-                <!-- Box 1: Register with Payphone -->
-                <div class="section-box" style="background: rgba(8, 16, 28, 0.88);">
-                  <span class="section-title">INSCRIPCIÓN DE PAREJA (<span data-bind="fee2">$10.00</span> USD)</span>
-                  <p style="font-size: 10px; color: var(--text-muted); line-height: 1.4; margin-top: 2px;">
-                    Ingresa tus datos para generar tu enlace seguro de pago en Payphone:
+                <div class="section-box" style="background: rgba(8, 16, 28, 0.9);">
+                  <span class="section-title">INSCRIPCION DE PAREJA (<span data-bind="fee2">$10.00</span> USD)</span>
+                  <p style="font-size: 13px; color: var(--text-muted); line-height: 1.45; margin-top: 2px;">
+                    Ingresa tus datos para generar el enlace de pago seguro en Payphone:
                   </p>
-                  <div class="input-row" style="margin-top: 6px;">
-                    <input id="tourney-referral-input" type="text" placeholder="CÓDIGO DE REFERIDO (OPCIONAL)" maxlength="30" />
-                    <input id="tourney-phone-input" type="text" placeholder="TELÉFONO O CUENTA PAYPHONE" maxlength="40" />
+                  <div class="input-row" style="margin-top: 8px;">
+                    <input id="tourney-referral-input" type="text" placeholder="CODIGO DE REFERIDO (OPCIONAL)" maxlength="30" />
+                    <input id="tourney-phone-input" type="text" placeholder="TELEFONO O CUENTA PAYPHONE" maxlength="40" />
                   </div>
 
-                  <button id="btn-tourney-pay" class="btn btn-primary" style="margin-top: 8px; width: 100%; font-size: 12px; padding: 12px;">
-                    💳 INSCRIBIR PAREJA (<span data-bind="fee2">$10.00</span> USD PAYPHONE)
+                  <button id="btn-tourney-pay" class="btn btn-primary" style="margin-top: 10px; width: 100%; font-size: 15px; padding: 14px;">
+                    INSCRIBIR PAREJA (<span data-bind="fee2">$10.00</span> USD PAYPHONE)
                   </button>
-                  <div id="tourney-feedback" style="font-size: 10px; color: var(--phosphor); text-align: center; min-height: 16px; margin-top: 6px;"></div>
+                  <div id="tourney-feedback" style="font-size: 13px; color: var(--phosphor); text-align: center; min-height: 18px; margin-top: 6px;"></div>
                 </div>
 
-                <!-- Box 2: Redeem existing pass or re-enter -->
-                <div class="section-box" style="background: rgba(4, 10, 20, 0.9); border: 1px solid rgba(0, 240, 255, 0.3);">
-                  <span class="section-title" style="color: var(--cyan);">🔑 ¿YA PAGASTE O TIENES UN PASE?</span>
-                  <p style="font-size: 10px; color: var(--text-muted); line-height: 1.4;">
-                    Si pagaste desde tu móvil o tu copiloto te envió un código de pase, ingrésalo aquí para activar tu torneo:
+                <div class="section-box" style="background: rgba(4, 10, 20, 0.92); border: 1.5px solid rgba(0, 240, 255, 0.35);">
+                  <span class="section-title" style="color: var(--cyan);">YA PAGASTE O TIENES UN PASE</span>
+                  <p style="font-size: 13px; color: var(--text-muted); line-height: 1.45;">
+                    Si pagaste desde tu movil o tu copiloto te compartio su codigo de pase, ingresalo aqui:
                   </p>
-                  <div class="input-row" style="margin-top: 6px;">
-                    <input id="tourney-pass-redeem-input" type="text" placeholder="EJ: PS-1728... O ID DE PAGO" maxlength="60" />
-                    <button id="btn-redeem-pass" class="btn" style="border-color: var(--cyan); color: var(--cyan); font-weight: 700;">
+                  <div class="input-row" style="margin-top: 8px;">
+                    <input id="tourney-pass-redeem-input" type="text" placeholder="EJ: PS-XXXX O ID DE PAGO" maxlength="60" />
+                    <button id="btn-redeem-pass" class="btn" style="border-color: var(--cyan); color: var(--cyan); font-weight: 800;">
                       ACTIVAR PASE
                     </button>
                   </div>
-                  <div id="redeem-feedback" style="font-size: 10px; min-height: 14px; margin-top: 4px;"></div>
+                  <div id="redeem-feedback" style="font-size: 13px; min-height: 16px; margin-top: 6px;"></div>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- TAB 3: 03 NAVE & ARMERÍA -->
+          <!-- TAB 3: 03 NAVE & EQUIPAMIENTO -->
           <div id="hangar-tab-chassis" class="hangar-panel">
             <div class="hangar-chassis-split">
-              <!-- Left Column: Customization Selectors -->
               <div class="hangar-col">
                 <div class="section-box">
-                  <span class="section-title">PERSONALIZACIÓN DE AVATAR &amp; SISTEMAS</span>
+                  <span class="section-title">PERSONALIZACION DE AVATAR Y SISTEMAS</span>
                   <div class="cosmetics-grid" style="margin-top: 8px;">
                     <div class="cosmetic-field">
-                      <label for="select-paint">ESPECIFICACIÓN DE BLINDAJE</label>
+                      <label for="select-paint">ESPECIFICACION DE BLINDAJE</label>
                       <select id="select-paint">
                         <option value="crimson_jaeger">Crimson Raptor</option>
                         <option value="cyber_gold">Gold Vanguard</option>
@@ -1242,7 +1303,7 @@
                       </select>
                     </div>
                     <div class="cosmetic-field">
-                      <label for="select-theme">PALETA DE AVIÓNICA HUD</label>
+                      <label for="select-theme">PALETA DE AVIONICA HUD</label>
                       <select id="select-theme">
                         <option value="tactical_amber">Mil-Spec Amber</option>
                         <option value="neural_green">NVG Phosphor Green</option>
@@ -1251,27 +1312,26 @@
                     </div>
                   </div>
 
-                  <button id="btn-save-loadout" class="btn btn-primary" style="margin-top: 10px; width: 100%;">
-                    💾 CONFIRMAR Y APLICAR EQUIPAMIENTO
+                  <button id="btn-save-loadout" class="btn btn-primary" style="margin-top: 12px; width: 100%;">
+                    CONFIRMAR Y APLICAR EQUIPAMIENTO
                   </button>
                 </div>
               </div>
 
-              <!-- Right Column: Engineering Tech Specs -->
               <div class="hangar-col">
                 <div class="section-box" style="background: rgba(6, 12, 22, 0.9);">
-                  <span class="section-title" style="color: var(--cyan);">FICHA TÉCNICA MILITAR DEL INTERCEPTOR</span>
-                  <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px; font-size: 10px;">
-                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 4px;">
+                  <span class="section-title" style="color: var(--cyan);">FICHA TECNICA DE LA NAVE DE RESCATE</span>
+                  <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 8px; font-size: 13.5px;">
+                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px;">
                       <span style="color: var(--text-muted);">ESTRUCTURA DE CHASIS:</span>
-                      <strong style="color: var(--text-primary);">COMPUESTO DE TITANIO &bull; STEALTH F-35</strong>
+                      <strong style="color: var(--text-primary);">COMPUESTO DE TITANIO AERODINAMICO</strong>
                     </div>
-                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 4px;">
+                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px;">
                       <span style="color: var(--text-muted);">VELOCIDAD CRUCERO:</span>
                       <strong style="color: var(--accent);">250 KT (VECTORIAL MAX)</strong>
                     </div>
-                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 4px;">
-                      <span style="color: var(--text-muted);">BARRERA DE DEFLEXIÓN:</span>
+                    <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px;">
+                      <span style="color: var(--text-muted);">BARRERA DE DEFLEXION:</span>
                       <strong style="color: #00f0ff;">100 MW ESCUDO DE IONES</strong>
                     </div>
                     <div style="display: flex; justify-content: space-between; padding-bottom: 4px;">
@@ -1289,23 +1349,23 @@
             <div class="section-box">
               <div style="display: flex; justify-content: space-between; align-items: center;">
                 <span class="section-title">REGISTRO GLOBAL DE ESCUADRONES</span>
-                <span style="font-size: 9px; color: var(--text-muted);">CLASIFICACIÓN OFICIAL EN VIVO</span>
+                <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">CLASIFICACION OFICIAL EN VIVO</span>
               </div>
 
               <!-- Filter Buttons -->
               <div class="input-row" style="margin-top: 8px;">
-                <button id="btn-lb-filter-all" class="btn active" style="flex: 1; font-size: 9px;">TODOS LOS VUELOS</button>
-                <button id="btn-lb-filter-tourney" class="btn" style="flex: 1; font-size: 9px; border-color: var(--accent);">🏆 PODIO TORNEO OFICIAL</button>
-                <button id="btn-lb-filter-practice" class="btn" style="flex: 1; font-size: 9px; border-color: var(--phosphor);">🧪 RÉCORDS DE PRÁCTICA</button>
+                <button id="btn-lb-filter-all" class="btn active" style="flex: 1;">TODOS LOS VUELOS</button>
+                <button id="btn-lb-filter-tourney" class="btn" style="flex: 1; border-color: var(--accent);">PODIO TORNEO OFICIAL</button>
+                <button id="btn-lb-filter-practice" class="btn" style="flex: 1; border-color: var(--phosphor);">RECORDS DE PRACTICA</button>
               </div>
 
-              <table class="leaderboard-table" style="margin-top: 8px;">
+              <table class="leaderboard-table" style="margin-top: 10px;">
                 <thead>
                   <tr>
                     <th>#</th>
-                    <th>TRIPULACIÓN</th>
+                    <th>TRIPULACION</th>
                     <th>SCORE</th>
-                    <th>TELEMETRÍA</th>
+                    <th>TELEMETRIA</th>
                     <th>MODO</th>
                   </tr>
                 </thead>
@@ -1314,10 +1374,10 @@
             </div>
           </div>
 
-          <!-- Clean User Footer (No raw links or tech jargon) -->
-          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; margin-top: 4px;">
-            <span style="font-size: 10px; color: var(--text-muted);">PACIFIC SPEED: OVERDRIVE &bull; Competición Táctica 2026</span>
-            <span style="font-size: 10px; color: var(--cyan); font-weight: 700;">🐾 <span data-bind="pct-charity">15%</span> Donado a Rescate y Alimento Animal</span>
+          <!-- Clean User Footer -->
+          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1.5px solid rgba(255, 255, 255, 0.12); padding-top: 12px; margin-top: 6px;">
+            <span style="font-size: 13px; color: var(--text-muted);">PACIFIC SPEED // PATRULLA DE RESCATE 2026</span>
+            <span style="font-size: 13px; color: var(--cyan); font-weight: 700;"><span data-bind="pct-charity">15%</span> Donado a Rescate y Alimento Animal</span>
           </div>
         </div>
       </section>
@@ -1325,45 +1385,45 @@
       <!-- SUB-MODAL 1: Confirmación de Despegue y Tripulación -->
       <section id="modal-confirm-crew" class="submodal-overlay hidden">
         <div class="submodal-card">
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.12); padding-bottom: 8px;">
-            <h2 class="game-title" style="font-size: 16px;">🚀 VERIFICACIÓN PRE-VUELO</h2>
-            <button id="btn-close-confirm-crew" class="btn" style="padding: 3px 8px;">✕</button>
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid rgba(255, 255, 255, 0.14); padding-bottom: 10px;">
+            <h2 class="game-title" style="font-size: 20px;">VERIFICACION PRE-VUELO</h2>
+            <button id="btn-close-confirm-crew" class="btn" style="padding: 4px 10px; font-size: 14px;">X</button>
           </div>
-          <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">
-            Confirma la asignación de tu tripulación y modo antes de encender motores:
+          <p style="font-size: 14px; color: var(--text-muted); line-height: 1.5;">
+            Confirma la asignacion de tu tripulacion y modo antes de iniciar vuelo:
           </p>
-          <div class="section-box" style="background: rgba(3, 8, 16, 0.85); gap: 8px;">
-            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+          <div class="section-box" style="background: rgba(4, 10, 20, 0.9); gap: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 14px;">
               <span style="color: var(--text-muted);">TU CALLSIGN:</span>
               <strong id="confirm-pilot-name" style="color: #ffffff;">PILOT</strong>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+            <div style="display: flex; justify-content: space-between; font-size: 14px;">
               <span style="color: var(--text-muted);">ROL EN CABINA:</span>
               <strong id="confirm-pilot-role" style="color: var(--accent);">PILOTO</strong>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 11px;">
-              <span style="color: var(--text-muted);">SALA / ESCUADRÓN:</span>
+            <div style="display: flex; justify-content: space-between; font-size: 14px;">
+              <span style="color: var(--text-muted);">SALA / ESCUADRON:</span>
               <strong id="confirm-room-code" style="color: var(--cyan);">NEURAL-01</strong>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+            <div style="display: flex; justify-content: space-between; font-size: 14px;">
               <span style="color: var(--text-muted);">COPILOTO:</span>
               <strong id="confirm-copilot-status" style="color: var(--phosphor);">CONECTADO</strong>
             </div>
-            <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px; display: flex; justify-content: space-between; font-size: 11px;">
+            <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px; display: flex; justify-content: space-between; font-size: 14px;">
               <span style="color: var(--text-muted);">TIPO DE VUELO:</span>
-              <strong id="confirm-flight-mode" style="color: var(--phosphor);">PRÁCTICA LIBRE (GRATIS)</strong>
+              <strong id="confirm-flight-mode" style="color: var(--phosphor);">PRACTICA LIBRE (GRATIS)</strong>
             </div>
           </div>
 
-          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
-            <button id="btn-execute-launch" class="btn btn-primary" style="padding: 14px; font-size: 13px;">
-              🚀 CONFIRMAR Y DESPEGAR AHORA
+          <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 6px;">
+            <button id="btn-execute-launch" class="btn btn-primary" style="padding: 15px; font-size: 16px;">
+              CONFIRMAR Y DESPEGAR AHORA
             </button>
-            <button id="btn-crew-goto-tourney" class="btn" style="border-color: var(--accent); color: var(--accent); padding: 9px; font-size: 10px;">
-              🏆 CAMBIAR A TORNEO OFICIAL (<span data-bind="fee">$10</span> USD)
+            <button id="btn-crew-goto-tourney" class="btn" style="border-color: var(--accent); color: var(--accent); padding: 12px; font-size: 14px; font-weight: 800;">
+              CAMBIAR A TORNEO OFICIAL (<span data-bind="fee">$10</span> USD)
             </button>
-            <button id="btn-cancel-launch" class="btn" style="padding: 8px; font-size: 10px;">
-              ✕ VOLVER AL HANGAR
+            <button id="btn-cancel-launch" class="btn" style="padding: 10px; font-size: 14px;">
+              VOLVER AL HANGAR
             </button>
           </div>
         </div>
@@ -1372,52 +1432,52 @@
       <!-- SUB-MODAL 2: Confirmación de Inscripción al Torneo Oficial -->
       <section id="modal-confirm-tourney" class="submodal-overlay hidden">
         <div class="submodal-card">
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.12); padding-bottom: 8px;">
-            <h2 class="game-title" style="font-size: 16px; color: var(--accent);">🏆 CONFIRMAR INSCRIPCIÓN AL TORNEO</h2>
-            <button id="btn-close-confirm-tourney" class="btn" style="padding: 3px 8px;">✕</button>
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid rgba(255, 255, 255, 0.14); padding-bottom: 10px;">
+            <h2 class="game-title" style="font-size: 20px; color: var(--accent);">CONFIRMAR INSCRIPCION AL TORNEO</h2>
+            <button id="btn-close-confirm-tourney" class="btn" style="padding: 4px 10px; font-size: 14px;">X</button>
           </div>
-          <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">
+          <p style="font-size: 14px; color: var(--text-muted); line-height: 1.5;">
             Revisa los detalles de tu registro antes de abrir la pasarela de pago Payphone:
           </p>
-          <div class="section-box" style="background: rgba(3, 8, 16, 0.85); gap: 7px;">
-            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+          <div class="section-box" style="background: rgba(4, 10, 20, 0.9); gap: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 14px;">
               <span style="color: var(--text-muted);">PILOTO TITULAR:</span>
               <strong id="confirm-tourney-pilot" style="color: #ffffff;">PILOT</strong>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+            <div style="display: flex; justify-content: space-between; font-size: 14px;">
               <span style="color: var(--text-muted);">COPILOTO:</span>
               <strong id="confirm-tourney-copilot" style="color: var(--cyan);">CO-PILOTO</strong>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 11px;">
-              <span style="color: var(--text-muted);">CÓDIGO DE REFERIDO:</span>
+            <div style="display: flex; justify-content: space-between; font-size: 14px;">
+              <span style="color: var(--text-muted);">CODIGO DE REFERIDO:</span>
               <strong id="confirm-tourney-ref" style="color: var(--text-primary);">NINGUNO</strong>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 11px;">
-              <span style="color: var(--text-muted);">TELÉFONO PAYPHONE:</span>
+            <div style="display: flex; justify-content: space-between; font-size: 14px;">
+              <span style="color: var(--text-muted);">TELEFONO PAYPHONE:</span>
               <strong id="confirm-tourney-phone" style="color: var(--text-primary);">POR DEFECTO</strong>
             </div>
-            <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
-              <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 800; color: #ffb703;">
+            <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
+              <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 800; color: #ffb703;">
                 <span>TOTAL A PAGAR:</span>
                 <span><span data-bind="fee2">$10.00</span> USD</span>
               </div>
-              <div style="font-size: 9.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">
+              <div style="font-size: 13px; color: var(--text-muted); margin-top: 6px; line-height: 1.5;">
                 &bull; <span data-bind="amt-prize">$6.00</span> (<span data-bind="pct-prize">60%</span>) al Pozo de Premios Top 3<br>
-                &bull; <span data-bind="amt-charity">$1.50</span> (<span data-bind="pct-charity">15%</span>) Donación al Refugio Animal<br>
+                &bull; <span data-bind="amt-charity">$1.50</span> (<span data-bind="pct-charity">15%</span>) Donacion al Refugio Animal<br>
                 &bull; <span data-bind="amt-ops">$2.50</span> (<span data-bind="pct-ops">25%</span>) Operaciones y Pasarela
               </div>
             </div>
           </div>
 
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            <button id="btn-execute-tourney-pay" class="btn btn-primary" style="padding: 13px; font-size: 12px;">
-              💳 PROCEDER AL PAGO CON PAYPHONE (<span data-bind="fee">$10</span> USD)
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <button id="btn-execute-tourney-pay" class="btn btn-primary" style="padding: 15px; font-size: 15px;">
+              PROCEDER AL PAGO CON PAYPHONE (<span data-bind="fee">$10</span> USD)
             </button>
-            <button id="btn-open-redeem-from-tourney" class="btn" style="border-color: var(--cyan); color: var(--cyan); padding: 9px; font-size: 10px;">
-              🔑 YA PAGUÉ / INGRESAR MI PASE DE TORNEO
+            <button id="btn-open-redeem-from-tourney" class="btn" style="border-color: var(--cyan); color: var(--cyan); padding: 12px; font-size: 14px; font-weight: 800;">
+              YA PAGUE / INGRESAR MI PASE DE TORNEO
             </button>
-            <button id="btn-cancel-confirm-tourney" class="btn" style="padding: 8px; font-size: 10px;">
-              ✕ CANCELAR
+            <button id="btn-cancel-confirm-tourney" class="btn" style="padding: 10px; font-size: 14px;">
+              CANCELAR
             </button>
           </div>
         </div>
@@ -1426,23 +1486,23 @@
       <!-- SUB-MODAL 3: Canjear o Reingresar Pase de Torneo -->
       <section id="modal-redeem-pass-view" class="submodal-overlay hidden">
         <div class="submodal-card">
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.12); padding-bottom: 8px;">
-            <h2 class="game-title" style="font-size: 16px; color: var(--cyan);">🔑 ACTIVAR PASE DE TORNEO</h2>
-            <button id="btn-close-redeem-modal" class="btn" style="padding: 3px 8px;">✕</button>
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid rgba(255, 255, 255, 0.14); padding-bottom: 10px;">
+            <h2 class="game-title" style="font-size: 20px; color: var(--cyan);">ACTIVAR PASE DE TORNEO</h2>
+            <button id="btn-close-redeem-modal" class="btn" style="padding: 4px 10px; font-size: 14px;">X</button>
           </div>
-          <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">
-            Ingresa tu código de Pase Oficial (`PS-XXXX...`) o el ID de transacción de Payphone para verificar tu inscripción:
+          <p style="font-size: 14px; color: var(--text-muted); line-height: 1.5;">
+            Ingresa tu codigo de Pase Oficial (PS-XXXX...) o el ID de transaccion de Payphone para verificar tu inscripcion:
           </p>
-          <div class="input-row" style="margin-top: 4px;">
-            <input id="modal-pass-input" type="text" placeholder="EJ: PS-1728... O ID PAYPHONE" maxlength="60" style="padding: 10px; font-size: 12px;" />
+          <div class="input-row" style="margin-top: 6px;">
+            <input id="modal-pass-input" type="text" placeholder="EJ: PS-XXXX O ID PAYPHONE" maxlength="60" style="padding: 12px 14px; font-size: 15px;" />
           </div>
-          <div id="modal-redeem-feedback" style="font-size: 10px; min-height: 16px;"></div>
-          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;">
-            <button id="btn-execute-modal-redeem" class="btn btn-primary" style="padding: 12px; font-size: 12px;">
-              ✓ VALIDAR Y VINCULAR PASE A ESTA SALA
+          <div id="modal-redeem-feedback" style="font-size: 13px; min-height: 18px; margin-top: 4px;"></div>
+          <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 8px;">
+            <button id="btn-execute-modal-redeem" class="btn btn-primary" style="padding: 14px; font-size: 15px;">
+              VALIDAR Y VINCULAR PASE A ESTA SALA
             </button>
-            <button id="btn-cancel-redeem-modal" class="btn" style="padding: 8px; font-size: 10px;">
-              ✕ CANCELAR
+            <button id="btn-cancel-redeem-modal" class="btn" style="padding: 10px; font-size: 14px;">
+              CANCELAR
             </button>
           </div>
         </div>
@@ -1451,33 +1511,33 @@
       <!-- SUB-MODAL 4: Confirmación de Armería y Equipamiento -->
       <section id="modal-confirm-loadout" class="submodal-overlay hidden">
         <div class="submodal-card">
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.12); padding-bottom: 8px;">
-            <h2 class="game-title" style="font-size: 16px;">🛠️ EQUIPAMIENTO DE CABINA</h2>
-            <button id="btn-close-confirm-loadout" class="btn" style="padding: 3px 8px;">✕</button>
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid rgba(255, 255, 255, 0.14); padding-bottom: 10px;">
+            <h2 class="game-title" style="font-size: 20px;">EQUIPAMIENTO DE CABINA</h2>
+            <button id="btn-close-confirm-loadout" class="btn" style="padding: 4px 10px; font-size: 14px;">X</button>
           </div>
-          <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">
-            Configuración personalizada lista para calibrar en los sistemas del interceptor:
+          <p style="font-size: 14px; color: var(--text-muted); line-height: 1.5;">
+            Configuracion personalizada lista para calibrar en los sistemas de la nave:
           </p>
-          <div class="section-box" style="background: rgba(3, 8, 16, 0.85); gap: 8px;">
-            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+          <div class="section-box" style="background: rgba(4, 10, 20, 0.9); gap: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 14px;">
               <span style="color: var(--text-muted);">BLINDAJE Y PINTURA:</span>
               <strong id="confirm-loadout-paint" style="color: var(--accent);">Crimson Raptor</strong>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 11px;">
+            <div style="display: flex; justify-content: space-between; font-size: 14px;">
               <span style="color: var(--text-muted);">ESTELA DE TURBO:</span>
               <strong id="confirm-loadout-trail" style="color: var(--cyan);">Ion Cyan</strong>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 11px;">
-              <span style="color: var(--text-muted);">PALETA DE AVIÓNICA:</span>
+            <div style="display: flex; justify-content: space-between; font-size: 14px;">
+              <span style="color: var(--text-muted);">PALETA DE AVIONICA:</span>
               <strong id="confirm-loadout-theme" style="color: var(--phosphor);">Mil-Spec Amber</strong>
             </div>
           </div>
-          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
-            <button id="btn-execute-save-loadout" class="btn btn-primary" style="padding: 12px; font-size: 12px;">
-              ✓ APLICAR Y CALIBRAR AHORA
+          <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 6px;">
+            <button id="btn-execute-save-loadout" class="btn btn-primary" style="padding: 14px; font-size: 15px;">
+              APLICAR Y CALIBRAR AHORA
             </button>
-            <button id="btn-cancel-confirm-loadout" class="btn" style="padding: 8px; font-size: 10px;">
-              ✕ VOLVER
+            <button id="btn-cancel-confirm-loadout" class="btn" style="padding: 10px; font-size: 14px;">
+              VOLVER
             </button>
           </div>
         </div>

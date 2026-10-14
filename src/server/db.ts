@@ -401,7 +401,7 @@ export class DatabaseProvider {
       );
 
       if (isRailway && (resolved.hostDisplay === 'localhost' || resolved.hostDisplay === '127.0.0.1')) {
-        console.warn('[DB] 💡 NOTA PARA RAILWAY: Se detectó DB_HOST="localhost" dentro del contenedor de Railway.');
+        console.warn('[DB] NOTA PARA RAILWAY: Se detectó DB_HOST="localhost" dentro del contenedor de Railway.');
         console.warn('[DB] En Railway, cada servicio corre en un contenedor aislado. Para conectar a PostgreSQL:');
         console.warn('[DB]   1. En Railway crea un servicio PostgreSQL (+ New -> Database -> PostgreSQL).');
         console.warn('[DB]   2. En tu servicio web, vincula la variable DATABASE_URL provista por Railway.');
@@ -409,7 +409,7 @@ export class DatabaseProvider {
       }
 
       // No silent fallback to local JSON: payment endpoints answer 503 until PostgreSQL is back
-      console.warn(`[DB] ⚠️  PostgreSQL no disponible. Endpoints de pago responderán 503. Reintento en ${PG_RETRY_INTERVAL_MS / 1000}s.`);
+      console.warn(`[DB] [AVISO] PostgreSQL no disponible. Endpoints de pago responderán 503. Reintento en ${PG_RETRY_INTERVAL_MS / 1000}s.`);
       console.log('[DB] ========================================================');
 
       this.mode = 'unavailable';

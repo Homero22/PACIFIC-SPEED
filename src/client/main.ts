@@ -23,10 +23,10 @@ import { InputManager } from './inputManager.js';
 import { GameRenderer } from './renderer.js';
 
 const LOCAL_COMMS_MAP: Record<TacticalCommsPreset, { code: string; label: string }> = {
-  bogey_alert: { code: 'TAC-01 // BOGEY LOCK', label: '⚠️ BOGEY INBOUND — DEPLOY FLANK SHIELD' },
-  nice_deflect: { code: 'TAC-02 // INTERCEPT', label: '🛡️ DIRECT INTERCEPT CONFIRMED — GOOD SAVE' },
-  engage_overdrive: { code: 'TAC-03 // MACH BURN', label: '⚡ ENGAGE AFTERBURNER OVERDRIVE NOW' },
-  mayday_panic: { code: 'TAC-04 // VELOCITY CRIT', label: '💀 CRITICAL STALL — INCREASE THROTTLE!' }
+  bogey_alert: { code: 'TAC-01 // ALERTA OBSTACULO', label: '[ALERTA] OBSTACULO AL FRENTE - ACTIVA ESCUDO LATERAL' },
+  nice_deflect: { code: 'TAC-02 // INTERCEPCION', label: '[ESCUDO] DESVIO EXITOSO - IMPACTO ANULADO' },
+  engage_overdrive: { code: 'TAC-03 // PROPULSION', label: '[TURBO] ACTIVA POSQUEMADOR AHORA' },
+  mayday_panic: { code: 'TAC-04 // CRITICO', label: '[PELIGRO] PERDIDA DE SUSTENTACION - ACELERA' }
 };
 
 class PacificSpeedClientApp {
@@ -131,7 +131,7 @@ class PacificSpeedClientApp {
     if (paymentStatus === 'success') {
       const feedback = document.getElementById('tourney-feedback');
       if (feedback) {
-        feedback.innerHTML = `🌟 <strong>¡INSCRIPCIÓN OFICIAL CONFIRMADA EN PAYPHONE!</strong><br>Tu pase de torneo: <code>${escapeHtml(urlPass || 'consulta con la organización')}</code>.<br>Guárdalo: es personal y no lo compartas fuera de tu pareja.`;
+        feedback.innerHTML = `<strong>[INSCRIPCION CONFIRMADA EN PAYPHONE]</strong><br>Tu pase de torneo: <code>${escapeHtml(urlPass || 'consulta con la organizacion')}</code>.<br>Guardalo: es personal para tu tripulacion.`;
         feedback.style.color = 'var(--phosphor)';
       }
       document.querySelectorAll('[data-hangar-tab]').forEach((b) => b.classList.remove('active'));
@@ -139,10 +139,10 @@ class PacificSpeedClientApp {
       document.querySelector('[data-hangar-tab="hangar-tab-tournament"]')?.classList.add('active');
       document.getElementById('hangar-tab-tournament')?.classList.add('active');
     } else if (paymentStatus === 'error') {
-      const reason = paymentReason || 'La pasarela no pudo procesar la transacción.';
+      const reason = paymentReason || 'La pasarela no pudo procesar la transaccion.';
       const feedback = document.getElementById('tourney-feedback');
       if (feedback) {
-        feedback.innerHTML = `⚠️ <strong>PAGO NO PROCESADO:</strong> ${escapeHtml(reason)}`;
+        feedback.innerHTML = `<strong>[PAGO NO PROCESADO]:</strong> ${escapeHtml(reason)}`;
         feedback.style.color = 'var(--danger)';
       }
       document.querySelectorAll('[data-hangar-tab]').forEach((b) => b.classList.remove('active'));
@@ -152,7 +152,7 @@ class PacificSpeedClientApp {
     } else if (paymentStatus === 'cancelled') {
       const feedback = document.getElementById('tourney-feedback');
       if (feedback) {
-        feedback.innerHTML = `ℹ️ Cobro cancelado por el usuario en Payphone. Puedes reintentar cuando gustes.`;
+        feedback.innerHTML = `[AVISO] Cobro cancelado en Payphone. Puedes reintentar cuando gustes.`;
         feedback.style.color = 'var(--accent)';
       }
       document.querySelectorAll('[data-hangar-tab]').forEach((b) => b.classList.remove('active'));
@@ -300,7 +300,7 @@ class PacificSpeedClientApp {
         const btn = document.getElementById('btn-copy-link');
         if (btn) {
           const prev = btn.textContent;
-          btn.textContent = '✓ ENLACE TÁCTICO COPIADO AL PORTAPAPELES';
+          btn.textContent = '[COPIADO] ENLACE TACTICO COPIADO';
           setTimeout(() => {
             btn.textContent = prev;
           }, 2200);
@@ -426,7 +426,7 @@ class PacificSpeedClientApp {
           const btn = document.getElementById('btn-banner-action');
           if (btn) {
             const prev = btn.textContent;
-            btn.textContent = '✓ ENLACE DE TORNEO COPIADO';
+            btn.textContent = '[COPIADO] ENLACE DE TORNEO COPIADO';
             setTimeout(() => {
               btn.textContent = prev;
             }, 2000);
@@ -653,7 +653,7 @@ class PacificSpeedClientApp {
       this.mediaRecorder.stop();
       this.isRecordingClip = false;
       if (btn) {
-        btn.textContent = '🔴 REC CLIP';
+        btn.textContent = 'REC CLIP';
         btn.classList.remove('recording-active');
       }
       return;
@@ -696,7 +696,7 @@ class PacificSpeedClientApp {
       this.mediaRecorder.start();
       this.isRecordingClip = true;
       if (btn) {
-        btn.textContent = '⏹ STOP & SAVE';
+        btn.textContent = 'STOP & SAVE';
         btn.classList.add('recording-active');
       }
     } catch {
@@ -936,21 +936,21 @@ class PacificSpeedClientApp {
 
     if (this.mode !== 'online') return set('', 'info');
     if (this.sessionReplaced) {
-      return set(`⚠️ Esta sala se abrió en otra pestaña o dispositivo. ${btn('reclaim', 'Usar aquí')}`, 'warn');
+      return set(`[AVISO] Esta sala se abrió en otra pestaña o dispositivo. ${btn('reclaim', 'Usar aquí')}`, 'warn');
     }
     if (this.roomError && this.roomError.code !== 'not_allowed') {
-      const icon = this.roomError.code === 'full' ? '⛔' : '⚠️';
+      const icon = this.roomError.code === 'full' ? '[SALA LLENA]' : '[AVISO]';
       return set(`${icon} ${escapeHtml(this.roomError.message)} ${btn('create', 'Crear sala nueva')}`, 'error');
     }
-    if (!this.wsConnected) return set('📡 Reconectando con el servidor…', 'warn');
-    if (!this.lobbyState) return set('📡 Conectando a la sala…', 'info');
+    if (!this.wsConnected) return set('[ENLACE] Reconectando con el servidor…', 'warn');
+    if (!this.lobbyState) return set('[ENLACE] Conectando a la sala…', 'info');
 
-    const transient = this.roomError ? ` <br>⚠️ ${escapeHtml(this.roomError.message)}` : '';
+    const transient = this.roomError ? ` <br>[AVISO] ${escapeHtml(this.roomError.message)}` : '';
     const roleName = (r: PlayerRole) => (r === 'driver' ? 'PILOTO' : 'NAVEGANTE');
 
     if (this.pendingSwapRequest) {
       return set(
-        `🔄 <strong>${escapeHtml(this.pendingSwapRequest.from_name)}</strong> quiere cambiar a ${roleName(this.pendingSwapRequest.requested_role)} (intercambiar roles). ${btn('swap-accept', 'Aceptar')} ${btn('swap-reject', 'Rechazar')}`,
+        `[SOLICITUD] <strong>${escapeHtml(this.pendingSwapRequest.from_name)}</strong> quiere cambiar a ${roleName(this.pendingSwapRequest.requested_role)} (intercambiar roles). ${btn('swap-accept', 'Aceptar')} ${btn('swap-reject', 'Rechazar')}`,
         'info'
       );
     }
@@ -961,22 +961,22 @@ class PacificSpeedClientApp {
     const swap = this.lobbyState.pending_role_swap;
 
     if (!partner) {
-      return set(`⏳ Esperando a tu pareja… comparte el enlace de la sala <strong>${this.roomCode}</strong>.${transient}`, 'info');
+      return set(`[ESPERANDO] Esperando copiloto… comparte el enlace de la sala <strong>${this.roomCode}</strong>.${transient}`, 'info');
     }
     if (!partner.connected) {
       const left = (partner.grace_remaining_ms ?? 0) - (Date.now() - this.lobbyReceivedAt);
-      return set(`⚠️ Tu pareja se desconectó (reconectando ${fmt(left)})${transient}`, 'warn');
+      return set(`[DESCONECTADO] Tu copiloto se desconectó (reconectando ${fmt(left)})${transient}`, 'warn');
     }
     if (swap && swap.from_player_id === this.playerId) {
-      return set(`🔄 Solicitud de cambio de rol enviada a ${escapeHtml(partner.name)}…${transient}`, 'info');
+      return set(`[SOLICITUD] Solicitud de cambio de rol enviada a ${escapeHtml(partner.name)}…${transient}`, 'info');
     }
     if (me?.ready && !partner.ready) {
-      return set(`✅ Listo. Esperando a que ${escapeHtml(partner.name)} confirme el despegue…${transient}`, 'ok');
+      return set(`[LISTO] Listo. Esperando a que ${escapeHtml(partner.name)} confirme el despegue…${transient}`, 'ok');
     }
     if (partner.ready && !me?.ready) {
-      return set(`🚀 ${escapeHtml(partner.name)} está listo para despegar. Confirma tu despegue.${transient}`, 'ok');
+      return set(`[LISTO] ${escapeHtml(partner.name)} está listo para despegar. Confirma tu despegue.${transient}`, 'ok');
     }
-    return set(`🤝 Pareja conectada: <strong>${escapeHtml(partner.name)}</strong> (${roleName(partner.role)}).${transient}`, 'ok');
+    return set(`[CONECTADOS] Pareja conectada: <strong>${escapeHtml(partner.name)}</strong> (${roleName(partner.role)}).${transient}`, 'ok');
   }
 
   private sendWsMessage(msg: WsClientMessage): void {
@@ -1250,12 +1250,12 @@ class PacificSpeedClientApp {
     if (this.mode !== 'online') {
       container.innerHTML = `
         <div class="crew-slot">
-          <span class="slot-role">SEAT 01 // STEALTH DRIVER</span>
-          <span class="slot-name">${escapeHtml(this.activeRole === 'driver' ? this.pilotName : 'AWACS AI CO-PILOT')}</span>
+          <span class="slot-role">ASIENTO 1 // PILOTO</span>
+          <span class="slot-name">${escapeHtml(this.activeRole === 'driver' ? this.pilotName : 'IA CO-PILOTO')}</span>
         </div>
         <div class="crew-slot">
-          <span class="slot-role">SEAT 02 // TACTICAL NAVIGATOR</span>
-          <span class="slot-name">${escapeHtml(this.activeRole === 'navigator' ? this.pilotName : this.mode === 'local_coop' ? 'OPERATOR 2 (J/K/L)' : 'AWACS AI CO-PILOT')}</span>
+          <span class="slot-role">ASIENTO 2 // NAVEGANTE</span>
+          <span class="slot-name">${escapeHtml(this.activeRole === 'navigator' ? this.pilotName : this.mode === 'local_coop' ? 'OPERADOR 2 (TECLADO)' : 'IA CO-PILOTO')}</span>
         </div>
       `;
       return;
@@ -1268,18 +1268,18 @@ class PacificSpeedClientApp {
     const seatLabel = (p: RoomPlayerInfo | undefined, empty: string) => {
       if (!p) return empty;
       const you = p.player_id === this.playerId ? ' (TÚ)' : '';
-      const state = !p.connected ? ' · ⚠️ DESCONECTADO' : p.ready ? ' · ✅ LISTO' : '';
+      const state = !p.connected ? ' · [DESCONECTADO]' : p.ready ? ' · [LISTO]' : '';
       return `${escapeHtml(p.name)}${you}${state}`;
     };
 
     container.innerHTML = `
       <div class="crew-slot ${driver ? 'filled' : ''}">
-        <span class="slot-role">SEAT 01 // STEALTH DRIVER</span>
-        <span class="slot-name">${seatLabel(driver, 'AI AUTO-PILOT STANDBY')}</span>
+        <span class="slot-role">ASIENTO 1 // PILOTO</span>
+        <span class="slot-name">${seatLabel(driver, 'IA AUTO-PILOTO')}</span>
       </div>
       <div class="crew-slot ${navigator ? 'filled' : ''}">
-        <span class="slot-role">SEAT 02 // TACTICAL NAVIGATOR</span>
-        <span class="slot-name">${seatLabel(navigator, 'AI AWACS STANDBY')}</span>
+        <span class="slot-role">ASIENTO 2 // NAVEGANTE</span>
+        <span class="slot-name">${seatLabel(navigator, 'IA CO-PILOTO')}</span>
       </div>
     `;
   }
@@ -1309,7 +1309,7 @@ class PacificSpeedClientApp {
           <td>${escapeHtml(entry.driver_name)} / ${escapeHtml(entry.navigator_name)}</td>
           <td style="color: var(--accent); font-weight: 700">${Number(entry.total_score).toLocaleString()}</td>
           <td>${Number(entry.distance_traveled).toFixed(0)}m (${Number(entry.survival_time).toFixed(1)}s)</td>
-          <td>${entry.is_tournament ? '<span style="color:var(--accent);font-weight:700;">🏆 TORNEO</span>' : '<span style="color:var(--phosphor);">🧪 PRÁCTICA</span>'}</td>
+          <td>${entry.is_tournament ? '<span style="color:var(--accent);font-weight:700;">[TORNEO]</span>' : '<span style="color:var(--phosphor);">[PRACTICA]</span>'}</td>
         </tr>
       `
       )
@@ -1353,7 +1353,7 @@ class PacificSpeedClientApp {
 
     if (pilotNameEl) pilotNameEl.textContent = this.pilotName;
     if (pilotRoleEl) {
-      pilotRoleEl.textContent = this.activeRole === 'driver' ? '🏎️ PILOTO // DRIVER' : '🛰️ NAVEGANTE // AWACS';
+      pilotRoleEl.textContent = this.activeRole === 'driver' ? 'PILOTO // DRIVER' : 'NAVEGANTE // AWACS';
     }
     if (roomCodeEl) roomCodeEl.textContent = this.roomCode;
 
@@ -1374,17 +1374,17 @@ class PacificSpeedClientApp {
 
     if (this.isTournamentVerified && this.tournamentPass) {
       if (flightModeEl) {
-        flightModeEl.textContent = `🏆 TORNEO OFICIAL // PASE #${this.tournamentPass}`;
+        flightModeEl.textContent = `TORNEO OFICIAL // PASE #${this.tournamentPass}`;
         flightModeEl.style.color = '#ffb703';
       }
-      if (execBtn) execBtn.textContent = '🏆 CONFIRMAR DESPEGUE (TORNEO OFICIAL)';
+      if (execBtn) execBtn.textContent = 'CONFIRMAR DESPEGUE (TORNEO OFICIAL)';
       if (tourneyGotoBtn) tourneyGotoBtn.style.display = 'none';
     } else {
       if (flightModeEl) {
-        flightModeEl.textContent = '🧪 PRÁCTICA LIBRE (100% GRATIS)';
+        flightModeEl.textContent = 'PRACTICA LIBRE (100% GRATIS)';
         flightModeEl.style.color = 'var(--phosphor)';
       }
-      if (execBtn) execBtn.textContent = '🚀 CONFIRMAR DESPEGUE (PRÁCTICA GRATIS)';
+      if (execBtn) execBtn.textContent = 'CONFIRMAR DESPEGUE (PRACTICA GRATIS)';
       if (tourneyGotoBtn) tourneyGotoBtn.style.display = 'block';
     }
 
@@ -1446,11 +1446,11 @@ class PacificSpeedClientApp {
 
     const ok = await this.verifyTournamentPass(code);
     if (ok) {
-      feedbackEl.innerHTML = `✓ ¡PASE VÁLIDO! Código: <code>${escapeHtml(code)}</code> vinculado a esta sala.`;
+      feedbackEl.innerHTML = `[PASE VALIDO] Código: <code>${escapeHtml(code)}</code> vinculado a esta sala.`;
       feedbackEl.style.color = 'var(--phosphor)';
       return true;
     } else {
-      feedbackEl.textContent = '❌ Pase no encontrado o inválido. Revisa el código o realiza tu inscripción.';
+      feedbackEl.textContent = '[ERROR] Pase no encontrado o inválido. Revisa el código o realiza tu inscripción.';
       feedbackEl.style.color = 'var(--danger)';
       return false;
     }
@@ -1500,11 +1500,11 @@ class PacificSpeedClientApp {
       }
       if (bannerText) {
         bannerText.innerHTML = this.tournamentPass
-          ? `🏆 MODO ACTUAL: <strong>TORNEO OFICIAL ACTIVO</strong> // PASE: <code>${escapeHtml(this.tournamentPass)}</code>`
-          : `🏆 MODO ACTUAL: <strong>TORNEO OFICIAL ACTIVO</strong> // PASE ACTIVADO POR TU COPILOTO`;
+          ? `MODO ACTUAL: <strong>TORNEO OFICIAL ACTIVO</strong> // PASE: <code>${escapeHtml(this.tournamentPass)}</code>`
+          : `MODO ACTUAL: <strong>TORNEO OFICIAL ACTIVO</strong> // PASE ACTIVADO POR TU COPILOTO`;
       }
       if (bannerBtn && this.tournamentPass) {
-        bannerBtn.textContent = '📋 Compartir Pase con Copiloto';
+        bannerBtn.textContent = 'Compartir Pase con Copiloto';
         bannerBtn.style.color = '#ffb703';
         bannerBtn.style.borderColor = 'var(--accent)';
       }
@@ -1513,10 +1513,10 @@ class PacificSpeedClientApp {
         banner.className = 'practice-badge-active';
       }
       if (bannerText) {
-        bannerText.innerHTML = `🧪 MODO ACTUAL: <strong>PRÁCTICA LIBRE (100% GRATUITO)</strong>`;
+        bannerText.innerHTML = `MODO ACTUAL: <strong>PRACTICA LIBRE (100% GRATUITO)</strong>`;
       }
       if (bannerBtn) {
-        bannerBtn.textContent = `🏆 Inscribirse al Torneo (${this.formatEntryFee()} USD) →`;
+        bannerBtn.textContent = `Inscribirse al Torneo (${this.formatEntryFee()} USD) ->`;
         bannerBtn.style.color = '#ffb703';
         bannerBtn.style.borderColor = 'var(--accent)';
       }
@@ -1552,12 +1552,12 @@ class PacificSpeedClientApp {
       const checkoutUrl = safeHttpUrl(data.payWithCard || data.payUrl || data.payWithPayPhone);
       if (data.success && checkoutUrl) {
         if (feedback) {
-          feedback.innerHTML = `✓ ENLACE GENERADO // <a href="${escapeHtml(checkoutUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--phosphor);font-weight:700;text-decoration:underline;">ABRIR PASARELA PAYPHONE ($${Number(data.entry_fee_usd).toFixed(2)} USD)</a>`;
+          feedback.innerHTML = `[ENLACE GENERADO] <a href="${escapeHtml(checkoutUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--phosphor);font-weight:700;text-decoration:underline;">ABRIR PASARELA PAYPHONE ($${Number(data.entry_fee_usd).toFixed(2)} USD)</a>`;
         }
         window.open(checkoutUrl, '_blank', 'noopener');
       } else {
         if (feedback) {
-          feedback.innerHTML = `⚠️ <strong>AVISO:</strong> ${escapeHtml(data.message || data.error || 'No se pudo generar el enlace de cobro. Revisa tus datos e intenta nuevamente.')}`;
+          feedback.innerHTML = `[AVISO] <strong>ERROR EN PASARELA:</strong> ${escapeHtml(data.message || data.error || 'No se pudo generar el enlace de cobro. Revisa tus datos e intenta nuevamente.')}`;
           feedback.style.color = 'var(--danger)';
         }
       }
