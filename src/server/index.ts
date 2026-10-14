@@ -230,7 +230,6 @@ app.get('/api/payphone/status', (_req, res) => {
   const cfg = getPayphoneConfig();
   res.json({
     configured: cfg.isConfigured,
-    environment: cfg.env,
     baseUrl: cfg.baseUrl,
     storeId: cfg.storeId ? 'SET' : 'NOT_SET'
   });

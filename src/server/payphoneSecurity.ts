@@ -37,7 +37,6 @@ export function getPayphoneConfig() {
     secretKey: getPayphoneSecretKey(),
     storeId: getPayphoneStoreId(),
     baseUrl: getPayphoneBaseUrl(),
-    env: cleanEnv(process.env.PAYPHONE_ENV) || 'production',
     isConfigured: Boolean(getPayphoneToken())
   };
 }
