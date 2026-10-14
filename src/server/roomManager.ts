@@ -61,6 +61,12 @@ export type TournamentPassVerifier = (passCode: string) => Promise<{
   navigator_name?: string;
 }>;
 
+export interface MatchScoreStorage {
+  saveMatchScore: (entry: LeaderboardEntry) => Promise<void>;
+  getTopMatchScores: (limit?: number) => Promise<LeaderboardEntry[]>;
+  seedInitialScoresIfEmpty?: (seeds: LeaderboardEntry[]) => Promise<void>;
+}
+
 export interface RoomManagerOptions {
   /** Seat is kept this long after its socket closes. */
   reconnectGraceMs?: number;
@@ -72,6 +78,8 @@ export interface RoomManagerOptions {
   maxRooms?: number;
   /** Disable the 60 Hz simulation loop and the expiry sweep (tests drive them manually). */
   autoTick?: boolean;
+  /** Optional persistence adapter for leaderboard match scores. */
+  db?: MatchScoreStorage;
 }
 
 const ROOM_ERROR_MESSAGES: Record<RoomErrorCode, string> = {
@@ -110,6 +118,7 @@ export class RoomManager {
   private readonly hardIdleExpiryMs: number;
   private readonly roleSwapTimeoutMs: number;
   private readonly maxRooms: number;
+  private readonly db?: MatchScoreStorage;
   private leaderboard: LeaderboardEntry[] = [
     {
       id: 'seed-1',
@@ -155,10 +164,26 @@ export class RoomManager {
     this.hardIdleExpiryMs = options.hardIdleExpiryMs ?? 2 * 60 * 60_000;
     this.roleSwapTimeoutMs = options.roleSwapTimeoutMs ?? 20_000;
     this.maxRooms = options.maxRooms ?? 5000;
+    this.db = options.db;
 
     if (options.autoTick !== false) {
       this.intervals.push(setInterval(() => this.tickAllRooms(), 1000 / 60));
       this.intervals.push(setInterval(() => this.expireIdleRooms(), 60_000));
+    }
+  }
+
+  public async init(): Promise<void> {
+    if (!this.db) return;
+    try {
+      if (this.db.seedInitialScoresIfEmpty) {
+        await this.db.seedInitialScoresIfEmpty(this.leaderboard);
+      }
+      const loaded = await this.db.getTopMatchScores(25);
+      if (loaded && loaded.length > 0) {
+        this.leaderboard = loaded;
+      }
+    } catch (err) {
+      console.error('[ROOM_MANAGER] Failed to load scores from database on startup:', err);
     }
   }
 
@@ -193,6 +218,11 @@ export class RoomManager {
     this.leaderboard.sort((a, b) => b.total_score - a.total_score);
     if (this.leaderboard.length > 25) {
       this.leaderboard.length = 25;
+    }
+    if (this.db) {
+      void this.db.saveMatchScore(newEntry).catch((err) => {
+        console.error('[ROOM_MANAGER] Failed to persist match score:', err);
+      });
     }
     return this.getLeaderboard();
   }

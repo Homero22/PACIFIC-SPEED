@@ -74,7 +74,12 @@ const wss = new WebSocketServer({
   verifyClient: (info: { origin: string; req: IncomingMessage }) =>
     isAllowedWsOrigin(info.origin || undefined, info.req.headers.host, allowedWsOrigins, isProductionEnv())
 });
-const roomManager = new RoomManager((pass) => tournamentService.verifyTournamentPass(pass));
+const roomManager = new RoomManager(
+  (pass) => tournamentService.verifyTournamentPass(pass),
+  {
+    db: dbProvider
+  }
+);
 
 function clientIp(req: express.Request): string {
   return req.ip || req.socket.remoteAddress || 'unknown';
@@ -112,8 +117,10 @@ function createIpLimiter(max: number, windowMs: number) {
 const paymentLinkLimiter = createIpLimiter(10, 60 * 60 * 1000);
 const passLimiter = createIpLimiter(30, 15 * 60 * 1000);
 
-// Initialize Database & Tournament Service
-void tournamentService.init();
+// Initialize Database, Tournament Service & Leaderboard Persistence
+void tournamentService.init().then(async () => {
+  await roomManager.init();
+});
 
 // Healthcheck endpoint for Railway deployment (strictly sanitized, no secret keys/tokens)
 app.get('/api/health', (_req, res) => {

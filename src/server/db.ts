@@ -10,6 +10,7 @@ import {
 } from '../shared/financialConfig.js';
 import type {
   ConfigChangeRecord,
+  LeaderboardEntry,
   PaymentAuditRecord,
   PendingRegistrationRecord,
   ReferralRecord,
@@ -26,6 +27,7 @@ interface LocalDatabaseSchema {
   security_logs: SecurityAuditLog[];
   pending_registrations?: PendingRegistrationRecord[];
   config_changes?: ConfigChangeRecord[];
+  match_scores?: LeaderboardEntry[];
 }
 
 
@@ -321,6 +323,21 @@ function mapConfigChangeRow(row: any): ConfigChangeRecord {
   };
 }
 
+function mapMatchScoreRow(r: any): LeaderboardEntry {
+  return {
+    id: r.id,
+    room_code: r.room_code,
+    driver_name: r.driver_name,
+    navigator_name: r.navigator_name,
+    total_score: parseInt(r.total_score, 10),
+    distance_traveled: parseFloat(r.distance_traveled),
+    survival_time: parseFloat(r.survival_time),
+    region: r.region || 'LATAM-PACIFIC',
+    created_at: typeof r.created_at === 'string' ? r.created_at : new Date(r.created_at).toISOString(),
+    is_tournament: Boolean(r.is_tournament)
+  };
+}
+
 export class ConfigLockConflictError extends Error {}
 
 export class DatabaseProvider {
@@ -609,6 +626,9 @@ export class DatabaseProvider {
         if (!this.localData.pending_registrations) {
           this.localData.pending_registrations = [];
         }
+        if (!this.localData.match_scores) {
+          this.localData.match_scores = [];
+        }
         return;
       } catch {
         // Fall through to default setup
@@ -621,7 +641,8 @@ export class DatabaseProvider {
       referrals: SEED_LOCAL_REFERRALS.map((r) => ({ ...r })),
       payments: [],
       security_logs: [],
-      pending_registrations: []
+      pending_registrations: [],
+      match_scores: []
     };
 
     this.persistLocalData();
@@ -723,6 +744,22 @@ export class DatabaseProvider {
           registered_couples_at_change INT NOT NULL DEFAULT 0,
           changes_json JSONB NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS match_scores (
+          id VARCHAR(100) PRIMARY KEY,
+          room_code VARCHAR(30) NOT NULL,
+          driver_name VARCHAR(100) NOT NULL,
+          navigator_name VARCHAR(100) NOT NULL,
+          total_score INT NOT NULL,
+          distance_traveled NUMERIC(10,2) NOT NULL,
+          survival_time NUMERIC(10,2) NOT NULL,
+          region VARCHAR(50) NOT NULL DEFAULT 'LATAM-PACIFIC',
+          is_tournament BOOLEAN NOT NULL DEFAULT FALSE,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_match_scores_score ON match_scores (total_score DESC);
+        CREATE INDEX IF NOT EXISTS idx_match_scores_tourney ON match_scores (is_tournament);
       `);
 
       // Backfill pass tokens for payments approved before tokens existed (admin can hand them out)
@@ -1415,6 +1452,73 @@ export class DatabaseProvider {
       tournament_id: found.tournament_id,
       status: 'ACTIVE'
     };
+  }
+
+  public async saveMatchScore(entry: LeaderboardEntry): Promise<void> {
+    const pool = this.backend();
+    if (pool) {
+      await pool.query(
+        `INSERT INTO match_scores (
+          id, room_code, driver_name, navigator_name,
+          total_score, distance_traveled, survival_time,
+          region, is_tournament, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        ON CONFLICT (id) DO UPDATE SET
+          total_score = EXCLUDED.total_score,
+          distance_traveled = EXCLUDED.distance_traveled,
+          survival_time = EXCLUDED.survival_time`,
+        [
+          entry.id,
+          entry.room_code,
+          entry.driver_name,
+          entry.navigator_name,
+          entry.total_score,
+          entry.distance_traveled,
+          entry.survival_time,
+          entry.region || 'LATAM-PACIFIC',
+          Boolean(entry.is_tournament),
+          entry.created_at || new Date().toISOString()
+        ]
+      );
+    } else {
+      const data = this.local();
+      if (!data.match_scores) data.match_scores = [];
+      const idx = data.match_scores.findIndex((s) => s.id === entry.id);
+      if (idx >= 0) {
+        data.match_scores[idx] = { ...entry };
+      } else {
+        data.match_scores.push({ ...entry });
+      }
+      this.persistLocalData();
+    }
+  }
+
+  public async getTopMatchScores(limit = 25): Promise<LeaderboardEntry[]> {
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query(
+        `SELECT id, room_code, driver_name, navigator_name,
+                total_score, distance_traveled, survival_time,
+                region, is_tournament, created_at
+         FROM match_scores
+         ORDER BY total_score DESC
+         LIMIT $1`,
+        [limit]
+      );
+      return res.rows.map(mapMatchScoreRow);
+    } else {
+      const list = this.local().match_scores || [];
+      return [...list].sort((a, b) => b.total_score - a.total_score).slice(0, limit);
+    }
+  }
+
+  public async seedInitialScoresIfEmpty(seeds: LeaderboardEntry[]): Promise<void> {
+    const existing = await this.getTopMatchScores(1);
+    if (existing.length === 0) {
+      for (const seed of seeds) {
+        await this.saveMatchScore(seed);
+      }
+    }
   }
 }
 
