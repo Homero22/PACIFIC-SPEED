@@ -2,14 +2,19 @@ import {
   applyFinancialConfigUpdate,
   calculatePodiumPrizes,
   calculateTransactionSplits,
+  ConfigFieldChange,
   DEFAULT_SECURITY_CONFIG,
+  diffFinancialConfig,
+  LOCKABLE_CONFIG_FIELDS,
   PodiumPrizeDistribution,
   round2,
   TournamentFinancialConfig
 } from '../shared/financialConfig.js';
 import type {
   AdminDashboardData,
+  ConfigChangeRecord,
   CreateReferralDto,
+  FinancialConfigLock,
   PaymentAuditRecord,
   PayphoneWebhookPayload,
   PendingRegistrationRecord,
@@ -20,7 +25,7 @@ import type {
   UpdateConfigDto
 } from '../shared/types.js';
 import { antiCheatEngine } from './antiCheat.js';
-import { DatabaseProvider, DatabaseUnavailableError, dbProvider } from './db.js';
+import { ConfigLockConflictError, DatabaseProvider, DatabaseUnavailableError, dbProvider } from './db.js';
 import {
   checkPaymentRateLimit,
   confirmPayphoneTransaction,
@@ -31,6 +36,11 @@ import {
 } from './payphoneSecurity.js';
 
 export type PaymentResult = { success: boolean; message: string; auditRecord?: PaymentAuditRecord };
+
+/** Invalid admin input (HTTP 400). */
+export class ConfigValidationError extends Error {}
+/** Price/split locked because pairs already paid (HTTP 409). */
+export class ConfigLockedError extends Error {}
 
 const VALID_TOURNAMENT_STATUSES: TournamentStatus[] = ['draft', 'active', 'in_progress', 'completed'];
 
@@ -294,7 +304,8 @@ export class TournamentService {
       amount_usd: gate.tournament.entry_fee_usd,
       status: 'PENDING',
       tournament_id: gate.tournament.id,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      config_snapshot: await this.db.getTournamentConfig()
     };
     await this.db.savePendingRegistration(pending);
     return this.applyConfirmedPayment(pending, `sim-${clientTxId}`, JSON.stringify(pending), clientIp);
@@ -306,7 +317,8 @@ export class TournamentService {
     rawPayload: string,
     clientIp: string
   ): Promise<PaymentResult> {
-    const config = await this.db.getTournamentConfig();
+    // Split with the config the payer saw when the link was created (older rows: current config)
+    const config = pending.config_snapshot || (await this.db.getTournamentConfig());
     const tournament = await this.db.getActiveTournament();
     const tournamentId = pending.tournament_id || tournament.id;
 
@@ -370,66 +382,108 @@ export class TournamentService {
     const payments = await this.db.listPaymentAudits();
     const referrals = await this.db.listReferrals();
     const security_logs = antiCheatEngine.getSecurityLogs();
-
-    let gross_collected_total = 0;
-    let payphone_fees_total = 0;
-    let prize_pool_total = 0;
-    let charity_total = 0;
-    let developer_net_total = 0;
-    let collaborator_payouts_total = 0;
-
-    for (const p of payments) {
-      if (p.status === 'APPROVED') {
-        gross_collected_total += p.gross_amount;
-        payphone_fees_total += p.payphone_fee;
-        prize_pool_total += p.prize_pool_share;
-        charity_total += p.charity_share;
-        developer_net_total += p.developer_share;
-        // Legacy rows without referral may carry a collaborator share nobody earned
-        collaborator_payouts_total += p.referral_id ? p.collaborator_share : 0;
-        if (!p.referral_id) developer_net_total += p.collaborator_share;
-      }
-    }
+    // Aggregated in the database over all payments: the ledger above is capped at 100 rows
+    const totals = await this.db.getPaymentTotals(tournament.id);
 
     return {
       tournament,
       financial_summary: {
-        gross_collected_total: round2(gross_collected_total),
-        payphone_fees_total: round2(payphone_fees_total),
-        prize_pool_total: round2(prize_pool_total),
-        charity_total: round2(charity_total),
-        developer_net_total: round2(developer_net_total),
-        collaborator_payouts_total: round2(collaborator_payouts_total)
+        gross_collected_total: totals.gross,
+        payphone_fees_total: totals.payphone,
+        prize_pool_total: totals.prize,
+        charity_total: totals.charity,
+        developer_net_total: totals.developer,
+        collaborator_payouts_total: totals.collaborators
       },
       payments_audit: payments.map(({ raw_payload_json: _raw, ...p }) => p),
       referrals,
       security_logs,
       active_config: config,
-      security_config: DEFAULT_SECURITY_CONFIG
+      security_config: DEFAULT_SECURITY_CONFIG,
+      config_lock: this.getConfigLock(tournament),
+      config_history: await this.db.listConfigChanges()
     };
   }
 
-  public async updateDynamicConfig(dto: UpdateConfigDto, adminIp = '127.0.0.1'): Promise<TournamentFinancialConfig> {
+  public getConfigLock(tournament: TournamentRecord): FinancialConfigLock {
+    const locked = tournament.status !== 'completed' && tournament.registered_couples_count > 0;
+    return {
+      locked,
+      registered_couples: tournament.registered_couples_count,
+      locked_fields: locked ? [...LOCKABLE_CONFIG_FIELDS] : []
+    };
+  }
+
+  /**
+   * Applies an admin config change. Once a pair has paid, the price and the split are locked:
+   * changing them needs `force` plus a written reason, and every change goes to the history.
+   */
+  public async updateDynamicConfig(
+    dto: UpdateConfigDto,
+    adminIp = '127.0.0.1'
+  ): Promise<{ config: TournamentFinancialConfig; changes: ConfigFieldChange[] }> {
+    const { force, reason: rawReason, ...update } = dto || {};
     const current = await this.db.getTournamentConfig();
-    const next = applyFinancialConfigUpdate(current, dto || {});
+    const next = applyFinancialConfigUpdate(current, update);
+    const changes = diffFinancialConfig(current, next);
+    if (changes.length === 0) {
+      return { config: current, changes };
+    }
 
     const tournament = await this.db.getActiveTournament();
     if (tournament.status !== 'completed' && next.max_couples_limit < tournament.registered_couples_count) {
-      throw new Error(
+      throw new ConfigValidationError(
         `El límite (${next.max_couples_limit}) no puede ser menor que las parejas ya inscritas (${tournament.registered_couples_count}).`
       );
     }
 
-    await this.db.saveTournamentConfig(next, tournament.id);
+    const lock = this.getConfigLock(tournament);
+    const touchesLocked = changes.some((c) => LOCKABLE_CONFIG_FIELDS.includes(c.field));
+    const reason = String(rawReason || '').trim().slice(0, 500);
+    const forced = Boolean(force) && lock.locked && touchesLocked;
+    if (lock.locked && touchesLocked) {
+      if (!force) {
+        throw new ConfigLockedError(
+          `Ya hay ${lock.registered_couples} pareja(s) inscrita(s): la cuota y el reparto están bloqueados. ` +
+            'Para cambiarlos igual, confirma el cambio forzado e indica el motivo.'
+        );
+      }
+      if (reason.length < 10) {
+        throw new ConfigValidationError('Indica el motivo del cambio forzado (al menos 10 caracteres).');
+      }
+    }
+
+    const change: ConfigChangeRecord = {
+      id: `cfg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      changed_at: new Date().toISOString(),
+      admin_ip: adminIp,
+      forced,
+      reason: reason || null,
+      registered_couples_at_change: tournament.registered_couples_count,
+      changes
+    };
+
+    try {
+      await this.db.saveTournamentConfig(next, tournament.id, {
+        change,
+        // Re-check inside the transaction: a pair may have paid since we read the tournament
+        requireNoRegistrations: touchesLocked && !forced
+      });
+    } catch (err) {
+      if (err instanceof ConfigLockConflictError) throw new ConfigLockedError(err.message);
+      throw err;
+    }
 
     antiCheatEngine.logSecurityViolation(
       'config_modified',
-      'low',
+      forced ? 'high' : 'low',
       adminIp,
-      'Admin updated dynamic financial configuration'
+      `Configuración financiera modificada${forced ? ' (FORZADO con parejas inscritas)' : ''}: ${changes
+        .map((c) => c.label)
+        .join(', ')}`
     );
 
-    return next;
+    return { config: next, changes };
   }
 
   public async createReferral(dto: CreateReferralDto): Promise<ReferralRecord> {

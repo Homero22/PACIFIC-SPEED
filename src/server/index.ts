@@ -25,7 +25,7 @@ import {
 import { DatabaseUnavailableError, dbProvider } from './db.js';
 import { RoomManager } from './roomManager.js';
 import { roomFromQuery, withRoomParam } from './roomUrls.js';
-import { sanitizePairName, tournamentService } from './tournamentService.js';
+import { ConfigLockedError, sanitizePairName, tournamentService } from './tournamentService.js';
 import {
   isAllowedWsOrigin,
   parseClientMessage,
@@ -259,7 +259,9 @@ app.post('/api/payphone/create-link', paymentLinkLimiter, async (req, res) => {
       status: 'PENDING',
       tournament_id: tournament.id,
       created_at: new Date().toISOString(),
-      room_code: roomCode
+      room_code: roomCode,
+      // Freeze the split the payer agreed to; the payment is credited with it
+      config_snapshot: await dbProvider.getTournamentConfig()
     });
 
     // 3. Prepare Payphone Button V2 Transaction
@@ -399,10 +401,10 @@ app.get('/api/admin/dashboard', requireAdminAuth, async (_req, res) => {
 
 app.post('/api/admin/config', requireAdminAuth, async (req, res) => {
   try {
-    const updated = await tournamentService.updateDynamicConfig(req.body, clientIp(req));
-    res.json({ success: true, config: updated });
+    const { config, changes } = await tournamentService.updateDynamicConfig(req.body, clientIp(req));
+    res.json({ success: true, config, changes });
   } catch (err) {
-    sendError(res, err, 400);
+    sendError(res, err, err instanceof ConfigLockedError ? 409 : 400);
   }
 });
 

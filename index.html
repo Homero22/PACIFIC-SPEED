@@ -1014,7 +1014,7 @@
               🚀 01 JUGAR &amp; TRIPULACIÓN
             </button>
             <button class="hangar-tab-btn" data-hangar-tab="hangar-tab-tournament">
-              🏆 02 TORNEO OFICIAL ($10 USD)
+              🏆 02 TORNEO OFICIAL (<span data-bind="fee">$10</span> USD)
             </button>
             <button class="hangar-tab-btn" data-hangar-tab="hangar-tab-chassis">
               🛠️ 03 NAVE &amp; ARMERÍA
@@ -1030,7 +1030,7 @@
             <div id="mode-status-banner" class="practice-badge-active">
               <span id="mode-status-text">🧪 MODO ACTUAL: <strong>PRÁCTICA LIBRE (100% GRATUITO)</strong></span>
               <button id="btn-banner-action" class="btn" style="font-size: 9px; border-color: var(--accent); color: #ffb703;">
-                🏆 Inscribirse al Torneo ($10 USD) &rarr;
+                🏆 Inscribirse al Torneo (<span data-bind="fee">$10</span> USD) &rarr;
               </button>
             </div>
 
@@ -1132,18 +1132,18 @@
             </div>
           </div>
 
-          <!-- TAB 2: 02 TORNEO OFICIAL ($10 USD) -->
+          <!-- TAB 2: 02 TORNEO OFICIAL -->
           <div id="hangar-tab-tournament" class="hangar-panel">
             <div class="hangar-tournament-split">
               <!-- Left Column: Tournament Telemetry & Rules -->
               <div class="hangar-col">
                 <div class="section-box" style="border: 1px solid var(--accent); background: rgba(14, 25, 42, 0.9);">
                   <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span class="section-title" style="color: var(--accent);">CAMPEONATO OFICIAL // $10 USD POR PAREJA</span>
+                    <span class="section-title" style="color: var(--accent);">CAMPEONATO OFICIAL // <span data-bind="fee">$10</span> USD POR PAREJA</span>
                     <span id="tourney-status-pill" class="status-badge status-online">REGISTRO ABIERTO</span>
                   </div>
                   <p style="font-size: 10px; color: var(--text-muted); line-height: 1.45; margin-top: 4px;">
-                    Compitan en pareja por el podio. El <strong>60%</strong> del pozo se reparte al Top 3 y el <strong>15%</strong> se dona a refugios y rescate animal.
+                    Compitan en pareja por el podio. El <strong data-bind="pct-prize">60%</strong> de cada inscripción va al pozo del Top 3 y el <strong data-bind="pct-charity">15%</strong> se dona a refugios y rescate animal.
                   </p>
 
                   <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin: 10px 0;">
@@ -1152,19 +1152,19 @@
                       <span id="tourney-couples-count" class="metric-value" style="font-size: 14px;">0 / 50</span>
                     </div>
                     <div class="metric-box" style="padding: 6px; border-left-color: var(--phosphor);">
-                      <span class="metric-label">POZO PREMIOS (60%)</span>
+                      <span class="metric-label">POZO PREMIOS (<span data-bind="pct-prize">60%</span>)</span>
                       <span id="tourney-prize-pool" class="metric-value" style="font-size: 14px; color: var(--phosphor);">$0.00</span>
                     </div>
                     <div class="metric-box" style="padding: 6px; border-left-color: var(--cyan);">
-                      <span class="metric-label">REFUGIO ANIMAL (15%)</span>
+                      <span class="metric-label">REFUGIO ANIMAL (<span data-bind="pct-charity">15%</span>)</span>
                       <span id="tourney-charity-pool" class="metric-value" style="font-size: 14px; color: var(--cyan);">$0.00</span>
                     </div>
                   </div>
 
                   <div style="font-size: 10px; color: var(--text-muted); display: flex; justify-content: space-between; background: rgba(0,0,0,0.4); padding: 8px 10px; border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.08);">
-                    <span>🥇 1º (66.66%): <strong id="tourney-podium-1" style="color: #ffb703;">$0.00</strong></span>
-                    <span>🥈 2º (23.33%): <strong id="tourney-podium-2" style="color: #e6f2ff;">$0.00</strong></span>
-                    <span>🥉 3º (10.01%): <strong id="tourney-podium-3" style="color: #cd7f32;">$0.00</strong></span>
+                    <span>🥇 1º (<span data-bind="pct-podium-1">66.66%</span>): <strong id="tourney-podium-1" style="color: #ffb703;">$0.00</strong></span>
+                    <span>🥈 2º (<span data-bind="pct-podium-2">23.33%</span>): <strong id="tourney-podium-2" style="color: #e6f2ff;">$0.00</strong></span>
+                    <span>🥉 3º (<span data-bind="pct-podium-3">10.01%</span>): <strong id="tourney-podium-3" style="color: #cd7f32;">$0.00</strong></span>
                   </div>
 
                   <!-- How Tournament Works -->
@@ -1172,7 +1172,7 @@
                     <div style="font-size: 10px; font-weight: 700; color: var(--phosphor); margin-bottom: 4px;">¿CÓMO FUNCIONA EL TORNEO?</div>
                     <ol style="font-size: 9.5px; color: var(--text-muted); line-height: 1.5; padding-left: 14px;">
                       <li>Practiquen gratis todas las veces que quieran en el <strong>Paso 01</strong>.</li>
-                      <li>Inscriban a la pareja por <strong>$10 USD</strong> para recibir su <strong>Pase de Torneo</strong> único.</li>
+                      <li>Inscriban a la pareja por <strong><span data-bind="fee">$10</span> USD</strong> para recibir su <strong>Pase de Torneo</strong> único.</li>
                       <li>Compartan el código de Pase con su copiloto en cualquier navegador.</li>
                       <li>Las partidas con Pase activo compiten en la <strong>Clasificación Oficial</strong> por el podio.</li>
                     </ol>
@@ -1184,7 +1184,7 @@
               <div class="hangar-col">
                 <!-- Box 1: Register with Payphone -->
                 <div class="section-box" style="background: rgba(8, 16, 28, 0.88);">
-                  <span class="section-title">INSCRIPCIÓN DE PAREJA ($10.00 USD)</span>
+                  <span class="section-title">INSCRIPCIÓN DE PAREJA (<span data-bind="fee2">$10.00</span> USD)</span>
                   <p style="font-size: 10px; color: var(--text-muted); line-height: 1.4; margin-top: 2px;">
                     Ingresa tus datos para generar tu enlace seguro de pago en Payphone:
                   </p>
@@ -1194,7 +1194,7 @@
                   </div>
 
                   <button id="btn-tourney-pay" class="btn btn-primary" style="margin-top: 8px; width: 100%; font-size: 12px; padding: 12px;">
-                    💳 INSCRIBIR PAREJA ($10.00 USD PAYPHONE)
+                    💳 INSCRIBIR PAREJA (<span data-bind="fee2">$10.00</span> USD PAYPHONE)
                   </button>
                   <div id="tourney-feedback" style="font-size: 10px; color: var(--phosphor); text-align: center; min-height: 16px; margin-top: 6px;"></div>
                 </div>
@@ -1317,7 +1317,7 @@
           <!-- Clean User Footer (No raw links or tech jargon) -->
           <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 10px; margin-top: 4px;">
             <span style="font-size: 10px; color: var(--text-muted);">PACIFIC SPEED: OVERDRIVE &bull; Competición Táctica 2026</span>
-            <span style="font-size: 10px; color: var(--cyan); font-weight: 700;">🐾 15% Donado a Rescate y Alimento Animal</span>
+            <span style="font-size: 10px; color: var(--cyan); font-weight: 700;">🐾 <span data-bind="pct-charity">15%</span> Donado a Rescate y Alimento Animal</span>
           </div>
         </div>
       </section>
@@ -1360,7 +1360,7 @@
               🚀 CONFIRMAR Y DESPEGAR AHORA
             </button>
             <button id="btn-crew-goto-tourney" class="btn" style="border-color: var(--accent); color: var(--accent); padding: 9px; font-size: 10px;">
-              🏆 CAMBIAR A TORNEO OFICIAL ($10 USD)
+              🏆 CAMBIAR A TORNEO OFICIAL (<span data-bind="fee">$10</span> USD)
             </button>
             <button id="btn-cancel-launch" class="btn" style="padding: 8px; font-size: 10px;">
               ✕ VOLVER AL HANGAR
@@ -1399,19 +1399,19 @@
             <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
               <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 800; color: #ffb703;">
                 <span>TOTAL A PAGAR:</span>
-                <span>$10.00 USD</span>
+                <span><span data-bind="fee2">$10.00</span> USD</span>
               </div>
               <div style="font-size: 9.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">
-                &bull; $6.00 (60%) al Pozo de Premios Top 3<br>
-                &bull; $1.50 (15%) Donación al Refugio Animal<br>
-                &bull; $2.50 (25%) Operaciones y Pasarela
+                &bull; <span data-bind="amt-prize">$6.00</span> (<span data-bind="pct-prize">60%</span>) al Pozo de Premios Top 3<br>
+                &bull; <span data-bind="amt-charity">$1.50</span> (<span data-bind="pct-charity">15%</span>) Donación al Refugio Animal<br>
+                &bull; <span data-bind="amt-ops">$2.50</span> (<span data-bind="pct-ops">25%</span>) Operaciones y Pasarela
               </div>
             </div>
           </div>
 
           <div style="display: flex; flex-direction: column; gap: 8px;">
             <button id="btn-execute-tourney-pay" class="btn btn-primary" style="padding: 13px; font-size: 12px;">
-              💳 PROCEDER AL PAGO CON PAYPHONE ($10 USD)
+              💳 PROCEDER AL PAGO CON PAYPHONE (<span data-bind="fee">$10</span> USD)
             </button>
             <button id="btn-open-redeem-from-tourney" class="btn" style="border-color: var(--cyan); color: var(--cyan); padding: 9px; font-size: 10px;">
               🔑 YA PAGUÉ / INGRESAR MI PASE DE TORNEO

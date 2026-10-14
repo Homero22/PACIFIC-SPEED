@@ -9,6 +9,7 @@ import {
   TransactionCalculationResult
 } from '../shared/financialConfig.js';
 import type {
+  ConfigChangeRecord,
   PaymentAuditRecord,
   PendingRegistrationRecord,
   ReferralRecord,
@@ -24,6 +25,7 @@ interface LocalDatabaseSchema {
   payments: PaymentAuditRecord[];
   security_logs: SecurityAuditLog[];
   pending_registrations?: PendingRegistrationRecord[];
+  config_changes?: ConfigChangeRecord[];
 }
 
 
@@ -302,9 +304,24 @@ function mapPendingRow(row: any): PendingRegistrationRecord {
     status: row.status,
     tournament_id: row.tournament_id || undefined,
     created_at: row.created_at,
-    room_code: row.room_code || undefined
+    room_code: row.room_code || undefined,
+    config_snapshot: row.config_snapshot_json || undefined
   };
 }
+
+function mapConfigChangeRow(row: any): ConfigChangeRecord {
+  return {
+    id: row.id,
+    changed_at: new Date(row.changed_at).toISOString(),
+    admin_ip: row.admin_ip,
+    forced: Boolean(row.forced),
+    reason: row.reason || null,
+    registered_couples_at_change: parseInt(row.registered_couples_at_change || 0, 10),
+    changes: row.changes_json || []
+  };
+}
+
+export class ConfigLockConflictError extends Error {}
 
 export class DatabaseProvider {
   private pgPool: pg.Pool | null = null;
@@ -694,6 +711,18 @@ export class DatabaseProvider {
         ALTER TABLE pending_registrations ADD COLUMN IF NOT EXISTS tournament_id VARCHAR(100);
         -- Room the payer was in, so the Payphone return lands in the same room
         ALTER TABLE pending_registrations ADD COLUMN IF NOT EXISTS room_code VARCHAR(20);
+        -- Config in force when the payment link was created (the split uses it)
+        ALTER TABLE pending_registrations ADD COLUMN IF NOT EXISTS config_snapshot_json JSONB;
+
+        CREATE TABLE IF NOT EXISTS config_changes (
+          id VARCHAR(100) PRIMARY KEY,
+          changed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          admin_ip VARCHAR(64) NOT NULL,
+          forced BOOLEAN NOT NULL DEFAULT FALSE,
+          reason TEXT,
+          registered_couples_at_change INT NOT NULL DEFAULT 0,
+          changes_json JSONB NOT NULL
+        );
       `);
 
       // Backfill pass tokens for payments approved before tokens existed (admin can hand them out)
@@ -763,14 +792,49 @@ export class DatabaseProvider {
   }
 
   /**
-   * Saves the config and syncs entry fee / capacity into the active tournament.
+   * Saves the config, syncs entry fee / capacity into the active tournament and records the
+   * change in the history, all at once. With `requireNoRegistrations`, it fails with
+   * ConfigLockConflictError if a pair paid in the meantime (the lock check is re-done here).
    */
-  public async saveTournamentConfig(config: TournamentFinancialConfig, tournamentId?: string): Promise<void> {
+  public async saveTournamentConfig(
+    config: TournamentFinancialConfig,
+    tournamentId?: string,
+    options: { change?: ConfigChangeRecord; requireNoRegistrations?: boolean } = {}
+  ): Promise<void> {
+    const { change, requireNoRegistrations } = options;
+    const lockConflict = () =>
+      new ConfigLockConflictError(
+        'Una pareja se inscribió mientras editabas: la cuota y el reparto quedaron bloqueados. Recarga y revisa.'
+      );
     const pool = this.backend();
     if (pool) {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
+        if (requireNoRegistrations && tournamentId) {
+          const res = await client.query(
+            'SELECT registered_couples_count FROM tournaments WHERE id = $1 FOR UPDATE',
+            [tournamentId]
+          );
+          if (res.rows.length > 0 && parseInt(res.rows[0].registered_couples_count || 0, 10) > 0) {
+            throw lockConflict();
+          }
+        }
+        if (change) {
+          await client.query(
+            `INSERT INTO config_changes (id, changed_at, admin_ip, forced, reason, registered_couples_at_change, changes_json)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+              change.id,
+              change.changed_at,
+              change.admin_ip,
+              change.forced,
+              change.reason,
+              change.registered_couples_at_change,
+              JSON.stringify(change.changes)
+            ]
+          );
+        }
         await client.query(
           `INSERT INTO tournament_configs (id, config_json, updated_at)
            VALUES ($1, $2, CURRENT_TIMESTAMP)
@@ -794,13 +858,35 @@ export class DatabaseProvider {
       return;
     }
     const data = this.local();
+    if (
+      requireNoRegistrations &&
+      tournamentId &&
+      data.tournament.id === tournamentId &&
+      data.tournament.registered_couples_count > 0
+    ) {
+      throw lockConflict();
+    }
     data.config = config;
     if (tournamentId && data.tournament.id === tournamentId && data.tournament.status !== 'completed') {
       data.tournament.entry_fee_usd = config.entry_fee_per_pair;
       data.tournament.max_couples = config.max_couples_limit;
       data.tournament.config_snapshot = config;
     }
+    if (change) {
+      if (!data.config_changes) data.config_changes = [];
+      data.config_changes.unshift({ ...change });
+      if (data.config_changes.length > 200) data.config_changes.length = 200;
+    }
     this.persistLocalData();
+  }
+
+  public async listConfigChanges(limit = 50): Promise<ConfigChangeRecord[]> {
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query('SELECT * FROM config_changes ORDER BY changed_at DESC LIMIT $1', [limit]);
+      return res.rows.map(mapConfigChangeRow);
+    }
+    return (this.local().config_changes || []).slice(0, limit).map((c) => ({ ...c }));
   }
 
   public async getActiveTournament(): Promise<TournamentRecord> {
@@ -1144,6 +1230,66 @@ export class DatabaseProvider {
     return this.local().payments.slice(0, 100).map((p) => ({ ...p }));
   }
 
+  /**
+   * Totals over EVERY approved payment of a tournament (the ledger listing is capped at 100 rows,
+   * so totals must not be summed from it). Collaborator shares of rows without a referral
+   * (legacy data) count as platform income, as nobody earned them.
+   */
+  public async getPaymentTotals(tournamentId: string): Promise<{
+    count: number;
+    gross: number;
+    payphone: number;
+    prize: number;
+    charity: number;
+    developer: number;
+    collaborators: number;
+  }> {
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query(
+        `SELECT COUNT(*) AS count,
+                COALESCE(SUM(gross_amount), 0) AS gross,
+                COALESCE(SUM(payphone_fee), 0) AS payphone,
+                COALESCE(SUM(prize_pool_share), 0) AS prize,
+                COALESCE(SUM(charity_share), 0) AS charity,
+                COALESCE(SUM(developer_share + CASE WHEN referral_id IS NULL THEN collaborator_share ELSE 0 END), 0) AS developer,
+                COALESCE(SUM(CASE WHEN referral_id IS NOT NULL THEN collaborator_share ELSE 0 END), 0) AS collaborators
+         FROM payments_audit WHERE status = 'APPROVED' AND tournament_id = $1`,
+        [tournamentId]
+      );
+      const r = res.rows[0];
+      return {
+        count: parseInt(r.count, 10),
+        gross: round2(parseFloat(r.gross)),
+        payphone: round2(parseFloat(r.payphone)),
+        prize: round2(parseFloat(r.prize)),
+        charity: round2(parseFloat(r.charity)),
+        developer: round2(parseFloat(r.developer)),
+        collaborators: round2(parseFloat(r.collaborators))
+      };
+    }
+    const totals = { count: 0, gross: 0, payphone: 0, prize: 0, charity: 0, developer: 0, collaborators: 0 };
+    for (const p of this.local().payments) {
+      if (p.status !== 'APPROVED' || p.tournament_id !== tournamentId) continue;
+      totals.count++;
+      totals.gross += p.gross_amount;
+      totals.payphone += p.payphone_fee;
+      totals.prize += p.prize_pool_share;
+      totals.charity += p.charity_share;
+      totals.developer += p.developer_share + (p.referral_id ? 0 : p.collaborator_share);
+      totals.collaborators += p.referral_id ? p.collaborator_share : 0;
+    }
+    return {
+      count: totals.count,
+      gross: round2(totals.gross),
+      payphone: round2(totals.payphone),
+      prize: round2(totals.prize),
+      charity: round2(totals.charity),
+      developer: round2(totals.developer),
+      collaborators: round2(totals.collaborators)
+    };
+  }
+
   public async getPaymentAuditByTransactionId(txId: string): Promise<PaymentAuditRecord | null> {
     if (!txId) return null;
     const cleanId = String(txId).trim();
@@ -1162,8 +1308,9 @@ export class DatabaseProvider {
       // Insert only: an existing registration (possibly COMPLETED) must never be overwritten
       await pool.query(
         `INSERT INTO pending_registrations (
-          client_transaction_id, driver_name, navigator_name, referral_code, phone, amount_usd, status, tournament_id, created_at, room_code
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          client_transaction_id, driver_name, navigator_name, referral_code, phone, amount_usd, status, tournament_id, created_at, room_code,
+          config_snapshot_json
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           record.client_transaction_id,
           record.driver_name,
@@ -1174,7 +1321,8 @@ export class DatabaseProvider {
           record.status,
           record.tournament_id || null,
           record.created_at,
-          record.room_code || null
+          record.room_code || null,
+          record.config_snapshot ? JSON.stringify(record.config_snapshot) : null
         ]
       );
       return;

@@ -1,4 +1,5 @@
 import { escapeHtml, safeHttpUrl } from '../shared/escapeHtml.js';
+import { calculateTransactionSplits, round2 } from '../shared/financialConfig.js';
 import { GameSimulation } from '../shared/simulation.js';
 import { normalizeRoomCode } from '../shared/types.js';
 import type {
@@ -1515,7 +1516,7 @@ class PacificSpeedClientApp {
         bannerText.innerHTML = `🧪 MODO ACTUAL: <strong>PRÁCTICA LIBRE (100% GRATUITO)</strong>`;
       }
       if (bannerBtn) {
-        bannerBtn.textContent = '🏆 Inscribirse al Torneo ($10 USD) →';
+        bannerBtn.textContent = `🏆 Inscribirse al Torneo (${this.formatEntryFee()} USD) →`;
         bannerBtn.style.color = '#ffb703';
         bannerBtn.style.borderColor = 'var(--accent)';
       }
@@ -1621,9 +1622,49 @@ class PacificSpeedClientApp {
         statusPill.textContent = data.tournament.status === 'completed' ? 'FINALIZADO' : 'REGISTRO ABIERTO';
         statusPill.className = `status-badge ${data.tournament.status === 'completed' ? 'status-offline' : 'status-online'}`;
       }
+      this.applyPriceBindings(data);
+      this.updateModeBanner();
     } catch {
       // Offline fallback
     }
+  }
+
+  /** "$11" for whole amounts, "$12.50" otherwise; `fixed` always shows cents. */
+  private formatEntryFee(fixed = false): string {
+    const fee = this.activeTourneyStatus?.tournament.entry_fee_usd ?? 10;
+    return fixed || !Number.isInteger(fee) ? `$${fee.toFixed(2)}` : `$${fee}`;
+  }
+
+  /**
+   * Fills every [data-bind] price/percentage in the hangar from the server config, so the
+   * amounts shown always match what Payphone charges and how it is split.
+   */
+  private applyPriceBindings(data: TournamentTelemetryStatus): void {
+    const fee = data.tournament.entry_fee_usd;
+    const alloc = data.config.pricing_structure.revenue_allocation_percentages;
+    const podium = data.config.prize_podium_breakdown;
+    const splits = calculateTransactionSplits(fee, data.config, true);
+    const pct = (fraction: number) => `${Number((fraction * 100).toFixed(2))}%`;
+    const usd = (amount: number) => `$${amount.toFixed(2)}`;
+    const opsFraction = Math.max(0, 1 - alloc.prize_pool.percentage_of_gross - alloc.animal_charity.percentage_of_gross);
+
+    const values: Record<string, string> = {
+      fee: this.formatEntryFee(),
+      fee2: this.formatEntryFee(true),
+      'pct-prize': pct(alloc.prize_pool.percentage_of_gross),
+      'pct-charity': pct(alloc.animal_charity.percentage_of_gross),
+      'pct-ops': pct(opsFraction),
+      'pct-podium-1': pct(podium.first_place_percentage),
+      'pct-podium-2': pct(podium.second_place_percentage),
+      'pct-podium-3': pct(podium.third_place_percentage),
+      'amt-prize': usd(splits.allocated_to_prize_pool),
+      'amt-charity': usd(splits.allocated_to_charity),
+      'amt-ops': usd(round2(fee - splits.allocated_to_prize_pool - splits.allocated_to_charity))
+    };
+    document.querySelectorAll<HTMLElement>('[data-bind]').forEach((el) => {
+      const value = values[el.dataset.bind || ''];
+      if (value !== undefined && el.textContent !== value) el.textContent = value;
+    });
   }
 }
 

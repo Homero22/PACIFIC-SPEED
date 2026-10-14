@@ -333,6 +333,61 @@ function round6(value: number): number {
   return Math.round(value * 1e6) / 1e6;
 }
 
+export interface ConfigFieldChange {
+  field: keyof FinancialConfigUpdate;
+  label: string;
+  before: number;
+  after: number;
+}
+
+/**
+ * Fields that change what a pair pays or where its money goes. They are frozen once a pair
+ * has paid in the active tournament; capacity can still grow.
+ */
+export const LOCKABLE_CONFIG_FIELDS: Array<keyof FinancialConfigUpdate> = [
+  'entry_fee_per_pair',
+  'payphone_percentage_fee',
+  'prize_pool_percentage',
+  'charity_percentage',
+  'developer_share_of_margin',
+  'collaborator_share_of_margin'
+];
+
+const CONFIG_FIELD_LABELS: Record<keyof FinancialConfigUpdate, string> = {
+  entry_fee_per_pair: 'Cuota por pareja',
+  max_couples_limit: 'Límite de parejas',
+  payphone_percentage_fee: 'Comisión Payphone (sin IVA)',
+  prize_pool_percentage: 'Pozo de premios',
+  charity_percentage: 'Refugio animal',
+  developer_share_of_margin: 'Plataforma (del margen)',
+  collaborator_share_of_margin: 'Colaborador (del margen)'
+};
+
+/** Flattens a config into the editable values, in the same units as FinancialConfigUpdate. */
+export function configToUpdateValues(config: TournamentFinancialConfig): Required<FinancialConfigUpdate> {
+  const ps = config.pricing_structure;
+  return {
+    entry_fee_per_pair: config.entry_fee_per_pair,
+    max_couples_limit: config.max_couples_limit,
+    payphone_percentage_fee: ps.payphone_gateway.percentage_fee,
+    prize_pool_percentage: ps.revenue_allocation_percentages.prize_pool.percentage_of_gross,
+    charity_percentage: ps.revenue_allocation_percentages.animal_charity.percentage_of_gross,
+    developer_share_of_margin: ps.margin_sub_distribution.platform_developer_share.percentage_of_operating_margin,
+    collaborator_share_of_margin: ps.margin_sub_distribution.collaborator_pool_share.percentage_of_operating_margin
+  };
+}
+
+export function diffFinancialConfig(
+  before: TournamentFinancialConfig,
+  after: TournamentFinancialConfig
+): ConfigFieldChange[] {
+  const a = configToUpdateValues(before);
+  const b = configToUpdateValues(after);
+  return (Object.keys(CONFIG_FIELD_LABELS) as Array<keyof FinancialConfigUpdate>)
+    .filter((field) => Math.abs(a[field] - b[field]) > 1e-9)
+    .map((field) => ({ field, label: CONFIG_FIELD_LABELS[field], before: a[field], after: b[field] }));
+}
+
 export interface PodiumPrizeDistribution {
   accumulated_prize_pool: number;
   first_place: number;

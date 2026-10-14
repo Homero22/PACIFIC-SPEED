@@ -1,4 +1,5 @@
 import type {
+  ConfigFieldChange,
   FinancialConfigUpdate,
   TournamentFinancialConfig,
   TournamentSecurityConfig,
@@ -319,6 +320,8 @@ export interface PendingRegistrationRecord {
   created_at: string;
   /** Room the payer was in, so the Payphone return lands in the same room. */
   room_code?: string;
+  /** Financial config in force when the payment link was created; the split uses it. */
+  config_snapshot?: TournamentFinancialConfig;
 }
 
 export interface TournamentTelemetryStatus {
@@ -364,6 +367,25 @@ export interface AdminDashboardData {
   security_logs: SecurityAuditLog[];
   active_config: TournamentFinancialConfig;
   security_config: TournamentSecurityConfig;
+  config_lock: FinancialConfigLock;
+  config_history: ConfigChangeRecord[];
+}
+
+/** Price and split are frozen once a pair has paid, unless the admin forces a change with a reason. */
+export interface FinancialConfigLock {
+  locked: boolean;
+  registered_couples: number;
+  locked_fields: Array<keyof FinancialConfigUpdate>;
+}
+
+export interface ConfigChangeRecord {
+  id: string;
+  changed_at: string;
+  admin_ip: string;
+  forced: boolean;
+  reason: string | null;
+  registered_couples_at_change: number;
+  changes: ConfigFieldChange[];
 }
 
 export interface CreateReferralDto {
@@ -377,7 +399,11 @@ export interface SettleReferralDto {
   settle_amount?: number;
 }
 
-export type UpdateConfigDto = FinancialConfigUpdate;
+export type UpdateConfigDto = FinancialConfigUpdate & {
+  /** Required to change locked fields once pairs have paid. */
+  force?: boolean;
+  reason?: string;
+};
 
 // -------------------------------------------------------------
 // WebSocket Messages
