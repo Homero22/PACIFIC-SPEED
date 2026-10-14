@@ -1,10 +1,20 @@
+import { escapeHtml } from '../shared/escapeHtml.js';
+import type { TournamentFinancialConfig } from '../shared/financialConfig.js';
 import type {
   AdminDashboardData,
   PaymentAuditRecord,
   ReferralRecord,
-  SecurityAuditLog,
-  TournamentFinancialConfig
+  SecurityAuditLog
 } from '../shared/types.js';
+
+const money = (v: unknown) => Number(v || 0).toFixed(2);
+
+// Prevents CSV/formula injection when the export is opened in Excel/Sheets
+function csvCell(value: unknown): string {
+  let text = String(value ?? '');
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return `"${text.replace(/"/g, '""')}"`;
+}
 
 class PacificSpeedAdminApp {
   private token: string | null = null;
@@ -279,26 +289,27 @@ class PacificSpeedAdminApp {
         const isApproved = p.status === 'APPROVED';
         return `
           <tr>
-            <td class="text-mono" style="color: #60a5fa;" title="${p.payphone_transaction_id}">
-              ${p.payphone_transaction_id.slice(0, 16)}...
+            <td class="text-mono" style="color: #60a5fa;" title="${escapeHtml(p.payphone_transaction_id)}">
+              ${escapeHtml(p.payphone_transaction_id.slice(0, 16))}...
+              ${p.pass_token ? `<div style="color: var(--text-muted); font-size: 11px;" title="Pase de torneo">${escapeHtml(p.pass_token)}</div>` : ''}
             </td>
             <td style="color: var(--text-muted); font-size: 12px;">
-              ${new Date(p.created_at).toLocaleString()}
+              ${escapeHtml(new Date(p.created_at).toLocaleString())}
             </td>
             <td>
-              <strong>${p.pair_driver_name}</strong> / ${p.pair_navigator_name}
+              <strong>${escapeHtml(p.pair_driver_name)}</strong> / ${escapeHtml(p.pair_navigator_name)}
             </td>
-            <td style="font-weight: 700;">$${p.gross_amount.toFixed(2)}</td>
-            <td style="color: #f87171;">$${p.payphone_fee.toFixed(2)}</td>
-            <td style="color: #10b981; font-weight: 600;">$${p.prize_pool_share.toFixed(2)}</td>
-            <td style="color: #06b6d4;">$${p.charity_share.toFixed(2)}</td>
-            <td style="color: #818cf8;">$${p.developer_share.toFixed(2)}</td>
+            <td style="font-weight: 700;">$${money(p.gross_amount)}</td>
+            <td style="color: #f87171;">$${money(p.payphone_fee)}</td>
+            <td style="color: #10b981; font-weight: 600;">$${money(p.prize_pool_share)}</td>
+            <td style="color: #06b6d4;">$${money(p.charity_share)}</td>
+            <td style="color: #818cf8;">$${money(p.developer_share)}</td>
             <td style="color: #fbbf24;">
-              ${p.referral_code || '--'} ($${p.collaborator_share.toFixed(2)})
+              ${escapeHtml(p.referral_code || '--')} ($${money(p.collaborator_share)})
             </td>
             <td>
               <span class="badge ${isApproved ? 'badge-success' : 'badge-danger'}">
-                ${p.status}
+                ${escapeHtml(p.status)}
               </span>
             </td>
           </tr>
@@ -327,18 +338,18 @@ class PacificSpeedAdminApp {
         const hasPending = r.pending_earnings_usd > 0;
         return `
           <tr>
-            <td><strong style="color: #60a5fa;">${r.referral_code}</strong></td>
-            <td>${r.collaborator_name}</td>
-            <td class="text-mono">${r.collaborator_payphone_number || '--'}</td>
-            <td style="text-align: center; font-weight: 600;">${r.total_couples_referred}</td>
-            <td>$${r.accumulated_earnings_usd.toFixed(2)}</td>
+            <td><strong style="color: #60a5fa;">${escapeHtml(r.referral_code)}</strong></td>
+            <td>${escapeHtml(r.collaborator_name)}</td>
+            <td class="text-mono">${escapeHtml(r.collaborator_payphone_number || '--')}</td>
+            <td style="text-align: center; font-weight: 600;">${Number(r.total_couples_referred) || 0}</td>
+            <td>$${money(r.accumulated_earnings_usd)}</td>
             <td style="font-weight: 700; color: ${hasPending ? '#10b981' : 'var(--text-muted)'};">
-              $${r.pending_earnings_usd.toFixed(2)}
+              $${money(r.pending_earnings_usd)}
             </td>
             <td>
               ${
                 hasPending
-                  ? `<button class="btn-secondary btn-settle-payout" data-id="${r.id}" style="padding: 4px 10px; font-size: 11px; border-color: #10b981; color: #10b981;">
+                  ? `<button class="btn-secondary btn-settle-payout" data-id="${escapeHtml(r.id)}" style="padding: 4px 10px; font-size: 11px; border-color: #10b981; color: #10b981;">
                       Liquidar Desembolso
                     </button>`
                   : '<span style="color: var(--text-subtle); font-size: 11px;">Al día</span>'
@@ -401,13 +412,13 @@ class PacificSpeedAdminApp {
         return `
           <tr>
             <td style="color: var(--text-muted); font-size: 12px;">
-              ${new Date(log.timestamp).toLocaleString()}
+              ${escapeHtml(new Date(log.timestamp).toLocaleString())}
             </td>
-            <td><span class="badge ${badgeClass}">${log.severity}</span></td>
-            <td><strong style="color: #60a5fa;">${log.event_type}</strong></td>
-            <td class="text-mono">${log.ip_address}</td>
+            <td><span class="badge ${badgeClass}">${escapeHtml(log.severity)}</span></td>
+            <td><strong style="color: #60a5fa;">${escapeHtml(log.event_type)}</strong></td>
+            <td class="text-mono">${escapeHtml(log.ip_address)}</td>
             <td style="font-size: 12px; color: var(--text-muted); max-width: 320px; word-break: break-word;">
-              ${log.details}
+              ${escapeHtml(log.details)}
             </td>
           </tr>
         `;
@@ -473,7 +484,7 @@ class PacificSpeedAdminApp {
     }
 
     try {
-      const res = await fetch(`/api/admin/referrals/${id}/settle`, {
+      const res = await fetch(`/api/admin/referrals/${encodeURIComponent(id)}/settle`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -506,7 +517,8 @@ class PacificSpeedAdminApp {
       max_couples_limit: getVal('cfg-max-couples'),
       prize_pool_percentage: getVal('cfg-prize-pool'),
       charity_percentage: getVal('cfg-charity'),
-      effective_payphone_fee: getVal('cfg-payphone-fee'),
+      // The form shows the base Payphone fee (without IVA); the server derives the effective fee
+      payphone_percentage_fee: getVal('cfg-payphone-fee'),
       developer_share_of_margin: getVal('cfg-dev-share')
     };
 
@@ -567,13 +579,14 @@ class PacificSpeedAdminApp {
 
       const reportBox = document.getElementById('tournament-closure-report');
       if (reportBox) {
+        const podium = data.podium_distribution || {};
         reportBox.innerHTML = `
           <div style="color: #10b981; font-weight: 700; margin-bottom: 8px;">✓ TORNEO LIQUIDADO EXITOSAMENTE</div>
-          <div>Pozo Total Distribuido: <strong>$${data.podium_distribution.total_prize_pool.toFixed(2)} USD</strong></div>
-          <div>🥇 1er Lugar (66.66%): <strong>$${data.podium_distribution.podium.first_place.prize_usd.toFixed(2)} USD</strong></div>
-          <div>🥈 2do Lugar (23.33%): <strong>$${data.podium_distribution.podium.second_place.prize_usd.toFixed(2)} USD</strong></div>
-          <div>🥉 3er Lugar (10.01%): <strong>$${data.podium_distribution.podium.third_place.prize_usd.toFixed(2)} USD</strong></div>
-          <div>🐾 Donación Entregada a Refugio Animal: <strong>$${data.charity_total_usd.toFixed(2)} USD</strong></div>
+          <div>Pozo Total Distribuido: <strong>$${money(podium.total_distributed)} USD</strong></div>
+          <div>🥇 1er Lugar: <strong>$${money(podium.first_place)} USD</strong></div>
+          <div>🥈 2do Lugar: <strong>$${money(podium.second_place)} USD</strong></div>
+          <div>🥉 3er Lugar: <strong>$${money(podium.third_place)} USD</strong></div>
+          <div>🐾 Donación Entregada a Refugio Animal: <strong>$${money(data.charity_total_usd)} USD</strong></div>
         `;
       }
 
@@ -618,6 +631,7 @@ class PacificSpeedAdminApp {
       'Margen_Plataforma_USD',
       'Comision_Afiliado_USD',
       'Codigo_Referido',
+      'Pase_Torneo',
       'Estado'
     ];
 
@@ -633,10 +647,11 @@ class PacificSpeedAdminApp {
       p.developer_share.toFixed(2),
       p.collaborator_share.toFixed(2),
       p.referral_code || 'N/A',
+      p.pass_token || '',
       p.status
     ]);
 
-    const csvContent = [headers.join(','), ...rows.map((r) => r.map((c) => `"${c}"`).join(','))].join('\n');
+    const csvContent = [headers.join(','), ...rows.map((r) => r.map(csvCell).join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');

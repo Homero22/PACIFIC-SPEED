@@ -1,7 +1,6 @@
 import type { WebSocket } from 'ws';
 import { GameSimulation } from '../shared/simulation.js';
 import { antiCheatEngine } from './antiCheat.js';
-import { dbProvider } from './db.js';
 import type {
   ClientInputPayload,
   CosmeticLoadout,
@@ -26,7 +25,14 @@ interface GameRoom {
   scoreRecorded: boolean;
   isTournamentVerified?: boolean;
   tournamentPass?: string;
+  tournamentPair?: { driver_name: string; navigator_name: string };
 }
+
+export type TournamentPassVerifier = (passCode: string) => Promise<{
+  valid: boolean;
+  driver_name?: string;
+  navigator_name?: string;
+}>;
 
 export const COMMS_PRESET_MAP: Record<TacticalCommsPreset, { code: string; label: string }> = {
   bogey_alert: { code: 'TAC-01 // BOGEY LOCK', label: '⚠️ BOGEY INBOUND — DEPLOY FLANK SHIELD' },
@@ -38,6 +44,8 @@ export const COMMS_PRESET_MAP: Record<TacticalCommsPreset, { code: string; label
 export class RoomManager {
   private rooms = new Map<string, GameRoom>();
   private clientToRoom = new Map<WebSocket, { roomCode: string; playerId: string }>();
+  // A tournament pass can only be active in one room at a time
+  private passToRoom = new Map<string, string>();
   private leaderboard: LeaderboardEntry[] = [
     {
       id: 'seed-1',
@@ -74,7 +82,7 @@ export class RoomManager {
     }
   ];
 
-  constructor() {
+  constructor(private readonly verifyPass?: TournamentPassVerifier) {
     setInterval(() => {
       this.tickAllRooms();
     }, 1000 / 60);
@@ -302,6 +310,9 @@ export class RoomManager {
 
     room.players.delete(meta.playerId);
     if (room.players.size === 0) {
+      if (room.tournamentPass && this.passToRoom.get(room.tournamentPass) === room.code) {
+        this.passToRoom.delete(room.tournamentPass);
+      }
       this.rooms.delete(meta.roomCode);
     } else {
       this.broadcastToRoom(room, {
@@ -358,32 +369,46 @@ export class RoomManager {
     }
   }
 
-  public setRoomTournamentPass(roomCode: string, passCode: string, verified: boolean = true): boolean {
-    const room = this.rooms.get(roomCode.toUpperCase());
-    if (!room) return false;
-    room.isTournamentVerified = verified;
-    room.tournamentPass = passCode.trim().toUpperCase();
+  public async handleSetTournamentPass(ws: WebSocket, passCodeRaw: string): Promise<void> {
+    const meta = this.clientToRoom.get(ws);
+    if (!meta || !this.verifyPass) return;
+    const passCode = passCodeRaw.trim().toUpperCase();
+
+    let check: Awaited<ReturnType<TournamentPassVerifier>>;
+    try {
+      check = await this.verifyPass(passCode);
+    } catch {
+      this.sendToClient(ws, { type: 'error', message: 'No se pudo verificar el pase en este momento.' });
+      return;
+    }
+
+    const room = this.rooms.get(meta.roomCode);
+    if (!room || !room.players.has(meta.playerId)) return;
+    if (!check.valid) {
+      this.sendToClient(ws, { type: 'error', message: 'Pase de torneo inválido.' });
+      return;
+    }
+
+    const claimedBy = this.passToRoom.get(passCode);
+    if (claimedBy && claimedBy !== room.code && this.rooms.get(claimedBy)?.players.size) {
+      this.sendToClient(ws, { type: 'error', message: 'Este pase ya está en uso en otra sala.' });
+      return;
+    }
+
+    if (room.tournamentPass && room.tournamentPass !== passCode) {
+      this.passToRoom.delete(room.tournamentPass);
+    }
+    this.passToRoom.set(passCode, room.code);
+    room.isTournamentVerified = true;
+    room.tournamentPass = passCode;
+    room.tournamentPair = {
+      driver_name: check.driver_name || 'PILOT_A',
+      navigator_name: check.navigator_name || 'PILOT_B'
+    };
     this.broadcastToRoom(room, {
       type: 'lobby_update',
       lobby: this.buildLobbyState(room)
     });
-    return true;
-  }
-
-  public async handleSetTournamentPass(ws: WebSocket, passCode: string): Promise<void> {
-    const meta = this.clientToRoom.get(ws);
-    if (!meta) return;
-    const room = this.rooms.get(meta.roomCode);
-    if (!room) return;
-    const check = await dbProvider.verifyTournamentPass(passCode);
-    if (check.valid) {
-      room.isTournamentVerified = true;
-      room.tournamentPass = passCode.trim().toUpperCase();
-      this.broadcastToRoom(room, {
-        type: 'lobby_update',
-        lobby: this.buildLobbyState(room)
-      });
-    }
   }
 
   private recordRoomScore(
@@ -392,8 +417,11 @@ export class RoomManager {
   ): void {
     room.scoreRecorded = true;
     const players = Array.from(room.players.values());
-    const driver = players.find((p) => p.role === 'driver')?.name || 'AI_DRIVER';
-    const navigator = players.find((p) => p.role === 'navigator')?.name || 'AI_NAVIGATOR';
+    // Tournament scores are attributed to the registered (paid) pair, not to free-form nicknames
+    const driver =
+      room.tournamentPair?.driver_name || players.find((p) => p.role === 'driver')?.name || 'AI_DRIVER';
+    const navigator =
+      room.tournamentPair?.navigator_name || players.find((p) => p.role === 'navigator')?.name || 'AI_NAVIGATOR';
 
     const updated = this.addLeaderboardEntry({
       room_code: room.code,
@@ -416,8 +444,8 @@ export class RoomManager {
     return {
       room_code: room.code,
       status: room.simulation.getStatus(),
+      // The pass itself is never broadcast to other clients
       is_tournament_verified: Boolean(room.isTournamentVerified),
-      tournament_pass: room.tournamentPass,
       players: Array.from(room.players.values()).map((p) => ({
         player_id: p.player_id,
         name: p.name,

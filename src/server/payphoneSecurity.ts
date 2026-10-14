@@ -1,17 +1,13 @@
 import crypto from 'crypto';
-import type { Request, Response, NextFunction } from 'express';
-
-const DEFAULT_DEV_SECRET = 'dev_payphone_secret_key_pacific_overdrive_2026';
-
-function cleanEnv(val?: string): string | undefined {
-  if (!val) return undefined;
-  const trimmed = val.trim();
-  const unquoted = trimmed.replace(/^["'](.*)["']$/, '$1').trim();
-  return unquoted.length > 0 ? unquoted : undefined;
-}
+import { cleanEnv, devFallbackSecret, isProductionEnv } from './runtimeConfig.js';
 
 export function getPayphoneSecretKey(): string {
-  return cleanEnv(process.env.PAYPHONE_SECRET_KEY) || cleanEnv(process.env.PAYPHONE_SECRET) || DEFAULT_DEV_SECRET;
+  const configured = cleanEnv(process.env.PAYPHONE_SECRET_KEY) || cleanEnv(process.env.PAYPHONE_SECRET);
+  if (configured) return configured;
+  if (isProductionEnv()) {
+    throw new Error('PAYPHONE_SECRET_KEY no configurada en producción.');
+  }
+  return devFallbackSecret('PAYPHONE_SECRET_KEY');
 }
 
 export function getPayphoneToken(): string | undefined {
@@ -34,7 +30,6 @@ export function getPayphoneConfig() {
   return {
     token: getPayphoneToken(),
     clientId: getPayphoneClientId(),
-    secretKey: getPayphoneSecretKey(),
     storeId: getPayphoneStoreId(),
     baseUrl: getPayphoneBaseUrl(),
     isConfigured: Boolean(getPayphoneToken())
@@ -208,6 +203,34 @@ export async function createPayphonePaymentLink(params: {
     responseUrl: respUrl,
     cancellationUrl: cancUrl
   });
+}
+
+/**
+ * Random, non-guessable clientTransactionId for Payphone Prepare (max 50 chars).
+ */
+export function generateClientTransactionId(): string {
+  return `PS-${Date.now().toString(36)}-${crypto.randomBytes(9).toString('hex')}`.toUpperCase();
+}
+
+/**
+ * Validates a Payphone V2/Confirm response against the pending registration we created.
+ * Returns an error message, or null when the confirmation matches exactly.
+ */
+export function validateConfirmAgainstPending(
+  data: { clientTransactionId?: unknown; amount?: unknown } | undefined,
+  expectedClientTxId: string,
+  expectedAmountUsd: number
+): string | null {
+  if (!data) return 'Respuesta de confirmación vacía.';
+  if (String(data.clientTransactionId ?? '') !== expectedClientTxId) {
+    return 'clientTransactionId confirmado por Payphone no coincide con la inscripción.';
+  }
+  const confirmedCents = Number(data.amount);
+  const expectedCents = Math.round(expectedAmountUsd * 100);
+  if (!Number.isInteger(confirmedCents) || confirmedCents !== expectedCents) {
+    return `Monto confirmado (${data.amount}) no coincide con la cuota esperada (${expectedCents} centavos).`;
+  }
+  return null;
 }
 
 export function generatePayphoneSignature(payloadString: string, secretKey = getPayphoneSecretKey()): string {

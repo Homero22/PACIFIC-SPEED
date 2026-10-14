@@ -1,31 +1,50 @@
 import crypto from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
 import { antiCheatEngine } from './antiCheat.js';
+import { cleanEnv, devFallbackSecret, isProductionEnv } from './runtimeConfig.js';
 
-const DEFAULT_DEV_ADMIN_KEY = 'admin_pacific_overdrive_2026';
+let warnedDevAdminKey = false;
 
 export function getAdminSecretKey(): string {
-  const raw = process.env.ADMIN_SECRET_KEY || process.env.ADMIN_PASSWORD || DEFAULT_DEV_ADMIN_KEY;
-  return raw.trim().replace(/^["'](.*)["']$/, '$1').trim();
+  const configured = cleanEnv(process.env.ADMIN_SECRET_KEY) || cleanEnv(process.env.ADMIN_PASSWORD);
+  if (configured) return configured;
+  if (isProductionEnv()) {
+    throw new Error('ADMIN_SECRET_KEY no configurada en producción.');
+  }
+  const devKey = devFallbackSecret('ADMIN_SECRET_KEY');
+  if (!warnedDevAdminKey) {
+    warnedDevAdminKey = true;
+    console.warn(`[ADMIN] ADMIN_SECRET_KEY no definida. Clave temporal de desarrollo: ${devKey}`);
+  }
+  return devKey;
+}
+
+/**
+ * Secret used exclusively to sign admin session tokens (kept separate from the login key).
+ */
+export function getAdminTokenSecret(): string {
+  const configured = cleanEnv(process.env.ADMIN_TOKEN_SECRET);
+  if (configured) return configured;
+  if (isProductionEnv()) {
+    throw new Error('ADMIN_TOKEN_SECRET no configurada en producción.');
+  }
+  return devFallbackSecret('ADMIN_TOKEN_SECRET');
 }
 
 /**
  * Validates admin password using constant-time comparison to prevent timing attacks.
  */
 export function verifyAdminPassword(inputPassword: string): boolean {
-  if (!inputPassword) return false;
+  if (!inputPassword || typeof inputPassword !== 'string') return false;
   const masterKey = getAdminSecretKey();
 
   const inputBuf = Buffer.from(inputPassword, 'utf8');
   const masterBuf = Buffer.from(masterKey, 'utf8');
 
-  if (inputBuf.length !== masterBuf.length) {
-    // Perform dummy timing comparison to preserve constant time
-    crypto.timingSafeEqual(inputBuf, inputBuf);
-    return false;
-  }
-
-  return crypto.timingSafeEqual(inputBuf, masterBuf);
+  // Compare fixed-length digests so the key length is not leaked by timing
+  const inputDigest = crypto.createHash('sha256').update(inputBuf).digest();
+  const masterDigest = crypto.createHash('sha256').update(masterBuf).digest();
+  return crypto.timingSafeEqual(inputDigest, masterDigest);
 }
 
 // 8-hour signed Bearer session token
@@ -37,7 +56,7 @@ export function generateAdminToken(): { token: string; expires_in_hours: number 
   };
   const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const signature = crypto
-    .createHmac('sha256', getAdminSecretKey())
+    .createHmac('sha256', getAdminTokenSecret())
     .update(payloadBase64)
     .digest('base64url');
 
@@ -55,7 +74,7 @@ export function validateAdminToken(authHeader: string | undefined): boolean {
 
   const [payloadBase64, signature] = parts;
   const expectedSignature = crypto
-    .createHmac('sha256', getAdminSecretKey())
+    .createHmac('sha256', getAdminTokenSecret())
     .update(payloadBase64)
     .digest('base64url');
 

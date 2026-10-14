@@ -1,3 +1,4 @@
+import { escapeHtml, safeHttpUrl } from '../shared/escapeHtml.js';
 import { GameSimulation } from '../shared/simulation.js';
 import type {
   ClientInputPayload,
@@ -106,11 +107,18 @@ class PacificSpeedClientApp {
 
     // Check URL parameters for Payphone Payment Callback status
     const paymentStatus = params.get('payment');
-    const paymentTx = params.get('tx');
+    const urlPass = params.get('pass');
+    const paymentReason = params.get('reason');
+    // Remove one-time payment params (pass, reason) from the address bar and history
+    if (paymentStatus || urlPass || params.has('tx') || params.has('reason')) {
+      ['payment', 'pass', 'tx', 'reason'].forEach((k) => params.delete(k));
+      const qs = params.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+    }
     if (paymentStatus === 'success') {
       const feedback = document.getElementById('tourney-feedback');
       if (feedback) {
-        feedback.innerHTML = `🌟 <strong>¡INSCRIPCIÓN OFICIAL CONFIRMADA EN PAYPHONE!</strong><br>ID de Transacción: <code>${paymentTx || 'APROBADA'}</code>.<br>Pareja registrada en la Base de Datos oficial y Pozo de Premios actualizado.`;
+        feedback.innerHTML = `🌟 <strong>¡INSCRIPCIÓN OFICIAL CONFIRMADA EN PAYPHONE!</strong><br>Tu pase de torneo: <code>${escapeHtml(urlPass || 'consulta con la organización')}</code>.<br>Guárdalo: es personal y no lo compartas fuera de tu pareja.`;
         feedback.style.color = 'var(--phosphor)';
       }
       document.querySelectorAll('[data-hangar-tab]').forEach((b) => b.classList.remove('active'));
@@ -118,10 +126,10 @@ class PacificSpeedClientApp {
       document.querySelector('[data-hangar-tab="hangar-tab-tournament"]')?.classList.add('active');
       document.getElementById('hangar-tab-tournament')?.classList.add('active');
     } else if (paymentStatus === 'error') {
-      const reason = params.get('reason') || 'La pasarela no pudo procesar la transacción.';
+      const reason = paymentReason || 'La pasarela no pudo procesar la transacción.';
       const feedback = document.getElementById('tourney-feedback');
       if (feedback) {
-        feedback.innerHTML = `⚠️ <strong>PAGO NO PROCESADO:</strong> ${reason}`;
+        feedback.innerHTML = `⚠️ <strong>PAGO NO PROCESADO:</strong> ${escapeHtml(reason)}`;
         feedback.style.color = 'var(--danger)';
       }
       document.querySelectorAll('[data-hangar-tab]').forEach((b) => b.classList.remove('active'));
@@ -141,9 +149,8 @@ class PacificSpeedClientApp {
     }
 
     // Check for Tournament Pass in URL or localStorage
-    const urlPass = params.get('pass');
     const savedPass = localStorage.getItem('ps_tournament_pass');
-    const candidatePass = urlPass || (paymentStatus === 'success' && paymentTx ? paymentTx : null) || savedPass;
+    const candidatePass = urlPass || savedPass;
     if (candidatePass) {
       void this.verifyTournamentPass(candidatePass.trim());
     } else {
@@ -792,13 +799,12 @@ class PacificSpeedClientApp {
         this.roomCode = msg.room_code;
         this.activeRole = msg.assigned_role;
         this.lobbyState = msg.lobby;
-        if (msg.lobby.is_tournament_verified && msg.lobby.tournament_pass) {
-          this.isTournamentVerified = true;
-          this.tournamentPass = msg.lobby.tournament_pass;
-          localStorage.setItem('ps_tournament_pass', msg.lobby.tournament_pass);
-          this.updateModeBanner();
-        } else if (this.isTournamentVerified && this.tournamentPass) {
+        if (this.tournamentPass) {
+          // Bind our own pass to this room (the server never broadcasts pass codes)
           this.sendWsMessage({ type: 'set_tournament_pass', pass_code: this.tournamentPass });
+        } else if (msg.lobby.is_tournament_verified) {
+          this.isTournamentVerified = true;
+          this.updateModeBanner();
         }
         this.updateUrlRoomParam(this.roomCode);
         this.syncRoleButtons();
@@ -808,10 +814,9 @@ class PacificSpeedClientApp {
 
       case 'lobby_update':
         this.lobbyState = msg.lobby;
-        if (msg.lobby.is_tournament_verified && msg.lobby.tournament_pass) {
+        if (msg.lobby.is_tournament_verified && !this.isTournamentVerified) {
+          // A teammate activated their pass in this room; we do not receive the code itself
           this.isTournamentVerified = true;
-          this.tournamentPass = msg.lobby.tournament_pass;
-          localStorage.setItem('ps_tournament_pass', msg.lobby.tournament_pass);
           this.updateModeBanner();
         }
         const me = msg.lobby.players.find((p) => p.player_id === this.playerId);
@@ -858,29 +863,23 @@ class PacificSpeedClientApp {
   }
 
   private recordLocalScoreIfNeeded(): void {
+    // Local/offline runs are simulated in the browser, so they are never sent to the server:
+    // the official leaderboard only contains scores computed by the server (online rooms).
     const ws = this.currentWorldState.world_state;
-    void fetch('/api/leaderboard', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        room_code: this.mode === 'local_coop' ? 'LOCAL-2P' : 'SOLO-AI',
-        driver_name: this.activeRole === 'driver' ? this.pilotName : 'AWACS_AI',
-        navigator_name: this.activeRole === 'navigator' ? this.pilotName : 'AWACS_AI',
-        total_score: ws.total_score,
-        distance_traveled: ws.distance_traveled,
-        survival_time: ws.survival_time,
-        region: 'LOCAL-SIM',
-        is_tournament: this.isTournamentVerified
-      })
-    })
-      .then((r) => r.json())
-      .then((data: { entries?: LeaderboardEntry[] }) => {
-        if (data.entries) {
-          this.leaderboard = data.entries;
-          this.renderLeaderboard();
-        }
-      })
-      .catch(() => {});
+    const localEntry: LeaderboardEntry = {
+      id: `local-${Date.now()}`,
+      room_code: this.mode === 'local_coop' ? 'LOCAL-2P' : 'SOLO-AI',
+      driver_name: this.activeRole === 'driver' ? this.pilotName : 'AWACS_AI',
+      navigator_name: this.activeRole === 'navigator' ? this.pilotName : 'AWACS_AI',
+      total_score: ws.total_score,
+      distance_traveled: ws.distance_traveled,
+      survival_time: ws.survival_time,
+      region: 'LOCAL-SIM',
+      created_at: new Date().toISOString(),
+      is_tournament: false
+    };
+    this.leaderboard = [...this.leaderboard, localEntry].sort((a, b) => b.total_score - a.total_score);
+    this.renderLeaderboard();
   }
 
   private AnimationLoop(now: number): void {
@@ -1030,11 +1029,11 @@ class PacificSpeedClientApp {
       container.innerHTML = `
         <div class="crew-slot">
           <span class="slot-role">SEAT 01 // STEALTH DRIVER</span>
-          <span class="slot-name">${this.activeRole === 'driver' ? this.pilotName : 'AWACS AI CO-PILOT'}</span>
+          <span class="slot-name">${escapeHtml(this.activeRole === 'driver' ? this.pilotName : 'AWACS AI CO-PILOT')}</span>
         </div>
         <div class="crew-slot">
           <span class="slot-role">SEAT 02 // TACTICAL NAVIGATOR</span>
-          <span class="slot-name">${this.activeRole === 'navigator' ? this.pilotName : this.mode === 'local_coop' ? 'OPERATOR 2 (J/K/L)' : 'AWACS AI CO-PILOT'}</span>
+          <span class="slot-name">${escapeHtml(this.activeRole === 'navigator' ? this.pilotName : this.mode === 'local_coop' ? 'OPERATOR 2 (J/K/L)' : 'AWACS AI CO-PILOT')}</span>
         </div>
       `;
       return;
@@ -1047,11 +1046,11 @@ class PacificSpeedClientApp {
     container.innerHTML = `
       <div class="crew-slot ${driver ? 'filled' : ''}">
         <span class="slot-role">SEAT 01 // STEALTH DRIVER</span>
-        <span class="slot-name">${driver ? driver.name : 'AI AUTO-PILOT STANDBY'}</span>
+        <span class="slot-name">${escapeHtml(driver ? driver.name : 'AI AUTO-PILOT STANDBY')}</span>
       </div>
       <div class="crew-slot ${navigator ? 'filled' : ''}">
         <span class="slot-role">SEAT 02 // TACTICAL NAVIGATOR</span>
-        <span class="slot-name">${navigator ? navigator.name : 'AI AWACS STANDBY'}</span>
+        <span class="slot-name">${escapeHtml(navigator ? navigator.name : 'AI AWACS STANDBY')}</span>
       </div>
     `;
   }
@@ -1078,9 +1077,9 @@ class PacificSpeedClientApp {
         (entry, idx) => `
         <tr>
           <td>0${idx + 1}</td>
-          <td>${entry.driver_name} / ${entry.navigator_name}</td>
-          <td style="color: var(--accent); font-weight: 700">${entry.total_score.toLocaleString()}</td>
-          <td>${entry.distance_traveled.toFixed(0)}m (${entry.survival_time.toFixed(1)}s)</td>
+          <td>${escapeHtml(entry.driver_name)} / ${escapeHtml(entry.navigator_name)}</td>
+          <td style="color: var(--accent); font-weight: 700">${Number(entry.total_score).toLocaleString()}</td>
+          <td>${Number(entry.distance_traveled).toFixed(0)}m (${Number(entry.survival_time).toFixed(1)}s)</td>
           <td>${entry.is_tournament ? '<span style="color:var(--accent);font-weight:700;">🏆 TORNEO</span>' : '<span style="color:var(--phosphor);">🧪 PRÁCTICA</span>'}</td>
         </tr>
       `
@@ -1218,7 +1217,7 @@ class PacificSpeedClientApp {
 
     const ok = await this.verifyTournamentPass(code);
     if (ok) {
-      feedbackEl.innerHTML = `✓ ¡PASE VÁLIDO! Código: <code>${code}</code> vinculado a esta sala.`;
+      feedbackEl.innerHTML = `✓ ¡PASE VÁLIDO! Código: <code>${escapeHtml(code)}</code> vinculado a esta sala.`;
       feedbackEl.style.color = 'var(--phosphor)';
       return true;
     } else {
@@ -1251,6 +1250,10 @@ class PacificSpeedClientApp {
         this.sendWsMessage({ type: 'set_tournament_pass', pass_code: cleanCode });
         return true;
       }
+      if (res.ok && localStorage.getItem('ps_tournament_pass') === cleanCode) {
+        // Stale pass (e.g. old transaction-id passes are no longer accepted)
+        localStorage.removeItem('ps_tournament_pass');
+      }
       return false;
     } catch {
       return false;
@@ -1262,14 +1265,16 @@ class PacificSpeedClientApp {
     const bannerText = document.getElementById('mode-status-text');
     const bannerBtn = document.getElementById('btn-banner-action');
 
-    if (this.isTournamentVerified && this.tournamentPass) {
+    if (this.isTournamentVerified) {
       if (banner) {
         banner.className = 'tourney-badge-active';
       }
       if (bannerText) {
-        bannerText.innerHTML = `🏆 MODO ACTUAL: <strong>TORNEO OFICIAL ACTIVO</strong> // PASE: <code>${this.tournamentPass}</code>`;
+        bannerText.innerHTML = this.tournamentPass
+          ? `🏆 MODO ACTUAL: <strong>TORNEO OFICIAL ACTIVO</strong> // PASE: <code>${escapeHtml(this.tournamentPass)}</code>`
+          : `🏆 MODO ACTUAL: <strong>TORNEO OFICIAL ACTIVO</strong> // PASE ACTIVADO POR TU COPILOTO`;
       }
-      if (bannerBtn) {
+      if (bannerBtn && this.tournamentPass) {
         bannerBtn.textContent = '📋 Compartir Pase con Copiloto';
         bannerBtn.style.color = '#ffb703';
         bannerBtn.style.borderColor = 'var(--accent)';
@@ -1314,15 +1319,15 @@ class PacificSpeedClientApp {
       });
 
       const data = await res.json();
-      const checkoutUrl = data.payWithCard || data.payUrl || data.payWithPayPhone;
+      const checkoutUrl = safeHttpUrl(data.payWithCard || data.payUrl || data.payWithPayPhone);
       if (data.success && checkoutUrl) {
         if (feedback) {
-          feedback.innerHTML = `✓ ENLACE GENERADO // <a href="${checkoutUrl}" target="_blank" style="color:var(--phosphor);font-weight:700;text-decoration:underline;">ABRIR PASARELA PAYPHONE ($${data.entry_fee_usd.toFixed(2)} USD)</a>`;
+          feedback.innerHTML = `✓ ENLACE GENERADO // <a href="${escapeHtml(checkoutUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--phosphor);font-weight:700;text-decoration:underline;">ABRIR PASARELA PAYPHONE ($${Number(data.entry_fee_usd).toFixed(2)} USD)</a>`;
         }
-        window.open(checkoutUrl, '_blank');
+        window.open(checkoutUrl, '_blank', 'noopener');
       } else {
         if (feedback) {
-          feedback.innerHTML = `⚠️ <strong>AVISO:</strong> ${data.message || 'No se pudo generar el enlace de cobro. Revisa tus datos e intenta nuevamente.'}`;
+          feedback.innerHTML = `⚠️ <strong>AVISO:</strong> ${escapeHtml(data.message || data.error || 'No se pudo generar el enlace de cobro. Revisa tus datos e intenta nuevamente.')}`;
           feedback.style.color = 'var(--danger)';
         }
       }

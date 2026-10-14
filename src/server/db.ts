@@ -1,9 +1,12 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import pg from 'pg';
 import {
   DEFAULT_FINANCIAL_CONFIG,
-  TournamentFinancialConfig
+  round2,
+  TournamentFinancialConfig,
+  TransactionCalculationResult
 } from '../shared/financialConfig.js';
 import type {
   PaymentAuditRecord,
@@ -12,6 +15,7 @@ import type {
   SecurityAuditLog,
   TournamentRecord
 } from '../shared/types.js';
+import { isProductionEnv } from './runtimeConfig.js';
 
 interface LocalDatabaseSchema {
   config: TournamentFinancialConfig;
@@ -22,8 +26,6 @@ interface LocalDatabaseSchema {
   pending_registrations?: PendingRegistrationRecord[];
 }
 
-const LOCAL_DB_DIR = path.resolve('data');
-const LOCAL_DB_PATH = path.join(LOCAL_DB_DIR, 'tournament_db.json');
 
 function cleanEnv(val: string | undefined): string | undefined {
   if (!val) return undefined;
@@ -173,21 +175,156 @@ function resolvePgConfig(): ResolvedPgConfig | null {
   return null;
 }
 
+export class DatabaseUnavailableError extends Error {
+  constructor(message = 'Base de datos no disponible temporalmente. Intenta nuevamente en unos minutos.') {
+    super(message);
+    this.name = 'DatabaseUnavailableError';
+  }
+}
+
+export type DatabaseMode = 'uninitialized' | 'postgres' | 'local' | 'unavailable';
+
+export interface ApplyPaymentInput {
+  client_transaction_id: string;
+  payphone_transaction_id: string;
+  tournament_id: string;
+  referral: { id: string; referral_code: string } | null;
+  splits: TransactionCalculationResult;
+  raw_payload_json: string;
+}
+
+export type ApplyPaymentResult =
+  | { status: 'applied'; audit: PaymentAuditRecord; tournament: TournamentRecord }
+  | { status: 'duplicate'; audit: PaymentAuditRecord }
+  | { status: 'not_pending'; message: string }
+  | { status: 'tournament_full'; message: string };
+
+export function generatePassToken(): string {
+  // 128-bit random pass, formatted for humans: PS-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX
+  const hex = crypto.randomBytes(16).toString('hex').toUpperCase();
+  return `PS-${hex.match(/.{4}/g)!.join('-')}`;
+}
+
+const PG_RETRY_INTERVAL_MS = 15000;
+
+const SEED_LOCAL_REFERRALS: ReferralRecord[] = [
+  {
+    id: 'ref-partner-01',
+    referral_code: 'SPEED2026',
+    collaborator_name: 'ESCUADRON VORTEX MEDIA',
+    collaborator_payphone_number: '+593991234567',
+    total_couples_referred: 0,
+    accumulated_earnings_usd: 0,
+    settled_earnings_usd: 0,
+    pending_earnings_usd: 0,
+    created_at: new Date().toISOString()
+  }
+];
+
+function defaultTournamentRecord(config: TournamentFinancialConfig = DEFAULT_FINANCIAL_CONFIG): TournamentRecord {
+  return {
+    id: 'tourney-default-01',
+    name: 'PACIFIC SPEED: OVERDRIVE - TEMPORADA INAUGURAL',
+    status: 'active',
+    entry_fee_usd: config.entry_fee_per_pair,
+    max_couples: config.max_couples_limit,
+    registered_couples_count: 0,
+    accumulated_prize_pool: 0,
+    accumulated_charity_amount: 0,
+    accumulated_operating_margin: 0,
+    config_snapshot: config,
+    created_at: new Date().toISOString()
+  };
+}
+
+function mapReferralRow(r: any): ReferralRecord {
+  return {
+    id: r.id,
+    referral_code: r.referral_code,
+    collaborator_name: r.collaborator_name,
+    collaborator_payphone_number: r.collaborator_payphone_number,
+    total_couples_referred: parseInt(r.total_couples_referred || 0, 10),
+    accumulated_earnings_usd: parseFloat(r.accumulated_earnings_usd || 0),
+    settled_earnings_usd: parseFloat(r.settled_earnings_usd || 0),
+    pending_earnings_usd: parseFloat(r.pending_earnings_usd || 0),
+    created_at: r.created_at
+  };
+}
+
+function mapAuditRow(r: any): PaymentAuditRecord {
+  return {
+    id: r.id,
+    payphone_transaction_id: r.payphone_transaction_id,
+    tournament_id: r.tournament_id,
+    referral_id: r.referral_id,
+    referral_code: r.referral_code,
+    pair_driver_name: r.pair_driver_name,
+    pair_navigator_name: r.pair_navigator_name,
+    gross_amount: parseFloat(r.gross_amount),
+    payphone_fee: parseFloat(r.payphone_fee),
+    prize_pool_share: parseFloat(r.prize_pool_share),
+    charity_share: parseFloat(r.charity_share),
+    developer_share: parseFloat(r.developer_share),
+    collaborator_share: parseFloat(r.collaborator_share),
+    status: r.status,
+    raw_payload_json: r.raw_payload_json,
+    pass_token: r.pass_token || undefined,
+    client_transaction_id: r.client_transaction_id || undefined,
+    created_at: r.created_at
+  };
+}
+
+function mapTournamentRow(row: any): TournamentRecord {
+  return {
+    id: row.id,
+    name: row.name,
+    status: row.status,
+    entry_fee_usd: parseFloat(row.entry_fee_usd),
+    max_couples: parseInt(row.max_couples, 10),
+    registered_couples_count: parseInt(row.registered_couples_count || 0, 10),
+    accumulated_prize_pool: parseFloat(row.accumulated_prize_pool || 0),
+    accumulated_charity_amount: parseFloat(row.accumulated_charity_amount || 0),
+    accumulated_operating_margin: parseFloat(row.accumulated_operating_margin || 0),
+    config_snapshot: row.config_snapshot_json,
+    created_at: row.created_at,
+    completed_at: row.completed_at
+  };
+}
+
+function mapPendingRow(row: any): PendingRegistrationRecord {
+  return {
+    client_transaction_id: row.client_transaction_id,
+    driver_name: row.driver_name,
+    navigator_name: row.navigator_name,
+    referral_code: row.referral_code || undefined,
+    phone: row.phone || undefined,
+    amount_usd: parseFloat(row.amount_usd),
+    status: row.status,
+    tournament_id: row.tournament_id || undefined,
+    created_at: row.created_at
+  };
+}
+
 export class DatabaseProvider {
   private pgPool: pg.Pool | null = null;
-  private isPostgres = false;
-  private isInitialized = false;
+  private mode: DatabaseMode = 'uninitialized';
+  private hasPgCredentials = false;
+  private unavailableReason = '';
+  private retryTimer: NodeJS.Timeout | null = null;
   private localData: LocalDatabaseSchema | null = null;
   private pgConfig: pg.PoolConfig | null = null;
   private currentDbName = 'local';
   private currentHostName = 'local';
+  constructor(private readonly options: { localDbPath?: string } = {}) {}
 
-  constructor() {
-    this.initLocalStorage();
+  private get localDbPath(): string {
+    return (
+      this.options.localDbPath || cleanEnv(process.env.TOURNAMENT_DB_PATH) || path.resolve('data', 'tournament_db.json')
+    );
   }
 
   public async init(): Promise<void> {
-    if (this.isInitialized) return;
+    if (this.mode !== 'uninitialized') return;
 
     console.log('[DB] ========================================================');
     console.log('[DB] Evaluando configuración de base de datos...');
@@ -195,18 +332,29 @@ export class DatabaseProvider {
     const resolved = resolvePgConfig();
 
     if (!resolved) {
+      if (isProductionEnv()) {
+        // A production instance must never keep money in an ephemeral local JSON file
+        this.mode = 'unavailable';
+        this.unavailableReason = 'Sin credenciales de PostgreSQL en producción.';
+        console.error('[DB] ❌ No hay credenciales de PostgreSQL en producción. Pagos e inscripciones deshabilitados (503).');
+        console.log('[DB] ========================================================');
+        return;
+      }
       console.log('[DB] ℹ️  No se detectaron credenciales de PostgreSQL en las variables de entorno.');
-      console.log('[DB] Variables inspeccionadas: DATABASE_URL, POSTGRES_URL, DB_HOST, PGHOST, DB_USERNAME, PGUSER, DB_PASSWORD, DB_DATABASE, etc.');
-      console.log('[DB] Modo activo: Almacenamiento local persistente (data/tournament_db.json).');
+      console.log('[DB] Modo activo: Almacenamiento local de desarrollo (' + this.localDbPath + ').');
       console.log('[DB] ========================================================');
-      this.isInitialized = true;
+      this.initLocalStorage();
       return;
     }
 
+    this.hasPgCredentials = true;
     console.log(`[DB] Credenciales PostgreSQL detectadas vía: ${resolved.source}`);
     console.log(`[DB] Destino: Host="${resolved.hostDisplay}", Port=${resolved.portDisplay}, DB="${resolved.dbDisplay}", User="${resolved.userDisplay}", SSL=${Boolean(resolved.config.ssl)}`);
-    console.log('[DB] Intentando conexión con PostgreSQL...');
+    await this.connectPostgres(resolved);
+  }
 
+  private async connectPostgres(resolved: ResolvedPgConfig): Promise<void> {
+    console.log('[DB] Intentando conexión con PostgreSQL...');
     try {
       const { pool, finalConfig } = await this.connectWithSslNegotiation(resolved.config);
       pool.on('error', (err) => {
@@ -214,16 +362,16 @@ export class DatabaseProvider {
       });
       this.pgPool = pool;
       this.pgConfig = finalConfig;
-      this.isPostgres = true;
       this.currentDbName = resolved.dbDisplay;
       this.currentHostName = resolved.hostDisplay;
 
       await this.ensureDatabaseExists(resolved.dbDisplay);
       await this.initPostgresTables();
 
+      this.mode = 'postgres';
+      this.unavailableReason = '';
       console.log(`[DB] ✅ Conectado exitosamente a PostgreSQL ("${resolved.dbDisplay}" @ ${resolved.hostDisplay}:${resolved.portDisplay}). Tablas verificadas.`);
       console.log('[DB] ========================================================');
-      this.isInitialized = true;
     } catch (err: any) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.warn(`[DB] ❌ Error conectando a PostgreSQL: ${errorMsg}`);
@@ -242,16 +390,27 @@ export class DatabaseProvider {
         console.warn('[DB]   3. O si usas una base externa (Supabase/Neon), coloca el HOST público o DATABASE_URL.');
       }
 
-      console.warn('[DB] ⚠️  Activando fallback a almacenamiento local persistente (data/tournament_db.json).');
+      // No silent fallback to local JSON: payment endpoints answer 503 until PostgreSQL is back
+      console.warn(`[DB] ⚠️  PostgreSQL no disponible. Endpoints de pago responderán 503. Reintento en ${PG_RETRY_INTERVAL_MS / 1000}s.`);
       console.log('[DB] ========================================================');
 
-      this.isPostgres = false;
+      this.mode = 'unavailable';
+      this.unavailableReason = errorMsg;
       if (this.pgPool) {
         await this.pgPool.end().catch(() => {});
         this.pgPool = null;
       }
-      this.isInitialized = true;
+      this.scheduleReconnect(resolved);
     }
+  }
+
+  private scheduleReconnect(resolved: ResolvedPgConfig): void {
+    if (this.retryTimer) return;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      void this.connectPostgres(resolved);
+    }, PG_RETRY_INTERVAL_MS);
+    this.retryTimer.unref?.();
   }
 
   private async connectWithSslNegotiation(
@@ -365,32 +524,69 @@ export class DatabaseProvider {
   }
 
   public isPostgresActive(): boolean {
-    return this.isPostgres;
+    return this.mode === 'postgres';
   }
 
-  public getDatabaseInfo(): { type: 'postgresql' | 'local_json'; host: string; database: string } {
-    if (this.isPostgres) {
+  /**
+   * True when reads/writes can be served (PostgreSQL connected, or local dev storage).
+   */
+  public isAvailable(): boolean {
+    if (this.mode === 'postgres' || this.mode === 'local') return true;
+    if (this.mode === 'uninitialized') return !this.hasPgCredentials && !resolvePgConfig() && !isProductionEnv();
+    return false;
+  }
+
+  public getDatabaseInfo(): { type: 'postgresql' | 'local_json' | 'unavailable'; host: string; database: string } {
+    if (this.mode === 'postgres') {
       return {
         type: 'postgresql',
         host: this.currentHostName,
         database: this.currentDbName
       };
     }
+    if (this.mode === 'unavailable') {
+      return { type: 'unavailable', host: this.currentHostName, database: this.currentDbName };
+    }
     return {
       type: 'local_json',
       host: 'local',
-      database: 'data/tournament_db.json'
+      database: path.basename(this.localDbPath)
     };
   }
 
+  /**
+   * Returns the PostgreSQL pool, or null when running on local dev storage.
+   * Throws DatabaseUnavailableError when PostgreSQL is configured but not reachable.
+   */
+  private backend(): pg.Pool | null {
+    if (this.mode === 'postgres' && this.pgPool) return this.pgPool;
+    if (this.mode === 'local') return null;
+    if (this.mode === 'uninitialized' && this.isAvailable()) {
+      // Lazy local mode (tests / scripts that never call init())
+      this.initLocalStorage();
+      return null;
+    }
+    throw new DatabaseUnavailableError(
+      this.unavailableReason ? `Base de datos no disponible: ${this.unavailableReason}` : undefined
+    );
+  }
+
+  private local(): LocalDatabaseSchema {
+    if (!this.localData) this.initLocalStorage();
+    return this.localData!;
+  }
+
   private initLocalStorage(): void {
-    if (!fs.existsSync(LOCAL_DB_DIR)) {
-      fs.mkdirSync(LOCAL_DB_DIR, { recursive: true });
+    this.mode = 'local';
+    if (this.localData) return;
+    const dir = path.dirname(this.localDbPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
 
-    if (fs.existsSync(LOCAL_DB_PATH)) {
+    if (fs.existsSync(this.localDbPath)) {
       try {
-        const raw = fs.readFileSync(LOCAL_DB_PATH, 'utf8');
+        const raw = fs.readFileSync(this.localDbPath, 'utf8');
         this.localData = JSON.parse(raw) as LocalDatabaseSchema;
         if (!this.localData.pending_registrations) {
           this.localData.pending_registrations = [];
@@ -401,49 +597,10 @@ export class DatabaseProvider {
       }
     }
 
-    const defaultTournament: TournamentRecord = {
-      id: 'tourney-default-01',
-      name: 'PACIFIC SPEED: OVERDRIVE - TEMPORADA INAUGURAL',
-      status: 'active',
-      entry_fee_usd: DEFAULT_FINANCIAL_CONFIG.entry_fee_per_pair,
-      max_couples: DEFAULT_FINANCIAL_CONFIG.max_couples_limit,
-      registered_couples_count: 0,
-      accumulated_prize_pool: 0,
-      accumulated_charity_amount: 0,
-      accumulated_operating_margin: 0,
-      config_snapshot: DEFAULT_FINANCIAL_CONFIG,
-      created_at: new Date().toISOString()
-    };
-
-    const seedReferrals: ReferralRecord[] = [
-      {
-        id: 'ref-partner-01',
-        referral_code: 'SPEED2026',
-        collaborator_name: 'ESCUADRON VORTEX MEDIA',
-        collaborator_payphone_number: '+593991234567',
-        total_couples_referred: 3,
-        accumulated_earnings_usd: 1.74,
-        settled_earnings_usd: 0.0,
-        pending_earnings_usd: 1.74,
-        created_at: new Date().toISOString()
-      },
-      {
-        id: 'ref-partner-02',
-        referral_code: 'TIKTOKRUN',
-        collaborator_name: 'STREAMER JAEGER TOP',
-        collaborator_payphone_number: '+593987654321',
-        total_couples_referred: 1,
-        accumulated_earnings_usd: 0.58,
-        settled_earnings_usd: 0.0,
-        pending_earnings_usd: 0.58,
-        created_at: new Date().toISOString()
-      }
-    ];
-
     this.localData = {
       config: DEFAULT_FINANCIAL_CONFIG,
-      tournament: defaultTournament,
-      referrals: seedReferrals,
+      tournament: defaultTournamentRecord(),
+      referrals: SEED_LOCAL_REFERRALS.map((r) => ({ ...r })),
       payments: [],
       security_logs: [],
       pending_registrations: []
@@ -455,7 +612,7 @@ export class DatabaseProvider {
   private persistLocalData(): void {
     if (!this.localData) return;
     try {
-      fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(this.localData, null, 2), 'utf8');
+      fs.writeFileSync(this.localDbPath, JSON.stringify(this.localData, null, 2), 'utf8');
     } catch (err) {
       console.error('[DB] Failed to persist local tournament database:', err);
     }
@@ -528,7 +685,24 @@ export class DatabaseProvider {
           status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- Tournament pass: random token bound to the paid pair and tournament
+        ALTER TABLE payments_audit ADD COLUMN IF NOT EXISTS pass_token VARCHAR(64);
+        CREATE UNIQUE INDEX IF NOT EXISTS payments_audit_pass_token_key ON payments_audit (pass_token);
+        ALTER TABLE payments_audit ADD COLUMN IF NOT EXISTS client_transaction_id VARCHAR(100);
+        ALTER TABLE pending_registrations ADD COLUMN IF NOT EXISTS tournament_id VARCHAR(100);
       `);
+
+      // Backfill pass tokens for payments approved before tokens existed (admin can hand them out)
+      const missing = await client.query(
+        "SELECT id FROM payments_audit WHERE pass_token IS NULL AND status = 'APPROVED'"
+      );
+      for (const row of missing.rows) {
+        await client.query('UPDATE payments_audit SET pass_token = $1 WHERE id = $2 AND pass_token IS NULL', [
+          generatePassToken(),
+          row.id
+        ]);
+      }
 
       // Seed 1: Active Configuration
       const cfgRes = await client.query('SELECT id FROM tournament_configs WHERE id = $1', ['active_config']);
@@ -539,22 +713,10 @@ export class DatabaseProvider {
         );
       }
 
-      // Seed 2: Default Tournament
+      // Seed 2: Default Tournament (no demo referrals with fake earnings in PostgreSQL)
       const tourneyRes = await client.query('SELECT id FROM tournaments LIMIT 1');
       if (tourneyRes.rows.length === 0) {
-        const defaultTourney = this.localData?.tournament || {
-          id: 'tourney-default-01',
-          name: 'PACIFIC SPEED: OVERDRIVE - TEMPORADA INAUGURAL',
-          status: 'active',
-          entry_fee_usd: DEFAULT_FINANCIAL_CONFIG.entry_fee_per_pair,
-          max_couples: DEFAULT_FINANCIAL_CONFIG.max_couples_limit,
-          registered_couples_count: 0,
-          accumulated_prize_pool: 0,
-          accumulated_charity_amount: 0,
-          accumulated_operating_margin: 0,
-          config_snapshot: DEFAULT_FINANCIAL_CONFIG,
-          created_at: new Date().toISOString()
-        };
+        const defaultTourney = defaultTournamentRecord();
         await client.query(
           `INSERT INTO tournaments (
             id, name, status, entry_fee_usd, max_couples, registered_couples_count,
@@ -576,57 +738,6 @@ export class DatabaseProvider {
           ]
         );
       }
-
-      // Seed 3: Default Referrals
-      const refRes = await client.query('SELECT id FROM referrals LIMIT 1');
-      if (refRes.rows.length === 0) {
-        const seedRefs = this.localData?.referrals?.length ? this.localData.referrals : [
-          {
-            id: 'ref-partner-01',
-            referral_code: 'SPEED2026',
-            collaborator_name: 'ESCUADRON VORTEX MEDIA',
-            collaborator_payphone_number: '+593991234567',
-            total_couples_referred: 3,
-            accumulated_earnings_usd: 1.74,
-            settled_earnings_usd: 0.0,
-            pending_earnings_usd: 1.74,
-            created_at: new Date().toISOString()
-          },
-          {
-            id: 'ref-partner-02',
-            referral_code: 'TIKTOKRUN',
-            collaborator_name: 'STREAMER JAEGER TOP',
-            collaborator_payphone_number: '+593987654321',
-            total_couples_referred: 1,
-            accumulated_earnings_usd: 0.58,
-            settled_earnings_usd: 0.0,
-            pending_earnings_usd: 0.58,
-            created_at: new Date().toISOString()
-          }
-        ];
-
-        for (const ref of seedRefs) {
-          await client.query(
-            `INSERT INTO referrals (
-              id, referral_code, collaborator_name, collaborator_payphone_number,
-              total_couples_referred, accumulated_earnings_usd, settled_earnings_usd,
-              pending_earnings_usd, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            ON CONFLICT (id) DO NOTHING`,
-            [
-              ref.id,
-              ref.referral_code.toUpperCase(),
-              ref.collaborator_name,
-              ref.collaborator_payphone_number,
-              ref.total_couples_referred,
-              ref.accumulated_earnings_usd,
-              ref.settled_earnings_usd,
-              ref.pending_earnings_usd,
-              ref.created_at
-            ]
-          );
-        }
-      }
     } finally {
       client.release();
     }
@@ -637,36 +748,62 @@ export class DatabaseProvider {
   // -------------------------------------------------------------
 
   public async getTournamentConfig(): Promise<TournamentFinancialConfig> {
-    if (this.isPostgres && this.pgPool) {
-      const res = await this.pgPool.query(
-        'SELECT config_json FROM tournament_configs WHERE id = $1',
-        ['active_config']
-      );
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query('SELECT config_json FROM tournament_configs WHERE id = $1', ['active_config']);
       if (res.rows.length > 0) {
         return res.rows[0].config_json as TournamentFinancialConfig;
       }
+      return DEFAULT_FINANCIAL_CONFIG;
     }
-    return this.localData?.config || DEFAULT_FINANCIAL_CONFIG;
+    return this.local().config || DEFAULT_FINANCIAL_CONFIG;
   }
 
-  public async saveTournamentConfig(config: TournamentFinancialConfig): Promise<void> {
-    if (this.isPostgres && this.pgPool) {
-      await this.pgPool.query(
-        `INSERT INTO tournament_configs (id, config_json, updated_at)
-         VALUES ($1, $2, CURRENT_TIMESTAMP)
-         ON CONFLICT (id) DO UPDATE SET config_json = $2, updated_at = CURRENT_TIMESTAMP`,
-        ['active_config', JSON.stringify(config)]
-      );
+  /**
+   * Saves the config and syncs entry fee / capacity into the active tournament.
+   */
+  public async saveTournamentConfig(config: TournamentFinancialConfig, tournamentId?: string): Promise<void> {
+    const pool = this.backend();
+    if (pool) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(
+          `INSERT INTO tournament_configs (id, config_json, updated_at)
+           VALUES ($1, $2, CURRENT_TIMESTAMP)
+           ON CONFLICT (id) DO UPDATE SET config_json = $2, updated_at = CURRENT_TIMESTAMP`,
+          ['active_config', JSON.stringify(config)]
+        );
+        if (tournamentId) {
+          await client.query(
+            `UPDATE tournaments SET entry_fee_usd = $2, max_couples = $3, config_snapshot_json = $4
+             WHERE id = $1 AND status <> 'completed'`,
+            [tournamentId, config.entry_fee_per_pair, config.max_couples_limit, JSON.stringify(config)]
+          );
+        }
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw err;
+      } finally {
+        client.release();
+      }
+      return;
     }
-    if (this.localData) {
-      this.localData.config = config;
-      this.persistLocalData();
+    const data = this.local();
+    data.config = config;
+    if (tournamentId && data.tournament.id === tournamentId && data.tournament.status !== 'completed') {
+      data.tournament.entry_fee_usd = config.entry_fee_per_pair;
+      data.tournament.max_couples = config.max_couples_limit;
+      data.tournament.config_snapshot = config;
     }
+    this.persistLocalData();
   }
 
   public async getActiveTournament(): Promise<TournamentRecord> {
-    if (this.isPostgres && this.pgPool) {
-      const res = await this.pgPool.query(
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query(
         `SELECT id, name, status, entry_fee_usd, max_couples, registered_couples_count,
                 accumulated_prize_pool, accumulated_charity_amount, accumulated_operating_margin,
                 config_snapshot_json, created_at, completed_at
@@ -674,43 +811,18 @@ export class DatabaseProvider {
          ORDER BY created_at DESC LIMIT 1`
       );
       if (res.rows.length > 0) {
-        const row = res.rows[0];
-        return {
-          id: row.id,
-          name: row.name,
-          status: row.status,
-          entry_fee_usd: parseFloat(row.entry_fee_usd),
-          max_couples: parseInt(row.max_couples, 10),
-          registered_couples_count: parseInt(row.registered_couples_count || 0, 10),
-          accumulated_prize_pool: parseFloat(row.accumulated_prize_pool || 0),
-          accumulated_charity_amount: parseFloat(row.accumulated_charity_amount || 0),
-          accumulated_operating_margin: parseFloat(row.accumulated_operating_margin || 0),
-          config_snapshot: row.config_snapshot_json,
-          created_at: row.created_at,
-          completed_at: row.completed_at
-        };
+        return mapTournamentRow(res.rows[0]);
       }
+      return defaultTournamentRecord();
     }
-    return (
-      this.localData?.tournament || {
-        id: 'tourney-default-01',
-        name: 'PACIFIC SPEED: OVERDRIVE - TEMPORADA INAUGURAL',
-        status: 'active',
-        entry_fee_usd: 10.0,
-        max_couples: 50,
-        registered_couples_count: 0,
-        accumulated_prize_pool: 0,
-        accumulated_charity_amount: 0,
-        accumulated_operating_margin: 0,
-        config_snapshot: DEFAULT_FINANCIAL_CONFIG,
-        created_at: new Date().toISOString()
-      }
-    );
+    return { ...this.local().tournament };
   }
 
   public async saveTournament(tourney: TournamentRecord): Promise<void> {
-    if (this.isPostgres && this.pgPool) {
-      await this.pgPool.query(
+    const pool = this.backend();
+    if (pool) {
+      // Counters and pools are only modified atomically by applyApprovedPayment
+      await pool.query(
         `INSERT INTO tournaments (
           id, name, status, entry_fee_usd, max_couples, registered_couples_count,
           accumulated_prize_pool, accumulated_charity_amount, accumulated_operating_margin,
@@ -718,8 +830,6 @@ export class DatabaseProvider {
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (id) DO UPDATE SET
           name = $2, status = $3, entry_fee_usd = $4, max_couples = $5,
-          registered_couples_count = $6, accumulated_prize_pool = $7,
-          accumulated_charity_amount = $8, accumulated_operating_margin = $9,
           config_snapshot_json = $10, completed_at = $12`,
         [
           tourney.id,
@@ -736,232 +846,321 @@ export class DatabaseProvider {
           tourney.completed_at || null
         ]
       );
+      return;
     }
-    if (this.localData) {
-      this.localData.tournament = tourney;
-      this.persistLocalData();
-    }
+    const data = this.local();
+    data.tournament = {
+      ...tourney,
+      // keep counters owned by applyApprovedPayment
+      registered_couples_count: data.tournament.id === tourney.id ? data.tournament.registered_couples_count : tourney.registered_couples_count,
+      accumulated_prize_pool: data.tournament.id === tourney.id ? data.tournament.accumulated_prize_pool : tourney.accumulated_prize_pool,
+      accumulated_charity_amount: data.tournament.id === tourney.id ? data.tournament.accumulated_charity_amount : tourney.accumulated_charity_amount,
+      accumulated_operating_margin: data.tournament.id === tourney.id ? data.tournament.accumulated_operating_margin : tourney.accumulated_operating_margin
+    };
+    this.persistLocalData();
   }
 
   public async getReferralByCode(codeRaw: string): Promise<ReferralRecord | null> {
     const code = (codeRaw || '').trim().toUpperCase();
     if (!code) return null;
 
-    if (this.isPostgres && this.pgPool) {
-      const res = await this.pgPool.query(
-        'SELECT * FROM referrals WHERE UPPER(referral_code) = $1',
-        [code]
-      );
-      if (res.rows.length > 0) {
-        const r = res.rows[0];
-        return {
-          id: r.id,
-          referral_code: r.referral_code,
-          collaborator_name: r.collaborator_name,
-          collaborator_payphone_number: r.collaborator_payphone_number,
-          total_couples_referred: parseInt(r.total_couples_referred || 0, 10),
-          accumulated_earnings_usd: parseFloat(r.accumulated_earnings_usd || 0),
-          settled_earnings_usd: parseFloat(r.settled_earnings_usd || 0),
-          pending_earnings_usd: parseFloat(r.pending_earnings_usd || 0),
-          created_at: r.created_at
-        };
-      }
-      return null;
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query('SELECT * FROM referrals WHERE UPPER(referral_code) = $1', [code]);
+      return res.rows.length > 0 ? mapReferralRow(res.rows[0]) : null;
     }
-
-    return (
-      this.localData?.referrals.find((r) => r.referral_code.toUpperCase() === code) || null
-    );
+    const found = this.local().referrals.find((r) => r.referral_code.toUpperCase() === code);
+    return found ? { ...found } : null;
   }
 
   public async getReferralById(id: string): Promise<ReferralRecord | null> {
-    if (this.isPostgres && this.pgPool) {
-      const res = await this.pgPool.query('SELECT * FROM referrals WHERE id = $1', [id]);
-      if (res.rows.length > 0) {
-        const r = res.rows[0];
-        return {
-          id: r.id,
-          referral_code: r.referral_code,
-          collaborator_name: r.collaborator_name,
-          collaborator_payphone_number: r.collaborator_payphone_number,
-          total_couples_referred: parseInt(r.total_couples_referred || 0, 10),
-          accumulated_earnings_usd: parseFloat(r.accumulated_earnings_usd || 0),
-          settled_earnings_usd: parseFloat(r.settled_earnings_usd || 0),
-          pending_earnings_usd: parseFloat(r.pending_earnings_usd || 0),
-          created_at: r.created_at
-        };
-      }
-      return null;
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query('SELECT * FROM referrals WHERE id = $1', [id]);
+      return res.rows.length > 0 ? mapReferralRow(res.rows[0]) : null;
     }
-    return this.localData?.referrals.find((r) => r.id === id) || null;
+    const found = this.local().referrals.find((r) => r.id === id);
+    return found ? { ...found } : null;
   }
 
-  public async saveReferral(ref: ReferralRecord): Promise<void> {
-    if (this.isPostgres && this.pgPool) {
-      await this.pgPool.query(
+  public async createReferral(ref: ReferralRecord): Promise<void> {
+    const pool = this.backend();
+    if (pool) {
+      await pool.query(
         `INSERT INTO referrals (
           id, referral_code, collaborator_name, collaborator_payphone_number,
           total_couples_referred, accumulated_earnings_usd, settled_earnings_usd,
           pending_earnings_usd, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        ON CONFLICT (id) DO UPDATE SET
-          referral_code = $2, collaborator_name = $3, collaborator_payphone_number = $4,
-          total_couples_referred = $5, accumulated_earnings_usd = $6,
-          settled_earnings_usd = $7, pending_earnings_usd = $8`,
-        [
-          ref.id,
-          ref.referral_code.toUpperCase(),
-          ref.collaborator_name,
-          ref.collaborator_payphone_number,
-          ref.total_couples_referred,
-          ref.accumulated_earnings_usd,
-          ref.settled_earnings_usd,
-          ref.pending_earnings_usd,
-          ref.created_at
-        ]
+        ) VALUES ($1, $2, $3, $4, 0, 0, 0, 0, $5)`,
+        [ref.id, ref.referral_code.toUpperCase(), ref.collaborator_name, ref.collaborator_payphone_number, ref.created_at]
       );
+      return;
     }
-    if (this.localData) {
-      const idx = this.localData.referrals.findIndex((r) => r.id === ref.id);
-      if (idx >= 0) {
-        this.localData.referrals[idx] = ref;
-      } else {
-        this.localData.referrals.push(ref);
-      }
-      this.persistLocalData();
+    this.local().referrals.push({ ...ref });
+    this.persistLocalData();
+  }
+
+  /**
+   * Atomically moves `amount` from pending to settled. Returns null if the balance is insufficient.
+   */
+  public async settleReferral(id: string, amount: number): Promise<ReferralRecord | null> {
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query(
+        `UPDATE referrals
+           SET settled_earnings_usd = settled_earnings_usd + $2,
+               pending_earnings_usd = pending_earnings_usd - $2
+         WHERE id = $1 AND pending_earnings_usd >= $2
+         RETURNING *`,
+        [id, amount]
+      );
+      return res.rows.length > 0 ? mapReferralRow(res.rows[0]) : null;
     }
+    const ref = this.local().referrals.find((r) => r.id === id);
+    if (!ref || ref.pending_earnings_usd + 1e-9 < amount) return null;
+    ref.settled_earnings_usd = round2(ref.settled_earnings_usd + amount);
+    ref.pending_earnings_usd = round2(ref.pending_earnings_usd - amount);
+    this.persistLocalData();
+    return { ...ref };
   }
 
   public async listReferrals(): Promise<ReferralRecord[]> {
-    if (this.isPostgres && this.pgPool) {
-      const res = await this.pgPool.query(
-        'SELECT * FROM referrals ORDER BY accumulated_earnings_usd DESC'
-      );
-      return res.rows.map((r) => ({
-        id: r.id,
-        referral_code: r.referral_code,
-        collaborator_name: r.collaborator_name,
-        collaborator_payphone_number: r.collaborator_payphone_number,
-        total_couples_referred: parseInt(r.total_couples_referred || 0, 10),
-        accumulated_earnings_usd: parseFloat(r.accumulated_earnings_usd || 0),
-        settled_earnings_usd: parseFloat(r.settled_earnings_usd || 0),
-        pending_earnings_usd: parseFloat(r.pending_earnings_usd || 0),
-        created_at: r.created_at
-      }));
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query('SELECT * FROM referrals ORDER BY accumulated_earnings_usd DESC');
+      return res.rows.map(mapReferralRow);
     }
-    return [...(this.localData?.referrals || [])];
+    return this.local().referrals.map((r) => ({ ...r }));
   }
 
-  public async savePaymentAudit(audit: PaymentAuditRecord): Promise<void> {
-    if (this.isPostgres && this.pgPool) {
-      await this.pgPool.query(
-        `INSERT INTO payments_audit (
-          id, payphone_transaction_id, tournament_id, referral_id, referral_code,
-          pair_driver_name, pair_navigator_name, gross_amount, payphone_fee,
-          prize_pool_share, charity_share, developer_share, collaborator_share,
-          status, raw_payload_json, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-        ON CONFLICT (id) DO NOTHING`,
-        [
-          audit.id,
-          audit.payphone_transaction_id,
-          audit.tournament_id,
-          audit.referral_id,
-          audit.referral_code,
-          audit.pair_driver_name,
-          audit.pair_navigator_name,
-          audit.gross_amount,
-          audit.payphone_fee,
-          audit.prize_pool_share,
-          audit.charity_share,
-          audit.developer_share,
-          audit.collaborator_share,
-          audit.status,
-          audit.raw_payload_json || null,
-          audit.created_at
-        ]
-      );
-    }
-    if (this.localData) {
-      this.localData.payments.unshift(audit);
-      if (this.localData.payments.length > 250) {
-        this.localData.payments.length = 250;
+  /**
+   * Applies an approved payment atomically:
+   *  - the pending registration must exist and be PENDING (locked FOR UPDATE)
+   *  - payments_audit insert is idempotent on payphone_transaction_id
+   *  - the tournament slot is taken only if registered_couples_count < max_couples
+   *  - referral counters are incremented in SQL (no read-modify-write)
+   */
+  public async applyApprovedPayment(input: ApplyPaymentInput): Promise<ApplyPaymentResult> {
+    const pool = this.backend();
+    const s = input.splits;
+    if (pool) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        const dup = await client.query('SELECT * FROM payments_audit WHERE payphone_transaction_id = $1', [
+          input.payphone_transaction_id
+        ]);
+        if (dup.rows.length > 0) {
+          await client.query('ROLLBACK');
+          return { status: 'duplicate', audit: mapAuditRow(dup.rows[0]) };
+        }
+
+        const pendingRes = await client.query(
+          'SELECT * FROM pending_registrations WHERE client_transaction_id = $1 FOR UPDATE',
+          [input.client_transaction_id]
+        );
+        const pending = pendingRes.rows[0] ? mapPendingRow(pendingRes.rows[0]) : null;
+        if (!pending || pending.status !== 'PENDING') {
+          await client.query('ROLLBACK');
+          return { status: 'not_pending', message: 'La inscripción pendiente no existe o ya fue procesada.' };
+        }
+
+        const tRes = await client.query(
+          `UPDATE tournaments SET
+             registered_couples_count = registered_couples_count + 1,
+             accumulated_prize_pool = accumulated_prize_pool + $2,
+             accumulated_charity_amount = accumulated_charity_amount + $3,
+             accumulated_operating_margin = accumulated_operating_margin + $4,
+             status = CASE WHEN registered_couples_count + 1 >= max_couples THEN 'in_progress' ELSE status END
+           WHERE id = $1 AND status = 'active' AND registered_couples_count < max_couples
+           RETURNING *`,
+          [input.tournament_id, s.allocated_to_prize_pool, s.allocated_to_charity, s.allocated_to_operating_margin]
+        );
+        if (tRes.rows.length === 0) {
+          await client.query('ROLLBACK');
+          await pool.query(
+            "UPDATE pending_registrations SET status = 'REFUND_REQUIRED' WHERE client_transaction_id = $1 AND status = 'PENDING'",
+            [input.client_transaction_id]
+          );
+          return { status: 'tournament_full', message: 'El torneo ya no tiene cupos o no está abierto a inscripciones.' };
+        }
+
+        const audit: PaymentAuditRecord = {
+          id: `audit-${crypto.randomUUID()}`,
+          payphone_transaction_id: input.payphone_transaction_id,
+          tournament_id: input.tournament_id,
+          referral_id: input.referral ? input.referral.id : null,
+          referral_code: input.referral ? input.referral.referral_code : null,
+          pair_driver_name: pending.driver_name,
+          pair_navigator_name: pending.navigator_name,
+          gross_amount: s.gross_collected,
+          payphone_fee: s.payphone_retention,
+          prize_pool_share: s.allocated_to_prize_pool,
+          charity_share: s.allocated_to_charity,
+          developer_share: s.breakdown_operating_margin.developer_net,
+          collaborator_share: s.breakdown_operating_margin.collaborator_referral_payout,
+          status: 'APPROVED',
+          raw_payload_json: input.raw_payload_json,
+          pass_token: generatePassToken(),
+          client_transaction_id: input.client_transaction_id,
+          created_at: new Date().toISOString()
+        };
+
+        const ins = await client.query(
+          `INSERT INTO payments_audit (
+            id, payphone_transaction_id, tournament_id, referral_id, referral_code,
+            pair_driver_name, pair_navigator_name, gross_amount, payphone_fee,
+            prize_pool_share, charity_share, developer_share, collaborator_share,
+            status, raw_payload_json, pass_token, client_transaction_id, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+          ON CONFLICT (payphone_transaction_id) DO NOTHING
+          RETURNING id`,
+          [
+            audit.id,
+            audit.payphone_transaction_id,
+            audit.tournament_id,
+            audit.referral_id,
+            audit.referral_code,
+            audit.pair_driver_name,
+            audit.pair_navigator_name,
+            audit.gross_amount,
+            audit.payphone_fee,
+            audit.prize_pool_share,
+            audit.charity_share,
+            audit.developer_share,
+            audit.collaborator_share,
+            audit.status,
+            audit.raw_payload_json || null,
+            audit.pass_token,
+            audit.client_transaction_id,
+            audit.created_at
+          ]
+        );
+        if (ins.rows.length === 0) {
+          // Concurrent request inserted the same transaction first
+          await client.query('ROLLBACK');
+          const existing = await pool.query('SELECT * FROM payments_audit WHERE payphone_transaction_id = $1', [
+            input.payphone_transaction_id
+          ]);
+          return { status: 'duplicate', audit: mapAuditRow(existing.rows[0]) };
+        }
+
+        if (input.referral && audit.collaborator_share > 0) {
+          await client.query(
+            `UPDATE referrals SET
+               total_couples_referred = total_couples_referred + 1,
+               accumulated_earnings_usd = accumulated_earnings_usd + $2,
+               pending_earnings_usd = pending_earnings_usd + $2
+             WHERE id = $1`,
+            [input.referral.id, audit.collaborator_share]
+          );
+        }
+
+        await client.query(
+          "UPDATE pending_registrations SET status = 'COMPLETED', tournament_id = $2 WHERE client_transaction_id = $1",
+          [input.client_transaction_id, input.tournament_id]
+        );
+
+        await client.query('COMMIT');
+        return { status: 'applied', audit, tournament: mapTournamentRow(tRes.rows[0]) };
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw err;
+      } finally {
+        client.release();
       }
-      this.persistLocalData();
     }
+
+    // Local dev storage: fully synchronous below this point, so it is atomic in Node's event loop
+    const data = this.local();
+    const dup = data.payments.find((p) => p.payphone_transaction_id === input.payphone_transaction_id);
+    if (dup) return { status: 'duplicate', audit: { ...dup } };
+
+    const pending = data.pending_registrations?.find((p) => p.client_transaction_id === input.client_transaction_id);
+    if (!pending || pending.status !== 'PENDING') {
+      return { status: 'not_pending', message: 'La inscripción pendiente no existe o ya fue procesada.' };
+    }
+
+    const t = data.tournament;
+    if (t.id !== input.tournament_id || t.status !== 'active' || t.registered_couples_count >= t.max_couples) {
+      pending.status = 'REFUND_REQUIRED';
+      this.persistLocalData();
+      return { status: 'tournament_full', message: 'El torneo ya no tiene cupos o no está abierto a inscripciones.' };
+    }
+
+    t.registered_couples_count++;
+    t.accumulated_prize_pool = round2(t.accumulated_prize_pool + s.allocated_to_prize_pool);
+    t.accumulated_charity_amount = round2(t.accumulated_charity_amount + s.allocated_to_charity);
+    t.accumulated_operating_margin = round2(t.accumulated_operating_margin + s.allocated_to_operating_margin);
+    if (t.registered_couples_count >= t.max_couples) t.status = 'in_progress';
+
+    const audit: PaymentAuditRecord = {
+      id: `audit-${crypto.randomUUID()}`,
+      payphone_transaction_id: input.payphone_transaction_id,
+      tournament_id: input.tournament_id,
+      referral_id: input.referral ? input.referral.id : null,
+      referral_code: input.referral ? input.referral.referral_code : null,
+      pair_driver_name: pending.driver_name,
+      pair_navigator_name: pending.navigator_name,
+      gross_amount: s.gross_collected,
+      payphone_fee: s.payphone_retention,
+      prize_pool_share: s.allocated_to_prize_pool,
+      charity_share: s.allocated_to_charity,
+      developer_share: s.breakdown_operating_margin.developer_net,
+      collaborator_share: s.breakdown_operating_margin.collaborator_referral_payout,
+      status: 'APPROVED',
+      raw_payload_json: input.raw_payload_json,
+      pass_token: generatePassToken(),
+      client_transaction_id: input.client_transaction_id,
+      created_at: new Date().toISOString()
+    };
+    data.payments.unshift(audit);
+
+    if (input.referral && audit.collaborator_share > 0) {
+      const ref = data.referrals.find((r) => r.id === input.referral!.id);
+      if (ref) {
+        ref.total_couples_referred++;
+        ref.accumulated_earnings_usd = round2(ref.accumulated_earnings_usd + audit.collaborator_share);
+        ref.pending_earnings_usd = round2(ref.pending_earnings_usd + audit.collaborator_share);
+      }
+    }
+
+    pending.status = 'COMPLETED';
+    pending.tournament_id = input.tournament_id;
+    this.persistLocalData();
+    return { status: 'applied', audit: { ...audit }, tournament: { ...t } };
   }
 
   public async listPaymentAudits(): Promise<PaymentAuditRecord[]> {
-    if (this.isPostgres && this.pgPool) {
-      const res = await this.pgPool.query(
-        'SELECT * FROM payments_audit ORDER BY created_at DESC LIMIT 100'
-      );
-      return res.rows.map((r) => ({
-        id: r.id,
-        payphone_transaction_id: r.payphone_transaction_id,
-        tournament_id: r.tournament_id,
-        referral_id: r.referral_id,
-        referral_code: r.referral_code,
-        pair_driver_name: r.pair_driver_name,
-        pair_navigator_name: r.pair_navigator_name,
-        gross_amount: parseFloat(r.gross_amount),
-        payphone_fee: parseFloat(r.payphone_fee),
-        prize_pool_share: parseFloat(r.prize_pool_share),
-        charity_share: parseFloat(r.charity_share),
-        developer_share: parseFloat(r.developer_share),
-        collaborator_share: parseFloat(r.collaborator_share),
-        status: r.status,
-        raw_payload_json: r.raw_payload_json,
-        created_at: r.created_at
-      }));
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query('SELECT * FROM payments_audit ORDER BY created_at DESC LIMIT 100');
+      return res.rows.map(mapAuditRow);
     }
-    return [...(this.localData?.payments || [])];
+    return this.local().payments.slice(0, 100).map((p) => ({ ...p }));
   }
 
   public async getPaymentAuditByTransactionId(txId: string): Promise<PaymentAuditRecord | null> {
     if (!txId) return null;
     const cleanId = String(txId).trim();
-    if (this.isPostgres && this.pgPool) {
-      const res = await this.pgPool.query(
-        'SELECT * FROM payments_audit WHERE payphone_transaction_id = $1 LIMIT 1',
-        [cleanId]
-      );
-      if (res.rows.length > 0) {
-        const r = res.rows[0];
-        return {
-          id: r.id,
-          payphone_transaction_id: r.payphone_transaction_id,
-          tournament_id: r.tournament_id,
-          referral_id: r.referral_id,
-          referral_code: r.referral_code,
-          pair_driver_name: r.pair_driver_name,
-          pair_navigator_name: r.pair_navigator_name,
-          gross_amount: parseFloat(r.gross_amount),
-          payphone_fee: parseFloat(r.payphone_fee),
-          prize_pool_share: parseFloat(r.prize_pool_share),
-          charity_share: parseFloat(r.charity_share),
-          developer_share: parseFloat(r.developer_share),
-          collaborator_share: parseFloat(r.collaborator_share),
-          status: r.status,
-          raw_payload_json: r.raw_payload_json,
-          created_at: r.created_at
-        };
-      }
-      return null;
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query('SELECT * FROM payments_audit WHERE payphone_transaction_id = $1 LIMIT 1', [cleanId]);
+      return res.rows.length > 0 ? mapAuditRow(res.rows[0]) : null;
     }
-    return (
-      this.localData?.payments?.find((p) => p.payphone_transaction_id === cleanId) || null
-    );
+    const found = this.local().payments.find((p) => p.payphone_transaction_id === cleanId);
+    return found ? { ...found } : null;
   }
 
   public async savePendingRegistration(record: PendingRegistrationRecord): Promise<void> {
-    if (this.isPostgres && this.pgPool) {
-      await this.pgPool.query(
+    const pool = this.backend();
+    if (pool) {
+      // Insert only: an existing registration (possibly COMPLETED) must never be overwritten
+      await pool.query(
         `INSERT INTO pending_registrations (
-          client_transaction_id, driver_name, navigator_name, referral_code, phone, amount_usd, status, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (client_transaction_id) DO UPDATE SET
-          driver_name = $2, navigator_name = $3, referral_code = $4, phone = $5, amount_usd = $6, status = $7`,
+          client_transaction_id, driver_name, navigator_name, referral_code, phone, amount_usd, status, tournament_id, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           record.client_transaction_id,
           record.driver_name,
@@ -970,141 +1169,99 @@ export class DatabaseProvider {
           record.phone || null,
           record.amount_usd,
           record.status,
+          record.tournament_id || null,
           record.created_at
         ]
       );
+      return;
     }
-    if (this.localData) {
-      if (!this.localData.pending_registrations) {
-        this.localData.pending_registrations = [];
-      }
-      const idx = this.localData.pending_registrations.findIndex(
-        (p) => p.client_transaction_id === record.client_transaction_id
-      );
-      if (idx >= 0) {
-        this.localData.pending_registrations[idx] = record;
-      } else {
-        this.localData.pending_registrations.push(record);
-      }
-      this.persistLocalData();
+    const data = this.local();
+    if (!data.pending_registrations) data.pending_registrations = [];
+    if (data.pending_registrations.some((p) => p.client_transaction_id === record.client_transaction_id)) {
+      throw new Error(`Inscripción ${record.client_transaction_id} ya existe.`);
     }
+    data.pending_registrations.push({ ...record });
+    this.persistLocalData();
   }
 
   public async getPendingRegistration(clientTxId: string): Promise<PendingRegistrationRecord | null> {
     if (!clientTxId) return null;
     const cleanId = String(clientTxId).trim();
-    if (this.isPostgres && this.pgPool) {
-      const res = await this.pgPool.query(
-        'SELECT * FROM pending_registrations WHERE client_transaction_id = $1 LIMIT 1',
-        [cleanId]
-      );
-      if (res.rows.length > 0) {
-        const row = res.rows[0];
-        return {
-          client_transaction_id: row.client_transaction_id,
-          driver_name: row.driver_name,
-          navigator_name: row.navigator_name,
-          referral_code: row.referral_code || undefined,
-          phone: row.phone || undefined,
-          amount_usd: parseFloat(row.amount_usd),
-          status: row.status as 'PENDING' | 'COMPLETED' | 'CANCELLED',
-          created_at: row.created_at
-        };
-      }
-      return null;
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query('SELECT * FROM pending_registrations WHERE client_transaction_id = $1 LIMIT 1', [
+        cleanId
+      ]);
+      return res.rows.length > 0 ? mapPendingRow(res.rows[0]) : null;
     }
-    return (
-      this.localData?.pending_registrations?.find(
-        (p) => p.client_transaction_id === cleanId
-      ) || null
-    );
+    const found = this.local().pending_registrations?.find((p) => p.client_transaction_id === cleanId);
+    return found ? { ...found } : null;
+  }
+
+  public async markPendingRegistrationStatus(
+    clientTxId: string,
+    status: PendingRegistrationRecord['status']
+  ): Promise<void> {
+    if (!clientTxId) return;
+    const cleanId = String(clientTxId).trim();
+    const pool = this.backend();
+    if (pool) {
+      await pool.query('UPDATE pending_registrations SET status = $2 WHERE client_transaction_id = $1', [cleanId, status]);
+      return;
+    }
+    const rec = this.local().pending_registrations?.find((p) => p.client_transaction_id === cleanId);
+    if (rec) {
+      rec.status = status;
+      this.persistLocalData();
+    }
   }
 
   public async markPendingRegistrationComplete(clientTxId: string): Promise<void> {
-    if (!clientTxId) return;
-    const cleanId = String(clientTxId).trim();
-    if (this.isPostgres && this.pgPool) {
-      await this.pgPool.query(
-        "UPDATE pending_registrations SET status = 'COMPLETED' WHERE client_transaction_id = $1",
-        [cleanId]
-      );
-    }
-    if (this.localData?.pending_registrations) {
-      const rec = this.localData.pending_registrations.find(
-        (p) => p.client_transaction_id === cleanId
-      );
-      if (rec) {
-        rec.status = 'COMPLETED';
-        this.persistLocalData();
-      }
-    }
+    await this.markPendingRegistrationStatus(clientTxId, 'COMPLETED');
   }
 
-  public async verifyTournamentPass(passCode: string): Promise<{
+  /**
+   * Validates a tournament pass token. Only random tokens issued on payment approval are
+   * accepted (never Payphone transaction ids), and only for the given tournament.
+   */
+  public async verifyTournamentPass(
+    passCode: string,
+    tournamentId?: string
+  ): Promise<{
     valid: boolean;
-    passCode: string;
     driver_name?: string;
     navigator_name?: string;
     tournament_id?: string;
     status?: string;
     message?: string;
   }> {
-    if (!passCode) {
-      return { valid: false, passCode, message: 'Código de pase no proporcionado.' };
-    }
-    const clean = passCode.trim().toUpperCase();
-
-    // 1. Check in pending_registrations where status = 'COMPLETED'
-    const pending = await this.getPendingRegistration(clean);
-    if (pending && pending.status === 'COMPLETED') {
-      return {
-        valid: true,
-        passCode: pending.client_transaction_id,
-        driver_name: pending.driver_name,
-        navigator_name: pending.navigator_name,
-        status: 'ACTIVE'
-      };
+    const clean = String(passCode || '').trim().toUpperCase();
+    if (!/^PS(-[0-9A-F]{4}){8}$/.test(clean)) {
+      return { valid: false, message: 'Código de pase no válido.' };
     }
 
-    // 2. Check in payments_audit by payphone_transaction_id or id
-    if (this.isPostgres && this.pgPool) {
-      const res = await this.pgPool.query(
-        'SELECT * FROM payments_audit WHERE UPPER(payphone_transaction_id) = $1 OR UPPER(id) = $1 LIMIT 1',
+    let found: PaymentAuditRecord | null = null;
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query(
+        "SELECT * FROM payments_audit WHERE pass_token = $1 AND status = 'APPROVED' LIMIT 1",
         [clean]
       );
-      if (res.rows.length > 0) {
-        const row = res.rows[0];
-        return {
-          valid: true,
-          passCode: row.payphone_transaction_id,
-          driver_name: row.pair_driver_name,
-          navigator_name: row.pair_navigator_name,
-          tournament_id: row.tournament_id,
-          status: 'ACTIVE'
-        };
-      }
-    } else if (this.localData) {
-      const found = this.localData.payments.find(
-        (p) =>
-          p.payphone_transaction_id.toUpperCase() === clean ||
-          p.id.toUpperCase() === clean
-      );
-      if (found) {
-        return {
-          valid: true,
-          passCode: found.payphone_transaction_id,
-          driver_name: found.pair_driver_name,
-          navigator_name: found.pair_navigator_name,
-          tournament_id: found.tournament_id,
-          status: 'ACTIVE'
-        };
-      }
+      found = res.rows.length > 0 ? mapAuditRow(res.rows[0]) : null;
+    } else {
+      found = this.local().payments.find((p) => p.pass_token === clean && p.status === 'APPROVED') || null;
+    }
+
+    if (!found || (tournamentId && found.tournament_id !== tournamentId)) {
+      return { valid: false, message: 'Código de pase no encontrado para el torneo activo.' };
     }
 
     return {
-      valid: false,
-      passCode: clean,
-      message: 'Código de pase no encontrado o inscripción no completada.'
+      valid: true,
+      driver_name: found.pair_driver_name,
+      navigator_name: found.pair_navigator_name,
+      tournament_id: found.tournament_id,
+      status: 'ACTIVE'
     };
   }
 }

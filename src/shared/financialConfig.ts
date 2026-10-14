@@ -184,10 +184,13 @@ export function round2(value: number): number {
 
 /**
  * Pure math calculation engine for transaction revenue splits based on exact schema formulas.
+ * When the pair has no referral, nobody earns the collaborator share: it stays with the
+ * platform (developer_net = full operating margin) and collaborator_referral_payout is 0.
  */
 export function calculateTransactionSplits(
   grossAmount: number,
-  config: TournamentFinancialConfig = DEFAULT_FINANCIAL_CONFIG
+  config: TournamentFinancialConfig = DEFAULT_FINANCIAL_CONFIG,
+  hasReferral = true
 ): TransactionCalculationResult {
   const pGateway = config.pricing_structure.payphone_gateway;
   const alloc = config.pricing_structure.revenue_allocation_percentages;
@@ -203,12 +206,11 @@ export function calculateTransactionSplits(
     grossAmount - payphone_retention - allocated_to_prize_pool - allocated_to_charity
   );
 
-  const developer_net = round2(
-    allocated_to_operating_margin * subDist.platform_developer_share.percentage_of_operating_margin
-  );
-  const collaborator_referral_payout = round2(
-    allocated_to_operating_margin * subDist.collaborator_pool_share.percentage_of_operating_margin
-  );
+  const collaborator_referral_payout = hasReferral
+    ? round2(allocated_to_operating_margin * subDist.collaborator_pool_share.percentage_of_operating_margin)
+    : 0;
+  // Developer gets the exact remainder so both shares always add up to the margin
+  const developer_net = round2(allocated_to_operating_margin - collaborator_referral_payout);
 
   return {
     gross_collected: round2(grossAmount),
@@ -221,6 +223,114 @@ export function calculateTransactionSplits(
       collaborator_referral_payout
     }
   };
+}
+
+export interface FinancialConfigUpdate {
+  entry_fee_per_pair?: number;
+  max_couples_limit?: number;
+  payphone_percentage_fee?: number;
+  prize_pool_percentage?: number;
+  charity_percentage?: number;
+  developer_share_of_margin?: number;
+  collaborator_share_of_margin?: number;
+}
+
+const PCT_EPSILON = 1e-9;
+
+function assertFraction(name: string, value: number): void {
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error(`${name} debe ser una fracción entre 0 y 1 (recibido: ${value}).`);
+  }
+}
+
+/**
+ * Applies an admin config update on a copy of `current`, recomputing every derived value
+ * (effective Payphone fee with IVA, operating margin, effective shares of gross) and
+ * validating that the split never exceeds 100% of the gross amount.
+ */
+export function applyFinancialConfigUpdate(
+  current: TournamentFinancialConfig,
+  dto: FinancialConfigUpdate
+): TournamentFinancialConfig {
+  const next: TournamentFinancialConfig = JSON.parse(JSON.stringify(current));
+  const gateway = next.pricing_structure.payphone_gateway;
+  const alloc = next.pricing_structure.revenue_allocation_percentages;
+  const sub = next.pricing_structure.margin_sub_distribution;
+
+  if (dto.entry_fee_per_pair !== undefined) {
+    const fee = Number(dto.entry_fee_per_pair);
+    if (!Number.isFinite(fee) || fee < 1 || fee > 1000) {
+      throw new Error('La cuota por pareja debe estar entre $1 y $1000.');
+    }
+    next.entry_fee_per_pair = round2(fee);
+  }
+  if (dto.max_couples_limit !== undefined) {
+    const max = Number(dto.max_couples_limit);
+    if (!Number.isInteger(max) || max < 2 || max > 10000) {
+      throw new Error('El límite de parejas debe ser un entero entre 2 y 10000.');
+    }
+    next.max_couples_limit = max;
+  }
+  if (dto.payphone_percentage_fee !== undefined) {
+    const fee = Number(dto.payphone_percentage_fee);
+    assertFraction('La tasa base de Payphone', fee);
+    gateway.percentage_fee = fee;
+  }
+  if (dto.prize_pool_percentage !== undefined) {
+    assertFraction('El porcentaje del pozo', Number(dto.prize_pool_percentage));
+    alloc.prize_pool.percentage_of_gross = Number(dto.prize_pool_percentage);
+  }
+  if (dto.charity_percentage !== undefined) {
+    assertFraction('El porcentaje del refugio', Number(dto.charity_percentage));
+    alloc.animal_charity.percentage_of_gross = Number(dto.charity_percentage);
+  }
+
+  const devGiven = dto.developer_share_of_margin !== undefined;
+  const collabGiven = dto.collaborator_share_of_margin !== undefined;
+  if (devGiven) assertFraction('La participación del desarrollador', Number(dto.developer_share_of_margin));
+  if (collabGiven) assertFraction('La participación del colaborador', Number(dto.collaborator_share_of_margin));
+  if (devGiven && collabGiven) {
+    sub.platform_developer_share.percentage_of_operating_margin = Number(dto.developer_share_of_margin);
+    sub.collaborator_pool_share.percentage_of_operating_margin = Number(dto.collaborator_share_of_margin);
+  } else if (devGiven) {
+    sub.platform_developer_share.percentage_of_operating_margin = Number(dto.developer_share_of_margin);
+    sub.collaborator_pool_share.percentage_of_operating_margin = round6(1 - Number(dto.developer_share_of_margin));
+  } else if (collabGiven) {
+    sub.collaborator_pool_share.percentage_of_operating_margin = Number(dto.collaborator_share_of_margin);
+    sub.platform_developer_share.percentage_of_operating_margin = round6(1 - Number(dto.collaborator_share_of_margin));
+  }
+
+  // Derived values
+  gateway.effective_fee_percentage_calculated = round6(gateway.percentage_fee * (1 + gateway.tax_on_fee_percentage));
+  const committed =
+    gateway.effective_fee_percentage_calculated +
+    alloc.prize_pool.percentage_of_gross +
+    alloc.animal_charity.percentage_of_gross;
+  if (committed > 1 + PCT_EPSILON) {
+    throw new Error(
+      `Premio + refugio + comisión Payphone suman ${(committed * 100).toFixed(2)}% (máximo 100%).`
+    );
+  }
+  alloc.gross_operating_margin.percentage_of_gross = round6(Math.max(0, 1 - committed));
+
+  const subSum =
+    sub.platform_developer_share.percentage_of_operating_margin +
+    sub.collaborator_pool_share.percentage_of_operating_margin;
+  if (Math.abs(subSum - 1) > 1e-6) {
+    throw new Error('Desarrollador + colaborador deben sumar 100% del margen operativo.');
+  }
+  sub.platform_developer_share.effective_percentage_of_gross = round6(
+    alloc.gross_operating_margin.percentage_of_gross * sub.platform_developer_share.percentage_of_operating_margin
+  );
+  sub.collaborator_pool_share.effective_percentage_of_gross = round6(
+    alloc.gross_operating_margin.percentage_of_gross * sub.collaborator_pool_share.percentage_of_operating_margin
+  );
+
+  return next;
+}
+
+function round6(value: number): number {
+  return Math.round(value * 1e6) / 1e6;
 }
 
 export interface PodiumPrizeDistribution {
