@@ -14,9 +14,42 @@ export type VoiceCueId =
   | 'cmd_close_call'
   | 'cmd_overdrive'
   | 'cmd_mayday'
-  | 'cmd_milestone';
+  | 'cmd_milestone'
+  | 'social_food'
+  | 'social_shelter'
+  | 'social_team'
+  | 'social_thanks';
 
-export type VoiceMode = 'hybrid' | 'es_only' | 'en_only' | 'off';
+/** es = voz natural limpia, es_radio = filtro de radio suave, off = sin narrador. */
+export type VoiceMode = 'es' | 'es_radio' | 'off';
+
+const VOICE_MODE_STORAGE_KEY = 'ps_voice_mode';
+const VOICE_MANIFEST_URL = '/assets/voice/manifest.json';
+
+const SOCIAL_CUES: VoiceCueId[] = ['social_food', 'social_shelter', 'social_team', 'social_thanks'];
+
+/** Narrador que interpreta cada cue (los athena_* son la guía, el resto el capitán). */
+const GUIA_CUES = new Set<VoiceCueId>([
+  'athena_online',
+  'athena_stall',
+  'athena_overdrive',
+  'athena_breach',
+  'athena_revive',
+  'athena_eject',
+  'social_food',
+  'social_shelter',
+  'social_thanks'
+]);
+
+// Mezcla mientras habla el narrador (1 = sin cambio)
+const DUCK_TURBINE = 0.35;
+const DUCK_SFX = 0.7;
+const DUCK_MUSIC = 0.4;
+
+// Anti-solapamiento de voces
+const VOICE_GAP_MS = 1600; // silencio mínimo tras una voz antes de otra no prioritaria
+const PRIORITY_MIN_PLAY_MS = 900; // una prioritaria no corta a otra que lleva menos de esto
+const SAME_CUE_COOLDOWN_MS = 4000;
 
 const ALL_VOICE_CUES: VoiceCueId[] = [
   'athena_online',
@@ -32,35 +65,53 @@ const ALL_VOICE_CUES: VoiceCueId[] = [
   'cmd_close_call',
   'cmd_overdrive',
   'cmd_mayday',
-  'cmd_milestone'
+  'cmd_milestone',
+  ...SOCIAL_CUES
 ];
 
+function loadStoredVoiceMode(): VoiceMode {
+  try {
+    const stored = localStorage.getItem(VOICE_MODE_STORAGE_KEY);
+    if (stored === 'es' || stored === 'es_radio' || stored === 'off') return stored;
+  } catch {
+    // Storage bloqueado: usar el valor por defecto
+  }
+  return 'es';
+}
+
 /**
- * AAA Multi-Layer Procedural Audio & Neural Military Radio Narrator Engine.
- * Features:
- * - Pre-decoded Neural Voice Bank (ATHENA English F-35 AI + COMMANDER VORTEX Spanish AWACS)
- * - Mil-Spec Walkie-Talkie DSP Chain (Quindar PTT Beep, Bandpass 420-2850Hz, Tube Saturation, VHF Carrier Static & Squelch Tail)
- * - Automatic Audio Ducking (attenuates jet turbine by 40% while narrator speaks)
- * - MediaStreamAudioDestinationNode export so 9:16 TikTok video clips include full audio + narrator voices
+ * Motor de audio procedural + narrador "Patrulla de Rescate" (voces en español).
+ * - Banco de voces con variantes (manifest.json) elegidas al azar sin repetir la última
+ * - Ducking de motor, efectos y música mientras habla el narrador
+ * - Filtro de radio opcional y suave (modo es_radio)
+ * - Cooldowns para que las voces no se encimen
+ * - MediaStreamAudioDestinationNode para que los clips 9:16 incluyan el audio
  */
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private turbineDuckGain: GainNode | null = null;
+  private sfxBus: GainNode | null = null;
+  private musicBus: GainNode | null = null;
+  private voiceBus: GainNode | null = null;
   private compressor: DynamicsCompressorNode | null = null;
   private reverbNode: ConvolverNode | null = null;
   private reverbSendGain: GainNode | null = null;
   private recordDestination: MediaStreamAudioDestinationNode | null = null;
 
   private isMuted = false;
-  private voiceMode: VoiceMode = 'hybrid';
+  private voiceMode: VoiceMode = loadStoredVoiceMode();
 
-  // Preloaded Neural Voice AudioBuffers
-  private voiceBuffers = new Map<VoiceCueId, AudioBuffer>();
+  // Banco de voces precargado: cada cue tiene 1..N variantes
+  private voiceBuffers = new Map<VoiceCueId, AudioBuffer[]>();
+  private lastVariant = new Map<VoiceCueId, number>();
+  private lastCueTime = new Map<VoiceCueId, number>();
   private loadingVoices = false;
   private activeVoiceSource: AudioBufferSourceNode | null = null;
   private activeStaticSource: AudioBufferSourceNode | null = null;
-  private lastVoiceTime = 0;
+  private activeVoiceStartedAt = 0;
+  private lastVoiceEndedAt = 0;
+  private nextSocialCueAt = 0;
 
   // 3-Layer Jet Turbine nodes
   private subRotorOsc: OscillatorNode | null = null;
@@ -111,6 +162,14 @@ export class AudioEngine {
     this.turbineDuckGain.gain.value = 1.0;
     this.turbineDuckGain.connect(this.compressor);
 
+    // Buses de efectos, música (reservado) y voz; efectos y música se atenúan cuando habla el narrador
+    this.sfxBus = this.ctx.createGain();
+    this.sfxBus.connect(this.compressor);
+    this.musicBus = this.ctx.createGain();
+    this.musicBus.connect(this.compressor);
+    this.voiceBus = this.ctx.createGain();
+    this.voiceBus.connect(this.compressor);
+
     // Spatial Acoustic Reverb (Metallic Canyon / Cockpit Impulse)
     this.reverbNode = this.ctx.createConvolver();
     this.reverbNode.buffer = this.createImpulseResponse(1.3, 3.4);
@@ -118,7 +177,7 @@ export class AudioEngine {
     this.reverbSendGain.gain.value = 0.24;
 
     this.reverbSendGain.connect(this.reverbNode);
-    this.reverbNode.connect(this.compressor);
+    this.reverbNode.connect(this.sfxBus);
     this.compressor.connect(this.masterGain);
     this.masterGain.connect(this.ctx.destination);
 
@@ -136,23 +195,73 @@ export class AudioEngine {
     return this.recordDestination.stream.getAudioTracks();
   }
 
+  /** Bus para una futura pista de música; se atenúa automáticamente bajo la voz. */
+  public getMusicBus(): GainNode | null {
+    this.init();
+    return this.musicBus;
+  }
+
+  private async loadVoiceManifest(): Promise<Partial<Record<VoiceCueId, string[]>>> {
+    try {
+      const res = await fetch(VOICE_MANIFEST_URL);
+      if (res.ok) {
+        const manifest = (await res.json()) as { cues?: Partial<Record<VoiceCueId, string[]>> };
+        if (manifest.cues) return manifest.cues;
+      }
+    } catch {
+      // Sin manifiesto: ruta histórica de un archivo por cue
+    }
+    return Object.fromEntries(ALL_VOICE_CUES.map((cueId) => [cueId, [`${cueId}.mp3`]]));
+  }
+
   private async preloadNeuralVoiceBank(): Promise<void> {
     if (!this.ctx || this.loadingVoices) return;
     this.loadingVoices = true;
 
-    await Promise.allSettled(
+    const manifest = await this.loadVoiceManifest();
+    // Un mismo archivo puede servir a varios cues (alias): se decodifica una sola vez
+    const decoded = new Map<string, Promise<AudioBuffer | null>>();
+    const decodeFile = (file: string): Promise<AudioBuffer | null> => {
+      let pending = decoded.get(file);
+      if (!pending) {
+        pending = (async () => {
+          try {
+            const res = await fetch(`/assets/voice/${file}`);
+            if (!res.ok || !this.ctx) return null;
+            return await this.ctx.decodeAudioData(await res.arrayBuffer());
+          } catch {
+            return null;
+          }
+        })();
+        decoded.set(file, pending);
+      }
+      return pending;
+    };
+
+    await Promise.all(
       ALL_VOICE_CUES.map(async (cueId) => {
-        try {
-          const res = await fetch(`/assets/voice/${cueId}.mp3`);
-          if (!res.ok || !this.ctx) return;
-          const arrayBuf = await res.arrayBuffer();
-          const audioBuf = await this.ctx.decodeAudioData(arrayBuf);
-          this.voiceBuffers.set(cueId, audioBuf);
-        } catch {
-          // Ignore individual asset decode issue
-        }
+        const buffers = await Promise.all((manifest[cueId] ?? []).map(decodeFile));
+        const usable = buffers.filter((b): b is AudioBuffer => b !== null);
+        if (usable.length > 0) this.voiceBuffers.set(cueId, usable);
       })
     );
+  }
+
+  /** Cues con audio cargado y cuántas variantes tiene cada uno (diagnóstico). */
+  public getLoadedVoiceCues(): Record<string, number> {
+    return Object.fromEntries([...this.voiceBuffers].map(([cueId, list]) => [cueId, list.length]));
+  }
+
+  private pickVariant(cueId: VoiceCueId): AudioBuffer | null {
+    const variants = this.voiceBuffers.get(cueId);
+    if (!variants || variants.length === 0) return null;
+    const last = this.lastVariant.get(cueId) ?? -1;
+    let idx = Math.floor(Math.random() * variants.length);
+    if (variants.length > 1 && idx === last) {
+      idx = (idx + 1 + Math.floor(Math.random() * (variants.length - 1))) % variants.length;
+    }
+    this.lastVariant.set(cueId, idx);
+    return variants[idx];
   }
 
   private setupJetTurbineLayers(): void {
@@ -222,10 +331,19 @@ export class AudioEngine {
     return this.isMuted;
   }
 
+  public getVoiceMode(): VoiceMode {
+    return this.voiceMode;
+  }
+
   public cycleVoiceMode(): VoiceMode {
-    const order: VoiceMode[] = ['hybrid', 'es_only', 'en_only', 'off'];
+    const order: VoiceMode[] = ['es', 'es_radio', 'off'];
     const nextIdx = (order.indexOf(this.voiceMode) + 1) % order.length;
     this.voiceMode = order[nextIdx];
+    try {
+      localStorage.setItem(VOICE_MODE_STORAGE_KEY, this.voiceMode);
+    } catch {
+      // Storage bloqueado: el modo dura solo esta sesión
+    }
     if (this.voiceMode === 'off') {
       this.stopActiveVoice();
     }
@@ -267,7 +385,20 @@ export class AudioEngine {
       this.jetNoiseGain.gain.setTargetAtTime(0, now, 0.08);
       this.spoolGain.gain.setTargetAtTime(0, now, 0.08);
       this.alarmActive = false;
+      this.nextSocialCueAt = 0;
       return;
+    }
+
+    // Recordatorios de impacto social cada ~40-60 s de carrera, solo si el narrador está libre
+    const nowMs = Date.now();
+    if (this.nextSocialCueAt === 0) {
+      this.nextSocialCueAt = nowMs + 30000;
+    } else if (nowMs >= this.nextSocialCueAt) {
+      if (this.playNarratorCue(this.pickOne(SOCIAL_CUES), false)) {
+        this.nextSocialCueAt = nowMs + 40000 + Math.random() * 20000;
+      } else {
+        this.nextSocialCueAt = nowMs + 5000;
+      }
     }
 
     const speedNorm = Math.max(0, Math.min(1, currentSpeed / 250));
@@ -285,10 +416,7 @@ export class AudioEngine {
       if (!this.alarmActive) {
         this.alarmActive = true;
         this.nextAlarmPulseTime = now;
-        this.playNarratorCue(
-          this.voiceMode === 'es_only' ? 'cmd_mayday' : 'athena_stall',
-          true
-        );
+        this.playNarratorCue(this.pickOne<VoiceCueId>(['cmd_mayday', 'athena_stall']), true);
       }
       if (now >= this.nextAlarmPulseTime) {
         this.triggerWarningAlarmPulse();
@@ -347,10 +475,7 @@ export class AudioEngine {
 
       case 'overdrive_activated':
         this.playOverdrivePowerup();
-        this.playNarratorCue(
-          this.voiceMode === 'es_only' ? 'cmd_overdrive' : 'athena_overdrive',
-          true
-        );
+        this.playNarratorCue(this.pickOne<VoiceCueId>(['cmd_overdrive', 'athena_overdrive']), true);
         break;
 
       case 'revive':
@@ -378,134 +503,141 @@ export class AudioEngine {
   }
 
   /**
-   * Plays a pre-generated Neural Voice Cue through the Web Audio API Mil-Spec Radio DSP Chain!
+   * Reproduce un cue del narrador (variante al azar). Devuelve true si sonó.
+   * - No prioritario: solo si no hay voz activa y pasó VOICE_GAP_MS desde la última.
+   * - Prioritario: puede cortar una voz que ya lleva PRIORITY_MIN_PLAY_MS sonando.
    */
-  public playNarratorCue(cueId: VoiceCueId, priority = false): void {
-    if (this.isMuted || this.voiceMode === 'off') return;
+  public playNarratorCue(cueId: VoiceCueId, priority = false): boolean {
+    if (this.isMuted || this.voiceMode === 'off') return false;
     this.init();
-    if (!this.ctx || !this.compressor || !this.turbineDuckGain) return;
-
-    // Adapt cue if user forced EN-only or ES-only mode
-    let effectiveCue = cueId;
-    if (this.voiceMode === 'en_only' && cueId.startsWith('cmd_')) {
-      effectiveCue =
-        cueId === 'cmd_mayday'
-          ? 'athena_stall'
-          : cueId === 'cmd_overdrive'
-          ? 'athena_overdrive'
-          : 'athena_online';
-    } else if (this.voiceMode === 'es_only' && cueId.startsWith('athena_')) {
-      effectiveCue =
-        cueId === 'athena_stall'
-          ? 'cmd_mayday'
-          : cueId === 'athena_overdrive'
-          ? 'cmd_overdrive'
-          : 'cmd_bogey';
-    }
+    if (!this.ctx || !this.voiceBus || !this.turbineDuckGain) return false;
 
     const nowMs = Date.now();
-    if (!priority && nowMs - this.lastVoiceTime < 2200) {
-      return;
+    if (nowMs - (this.lastCueTime.get(cueId) ?? 0) < SAME_CUE_COOLDOWN_MS) return false;
+    if (this.activeVoiceSource) {
+      if (!priority || nowMs - this.activeVoiceStartedAt < PRIORITY_MIN_PLAY_MS) return false;
+    } else if (!priority && nowMs - this.lastVoiceEndedAt < VOICE_GAP_MS) {
+      return false;
     }
 
-    const buffer = this.voiceBuffers.get(effectiveCue);
-    if (!buffer) return;
+    const buffer = this.pickVariant(cueId);
+    if (!buffer) return false;
 
-    this.stopActiveVoice();
-    this.lastVoiceTime = nowMs;
+    this.stopActiveVoice(false);
+    this.lastCueTime.set(cueId, nowMs);
+    this.activeVoiceStartedAt = nowMs;
 
-    const isCommander = effectiveCue.startsWith('cmd_');
+    const isRadio = this.voiceMode === 'es_radio';
+    const isGuia = GUIA_CUES.has(cueId);
     const now = this.ctx.currentTime;
+    const startAt = now + (isRadio ? 0.06 : 0.03);
 
-    // 1. Duck jet turbine volume by 40% so the voice cuts through the mix clearly
-    this.turbineDuckGain.gain.cancelScheduledValues(now);
-    this.turbineDuckGain.gain.setTargetAtTime(0.55, now, 0.04);
+    // 1. Ducking: motor, efectos y música bajan para que la voz se entienda
+    this.setDuck(true, now);
 
-    // 2. Play Intro Quindar PTT Tone (2525Hz NASA/F-35 beep for Athena, 1850Hz VHF click for Commander)
-    this.playQuindarTone(isCommander ? 1850 : 2525, 0.045);
-
-    // 3. Build DSP Filter Chain for the Voice Buffer
+    // 2. Cadena de voz: limpia y cálida por defecto; radio suave opcional
     const source = this.ctx.createBufferSource();
     source.buffer = buffer;
-    // Slight cadence tuning: Athena crisp 1.06x, Commander authoritative 1.03x
-    source.playbackRate.value = isCommander ? 1.03 : 1.06;
 
     const highpass = this.ctx.createBiquadFilter();
     highpass.type = 'highpass';
-    highpass.frequency.value = isCommander ? 410 : 240;
+    highpass.frequency.value = isRadio ? 280 : 85;
 
     const presence = this.ctx.createBiquadFilter();
     presence.type = 'peaking';
-    presence.frequency.value = isCommander ? 1450 : 2300;
-    presence.Q.value = isCommander ? 1.8 : 1.1;
-    presence.gain.value = isCommander ? 7.5 : 4.5;
+    presence.frequency.value = isRadio ? 1800 : 3200;
+    presence.Q.value = isRadio ? 1.2 : 0.8;
+    presence.gain.value = isRadio ? 3 : 2;
 
     const lowpass = this.ctx.createBiquadFilter();
     lowpass.type = 'lowpass';
-    lowpass.frequency.value = isCommander ? 2950 : 4800;
-
-    const radioShaper = this.ctx.createWaveShaper();
-    radioShaper.curve = this.makeDistortionCurve(isCommander ? 26 : 8);
-    radioShaper.oversample = '2x';
+    lowpass.frequency.value = isRadio ? 4200 : 14000;
 
     const voiceGain = this.ctx.createGain();
-    voiceGain.gain.value = isCommander ? 1.35 : 1.2;
+    voiceGain.gain.value = isGuia ? 1.0 : 1.05;
 
     source.connect(highpass);
     highpass.connect(presence);
     presence.connect(lowpass);
-    lowpass.connect(radioShaper);
-    radioShaper.connect(voiceGain);
-    voiceGain.connect(this.compressor);
-    if (this.reverbSendGain && !isCommander) {
-      // Athena gets subtle spatial cockpit helmet reverb
-      voiceGain.connect(this.reverbSendGain);
+    if (isRadio) {
+      const radioShaper = this.ctx.createWaveShaper();
+      radioShaper.curve = this.makeDistortionCurve(5);
+      radioShaper.oversample = '2x';
+      lowpass.connect(radioShaper);
+      radioShaper.connect(voiceGain);
+    } else {
+      lowpass.connect(voiceGain);
     }
+    voiceGain.connect(this.voiceBus);
 
-    // 4. Add VHF Radio Static Carrier Bed while Commander Vortex speaks
-    const durationSec = buffer.duration / source.playbackRate.value;
-    if (isCommander) {
+    const durationSec = buffer.duration;
+    if (isRadio) {
+      // Bip de apertura y estática muy baja
+      this.playQuindarTone(isGuia ? 1600 : 1300, 0.04);
+
       const staticSource = this.ctx.createBufferSource();
       staticSource.buffer = this.createPinkNoiseBuffer(durationSec + 0.12);
 
       const staticFilter = this.ctx.createBiquadFilter();
       staticFilter.type = 'bandpass';
       staticFilter.frequency.value = 1600;
-      staticFilter.Q.value = 1.5;
+      staticFilter.Q.value = 1.2;
 
       const staticGain = this.ctx.createGain();
-      staticGain.gain.setValueAtTime(0.025, now + 0.04);
+      staticGain.gain.setValueAtTime(0.008, startAt);
 
       staticSource.connect(staticFilter);
       staticFilter.connect(staticGain);
-      staticGain.connect(this.compressor);
+      staticGain.connect(this.voiceBus);
 
-      staticSource.start(now + 0.04);
-      staticSource.stop(now + 0.04 + durationSec);
+      staticSource.start(startAt);
+      staticSource.stop(startAt + durationSec);
       this.activeStaticSource = staticSource;
+    } else if (this.reverbSendGain) {
+      // Un toque de ambiente para que no suene "seca"
+      const roomSend = this.ctx.createGain();
+      roomSend.gain.value = 0.12;
+      voiceGain.connect(roomSend);
+      roomSend.connect(this.reverbSendGain);
     }
 
     source.onended = () => {
-      if (this.activeVoiceSource === source) {
-        this.activeVoiceSource = null;
-        this.activeStaticSource = null;
-        if (this.ctx && this.turbineDuckGain) {
-          // Play VHF Squelch Tail Out ("ksshh-beep") & restore turbine volume
-          if (isCommander) {
-            this.playRadioSquelchTail();
-          } else {
-            this.playQuindarTone(2475, 0.035);
-          }
-          this.turbineDuckGain.gain.setTargetAtTime(1.0, this.ctx.currentTime + 0.08, 0.12);
-        }
+      if (this.activeVoiceSource !== source) return;
+      this.activeVoiceSource = null;
+      this.activeStaticSource = null;
+      this.lastVoiceEndedAt = Date.now();
+      if (isRadio) this.playRadioSquelchTail();
+      if (this.ctx) this.setDuck(false, this.ctx.currentTime + 0.08);
+      // Tras una misión fallida, recordamos a quién ayudó la carrera
+      if (cueId === 'athena_eject') {
+        setTimeout(() => this.playNarratorCue('social_thanks', true), 500);
       }
     };
 
     this.activeVoiceSource = source;
-    source.start(now + 0.05);
+    source.start(startAt);
+    return true;
   }
 
-  private stopActiveVoice(): void {
+  private setDuck(active: boolean, at: number): void {
+    const timeConstant = active ? 0.05 : 0.18;
+    const ramps: Array<[GainNode | null, number]> = [
+      [this.turbineDuckGain, active ? DUCK_TURBINE : 1],
+      [this.sfxBus, active ? DUCK_SFX : 1],
+      [this.musicBus, active ? DUCK_MUSIC : 1]
+    ];
+    for (const [node, target] of ramps) {
+      if (!node) continue;
+      node.gain.cancelScheduledValues(at);
+      node.gain.setTargetAtTime(target, at, timeConstant);
+    }
+  }
+
+  private pickOne<T>(items: T[]): T {
+    return items[Math.floor(Math.random() * items.length)];
+  }
+
+  private stopActiveVoice(restoreMix = true): void {
     if (this.activeVoiceSource) {
       try {
         this.activeVoiceSource.onended = null;
@@ -514,6 +646,7 @@ export class AudioEngine {
         // Ignore already stopped
       }
       this.activeVoiceSource = null;
+      this.lastVoiceEndedAt = Date.now();
     }
     if (this.activeStaticSource) {
       try {
@@ -523,13 +656,13 @@ export class AudioEngine {
       }
       this.activeStaticSource = null;
     }
-    if (this.ctx && this.turbineDuckGain) {
-      this.turbineDuckGain.gain.setTargetAtTime(1.0, this.ctx.currentTime, 0.1);
+    if (restoreMix && this.ctx) {
+      this.setDuck(false, this.ctx.currentTime);
     }
   }
 
   private playQuindarTone(freqHz: number, durationSec: number): void {
-    if (!this.ctx || !this.compressor) return;
+    if (!this.ctx || !this.voiceBus) return;
     const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     osc.type = 'sine';
@@ -540,13 +673,13 @@ export class AudioEngine {
     gain.gain.exponentialRampToValueAtTime(0.001, now + durationSec);
 
     osc.connect(gain);
-    gain.connect(this.compressor);
+    gain.connect(this.voiceBus);
     osc.start(now);
     osc.stop(now + durationSec);
   }
 
   private playRadioSquelchTail(): void {
-    if (!this.ctx || !this.compressor) return;
+    if (!this.ctx || !this.voiceBus) return;
     const now = this.ctx.currentTime;
     const dur = 0.075;
     const noise = this.ctx.createBufferSource();
@@ -563,18 +696,18 @@ export class AudioEngine {
 
     noise.connect(filter);
     filter.connect(gain);
-    gain.connect(this.compressor);
+    gain.connect(this.voiceBus);
     noise.start(now);
     noise.stop(now + dur);
   }
 
   private playShieldDeflect(pan = 0): void {
-    if (!this.ctx || !this.compressor || !this.reverbSendGain) return;
+    if (!this.ctx || !this.sfxBus || !this.reverbSendGain) return;
     const now = this.ctx.currentTime;
 
     const panner = this.ctx.createStereoPanner();
     panner.pan.value = Math.max(-1, Math.min(1, pan));
-    panner.connect(this.compressor);
+    panner.connect(this.sfxBus);
     panner.connect(this.reverbSendGain);
 
     const subOsc = this.ctx.createOscillator();
@@ -612,7 +745,7 @@ export class AudioEngine {
   }
 
   private triggerWarningAlarmPulse(): void {
-    if (!this.ctx || !this.compressor || this.isMuted) return;
+    if (!this.ctx || !this.sfxBus || this.isMuted) return;
     const now = this.ctx.currentTime;
     const pulseDuration = 0.24;
 
@@ -637,7 +770,7 @@ export class AudioEngine {
     osc1.connect(filter);
     osc2.connect(filter);
     filter.connect(gain);
-    gain.connect(this.compressor);
+    gain.connect(this.sfxBus);
 
     osc1.start(now);
     osc2.start(now);
@@ -646,7 +779,7 @@ export class AudioEngine {
   }
 
   private playExplosion(): void {
-    if (!this.ctx || !this.compressor || !this.reverbSendGain) return;
+    if (!this.ctx || !this.sfxBus || !this.reverbSendGain) return;
     const now = this.ctx.currentTime;
     const duration = 1.25;
 
@@ -660,7 +793,7 @@ export class AudioEngine {
     subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.95);
 
     sub.connect(subGain);
-    subGain.connect(this.compressor);
+    subGain.connect(this.sfxBus);
     sub.start(now);
     sub.stop(now + 0.95);
 
@@ -683,7 +816,7 @@ export class AudioEngine {
     noise.connect(filter);
     filter.connect(distortion);
     distortion.connect(gain);
-    gain.connect(this.compressor);
+    gain.connect(this.sfxBus);
     gain.connect(this.reverbSendGain);
 
     noise.start(now);
@@ -691,12 +824,12 @@ export class AudioEngine {
   }
 
   private playCollisionImpact(pan = 0): void {
-    if (!this.ctx || !this.compressor || !this.reverbSendGain) return;
+    if (!this.ctx || !this.sfxBus || !this.reverbSendGain) return;
     const now = this.ctx.currentTime;
 
     const panner = this.ctx.createStereoPanner();
     panner.pan.value = pan;
-    panner.connect(this.compressor);
+    panner.connect(this.sfxBus);
     panner.connect(this.reverbSendGain);
 
     const noise = this.ctx.createBufferSource();
@@ -719,12 +852,12 @@ export class AudioEngine {
   }
 
   private playTacticalPing(pan = 0): void {
-    if (!this.ctx || !this.compressor || !this.reverbSendGain) return;
+    if (!this.ctx || !this.sfxBus || !this.reverbSendGain) return;
     const now = this.ctx.currentTime;
 
     const panner = this.ctx.createStereoPanner();
     panner.pan.value = pan;
-    panner.connect(this.compressor);
+    panner.connect(this.sfxBus);
     panner.connect(this.reverbSendGain);
 
     const osc = this.ctx.createOscillator();
@@ -743,7 +876,7 @@ export class AudioEngine {
   }
 
   private playOverdrivePowerup(): void {
-    if (!this.ctx || !this.compressor || !this.reverbSendGain) return;
+    if (!this.ctx || !this.sfxBus || !this.reverbSendGain) return;
     const now = this.ctx.currentTime;
 
     const osc = this.ctx.createOscillator();
@@ -762,7 +895,7 @@ export class AudioEngine {
 
     osc.connect(filter);
     filter.connect(gain);
-    gain.connect(this.compressor);
+    gain.connect(this.sfxBus);
     gain.connect(this.reverbSendGain);
     osc.start(now);
     osc.stop(now + 0.48);

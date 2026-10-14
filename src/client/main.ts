@@ -13,7 +13,7 @@ import type {
   WsClientMessage,
   WsServerMessage
 } from '../shared/types.js';
-import { AudioEngine } from './audioEngine.js';
+import { AudioEngine, type VoiceMode } from './audioEngine.js';
 import { InputManager } from './inputManager.js';
 import { GameRenderer } from './renderer.js';
 
@@ -292,18 +292,17 @@ class PacificSpeedClientApp {
       this.toggleCanvasRecording(canvas);
     });
 
-    // Voice Mode Selector (HYBRID / ES / EN / OFF)
-    document.getElementById('btn-voice-mode')?.addEventListener('click', () => {
+    // Selector de narrador (Natural / Radio / Off), recordado entre partidas
+    const voiceLabels: Record<VoiceMode, string> = {
+      es: 'VOZ: NATURAL',
+      es_radio: 'VOZ: RADIO',
+      off: 'VOZ: OFF'
+    };
+    const voiceBtn = document.getElementById('btn-voice-mode');
+    if (voiceBtn) voiceBtn.textContent = voiceLabels[this.audio.getVoiceMode()];
+    voiceBtn?.addEventListener('click', () => {
       this.audio.init();
-      const mode = this.audio.cycleVoiceMode();
-      const labels = {
-        hybrid: 'VOICE: HYBRID',
-        es_only: 'VOICE: ES CMD',
-        en_only: 'VOICE: EN AI',
-        off: 'VOICE: OFF'
-      };
-      const btn = document.getElementById('btn-voice-mode');
-      if (btn) btn.textContent = labels[mode];
+      voiceBtn.textContent = voiceLabels[this.audio.cycleVoiceMode()];
     });
 
     // Master Audio Toggle
