@@ -47,7 +47,7 @@
   "tournament": {
     "id": "tourney-default-01",
     "name": "PACIFIC SPEED: OVERDRIVE - TEMPORADA INAUGURAL",
-    "status": "completed",
+    "status": "active",
     "entry_fee_usd": 10,
     "max_couples": 50,
     "registered_couples_count": 2,

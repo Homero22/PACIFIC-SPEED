@@ -173,7 +173,8 @@ app.post('/api/payphone/create-link', async (req, res) => {
     });
 
     // 2. Prepare Payphone Button V2 Transaction
-    const responseUrl = `${baseUrl}/api/payphone/callback`;
+    // Compatible with both /payphone/callback (Payphone portal) and /api/payphone/callback
+    const responseUrl = process.env.PAYPHONE_RESPONSE_URL || `${baseUrl}/payphone/callback`;
     const cancellationUrl = `${baseUrl}/?payment=cancelled`;
 
     const linkResult = await preparePayphoneTransaction({
@@ -195,10 +196,11 @@ app.post('/api/payphone/create-link', async (req, res) => {
 });
 
 /**
- * Payphone Official Response URL Handler (GET /api/payphone/callback)
+ * Payphone Official Response URL Handler
+ * Handles both /payphone/callback (as configured in Payphone portal) and /api/payphone/callback
  * Fulfills Payphone's strict 5-minute confirmation rule to avoid automatic reversals.
  */
-app.get('/api/payphone/callback', async (req, res) => {
+app.get(['/payphone/callback', '/api/payphone/callback'], async (req, res) => {
   try {
     const id = (req.query.id || req.query.transactionId) as string;
     const clientTransactionId = (req.query.clientTransactionId || req.query.clientTxId) as string;
@@ -429,7 +431,7 @@ app.get('/admin/*', (_req, res) => {
 });
 
 app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api') || req.path.startsWith('/ws')) {
+  if (req.path.startsWith('/api') || req.path.startsWith('/ws') || req.path.startsWith('/payphone')) {
     return next();
   }
   res.sendFile(path.join(clientDistPath, 'index.html'), (err) => {
