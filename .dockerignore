@@ -4,3 +4,4 @@ dist
 .git
 *.log
 .DS_Store
+data

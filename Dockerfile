@@ -24,7 +24,6 @@ RUN npm ci --omit=dev
 # Copy compiled artifacts and static assets from builder
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/data ./data
 
 EXPOSE 3000
 

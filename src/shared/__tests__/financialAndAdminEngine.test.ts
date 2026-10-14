@@ -1,3 +1,5 @@
+import os from 'os';
+import path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
   calculatePodiumPrizes,
@@ -92,9 +94,14 @@ describe('Payphone Security — HMAC-SHA256 & Replay Protection', () => {
 
 describe('Admin Security — Timing-Safe Authentication & Session Tokens', () => {
   it('authenticates with valid master secret and rejects invalid passwords', () => {
-    expect(verifyAdminPassword('admin_pacific_overdrive_2026')).toBe(true);
-    expect(verifyAdminPassword('wrong_password')).toBe(false);
-    expect(verifyAdminPassword('')).toBe(false);
+    process.env.ADMIN_SECRET_KEY = 'clave_de_prueba_unitaria';
+    try {
+      expect(verifyAdminPassword('clave_de_prueba_unitaria')).toBe(true);
+      expect(verifyAdminPassword('wrong_password')).toBe(false);
+      expect(verifyAdminPassword('')).toBe(false);
+    } finally {
+      delete process.env.ADMIN_SECRET_KEY;
+    }
   });
 
   it('issues signed 8-hour Bearer tokens and validates them correctly', () => {
@@ -149,6 +156,8 @@ describe('Payphone Button V2 Integration & Pending Registration Database Layer',
   });
 
   it('persists, queries, and marks complete pending registrations for pair metadata reconciliation', async () => {
+    // Keep test data out of the real data/ folder
+    process.env.TOURNAMENT_DB_PATH = path.join(os.tmpdir(), `pacific-speed-engine-${Date.now()}.json`);
     const clientTxId = `TEST-TX-${Date.now()}`;
     const testRecord = {
       client_transaction_id: clientTxId,
