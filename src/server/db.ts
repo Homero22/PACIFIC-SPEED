@@ -209,6 +209,9 @@ export class DatabaseProvider {
 
     try {
       const { pool, finalConfig } = await this.connectWithSslNegotiation(resolved.config);
+      pool.on('error', (err) => {
+        console.warn('[DB] ⚠️ Aviso de cliente PostgreSQL inactivo (manejado automáticamente):', err.message);
+      });
       this.pgPool = pool;
       this.pgConfig = finalConfig;
       this.isPostgres = true;
@@ -254,7 +257,13 @@ export class DatabaseProvider {
   private async connectWithSslNegotiation(
     config: pg.PoolConfig
   ): Promise<{ pool: pg.Pool; finalConfig: pg.PoolConfig }> {
-    let currentConfig: pg.PoolConfig = { ...config, connectionTimeoutMillis: 10000 };
+    let currentConfig: pg.PoolConfig = {
+      ...config,
+      connectionTimeoutMillis: 10000,
+      idleTimeoutMillis: 30000,
+      keepAlive: true,
+      max: 20
+    };
     let pool = new pg.Pool(currentConfig);
 
     try {
@@ -340,6 +349,9 @@ export class DatabaseProvider {
             await this.pgPool.end().catch(() => {});
           }
           this.pgPool = new pg.Pool(this.pgConfig);
+          this.pgPool.on('error', (err) => {
+            console.warn('[DB] ⚠️ Aviso de cliente PostgreSQL inactivo (manejado automáticamente):', err.message);
+          });
           const client = await this.pgPool.connect();
           client.release();
         } catch (adminErr: any) {

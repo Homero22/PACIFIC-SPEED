@@ -26,6 +26,14 @@ import { tournamentService } from './tournamentService.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Process-level resilience guards for Railway & long-running background tasks
+process.on('uncaughtException', (err) => {
+  console.error('[SYSTEM] ⚠️ Excepción no capturada (manejada):', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[SYSTEM] ⚠️ Rechazo de promesa no capturado (manejado):', reason);
+});
+
 const app = express();
 
 // Capture rawBody for HMAC-SHA256 Payphone webhook signature validation
