@@ -13,6 +13,7 @@
  *   node scripts/generate-voices.mjs --yes --only=cmd_bogey,social_food
  *   node scripts/generate-voices.mjs --yes --ogg     → además exporta .ogg (Opus)
  *   node scripts/generate-voices.mjs --manifest-only → reconstruye manifest.json con los archivos existentes
+ *   node scripts/generate-voices.mjs --remaster      → re-masteriza los MP3 existentes (sin API)
  *
  * Variables de entorno (en el entorno o en .env.voices — nunca en el repo):
  *   VOICE_PROVIDER          elevenlabs | azure
@@ -180,11 +181,12 @@ const FALLBACK_CUE = {
 // ————————————————————————————————————————————————————————————————
 
 function parseArgs(argv) {
-  const args = { yes: false, ogg: false, manifestOnly: false, only: null };
+  const args = { yes: false, ogg: false, manifestOnly: false, remaster: false, only: null };
   for (const a of argv) {
     if (a === '--yes') args.yes = true;
     else if (a === '--ogg') args.ogg = true;
     else if (a === '--manifest-only') args.manifestOnly = true;
+    else if (a === '--remaster') args.remaster = true;
     else if (a.startsWith('--only=')) args.only = new Set(a.slice(7).split(',').filter(Boolean));
     else {
       console.error(`Argumento desconocido: ${a}`);
@@ -292,31 +294,66 @@ function hasFfmpeg() {
 const TRIM =
   'silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.04,' +
   'areverse,silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.08,areverse';
-const LOUDNORM = 'loudnorm=I=-16:TP=-1.5:LRA=11';
+const TARGET_LUFS = -16;
+// Limitador (0.75 ≈ −2,5 dBFS de muestra) para que el pico real del MP3 quede ≤ −1,5 dBTP
+const LIMITER = 'alimiter=limit=0.75:attack=2:release=40:level=false';
 
-/** Normaliza a −16 LUFS (dos pasadas de loudnorm), recorta silencios y exporta. */
+function measureLufs(file, preFilter) {
+  const af = preFilter ? `${preFilter},ebur128` : 'ebur128';
+  const probe = spawnSync('ffmpeg', ['-hide_banner', '-nostats', '-i', file, '-af', af, '-f', 'null', '-'], {
+    encoding: 'utf8'
+  });
+  const measured = /I:\s+(-?[\d.]+) LUFS/.exec((probe.stderr || '').split('Summary:').pop());
+  return measured ? Number(measured[1]) : null;
+}
+
+/**
+ * Recorta silencios y normaliza a −16 LUFS con ganancia + limitador. Como el limitador baja la
+ * sonoridad de las exclamaciones, se mide el resultado y se corrige la ganancia (hasta 4 pasadas).
+ * (loudnorm es impreciso en clips de 1–2 s.)
+ */
 function masterWithFfmpeg(rawPath, outMp3, outOgg) {
-  const probe = spawnSync(
-    'ffmpeg',
-    ['-hide_banner', '-nostats', '-i', rawPath, '-af', `${TRIM},${LOUDNORM}:print_format=json`, '-f', 'null', '-'],
-    { encoding: 'utf8' }
-  );
-  let filter = `${TRIM},${LOUDNORM}`;
-  const json = /\{[^{}]*"input_i"[^{}]*\}/s.exec(probe.stderr || '');
-  if (json) {
-    const m = JSON.parse(json[0]);
-    filter =
-      `${TRIM},${LOUDNORM}:measured_I=${m.input_i}:measured_TP=${m.input_tp}:measured_LRA=${m.input_lra}` +
-      `:measured_thresh=${m.input_thresh}:offset=${m.target_offset}:linear=true`;
-  }
-  const run = (args) => {
-    const r = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', rawPath, '-af', filter, ...args], {
-      encoding: 'utf8'
-    });
+  const trimmed = rawPath.replace(/.[^.]+$/, '') + '.trim.wav';
+  const ffmpeg = (args) => {
+    const r = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args], { encoding: 'utf8' });
     if (r.status !== 0) throw new Error(`ffmpeg falló: ${r.stderr}`);
   };
-  run(['-ar', '44100', '-ac', '1', '-c:a', 'libmp3lame', '-b:a', '96k', outMp3]);
-  if (outOgg) run(['-ar', '48000', '-ac', '1', '-c:a', 'libopus', '-b:a', '64k', outOgg]);
+  ffmpeg(['-i', rawPath, '-af', TRIM, '-ar', '44100', '-ac', '1', trimmed]);
+
+  const initial = measureLufs(trimmed);
+  let gainDb = initial === null ? 0 : TARGET_LUFS - initial;
+  for (let pass = 0; pass < 4; pass++) {
+    gainDb = Math.max(-20, Math.min(30, gainDb));
+    const result = measureLufs(trimmed, `volume=${gainDb.toFixed(2)}dB,${LIMITER}`);
+    if (result === null || Math.abs(TARGET_LUFS - result) < 0.5) break;
+    gainDb += TARGET_LUFS - result;
+  }
+
+  const filter = `volume=${gainDb.toFixed(2)}dB,${LIMITER}`;
+  ffmpeg(['-i', trimmed, '-af', filter, '-ar', '44100', '-ac', '1', '-c:a', 'libmp3lame', '-b:a', '96k', outMp3]);
+  if (outOgg) ffmpeg(['-i', trimmed, '-af', filter, '-ar', '48000', '-ac', '1', '-c:a', 'libopus', '-b:a', '64k', outOgg]);
+  fs.rmSync(trimmed, { force: true });
+}
+
+/** Vuelve a masterizar los MP3 existentes sin llamar a la API. */
+function remasterExisting(only, ogg) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ps-remaster-'));
+  try {
+    for (const [cueId, spec] of Object.entries(VOICE_SCRIPT)) {
+      if (only && !only.has(cueId)) continue;
+      spec.lines.forEach((_, i) => {
+        const file = fileNameFor(cueId, i);
+        const outMp3 = path.join(OUT_DIR, file);
+        if (!fs.existsSync(outMp3)) return;
+        const src = path.join(tmpDir, file);
+        fs.copyFileSync(outMp3, src);
+        masterWithFfmpeg(src, outMp3, ogg ? outMp3.replace(/.mp3$/, '.ogg') : null);
+        console.log(`  ✓ ${file}`);
+      });
+    }
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 }
 
 /** manifest.json: { cues: { cueId: ["archivo.mp3", ...] } } con solo archivos existentes. */
@@ -342,6 +379,12 @@ async function main() {
   loadVoicesEnv();
 
   if (args.manifestOnly) {
+    writeManifest();
+    return;
+  }
+  if (args.remaster) {
+    if (!hasFfmpeg()) throw new Error('--remaster requiere ffmpeg en el PATH');
+    remasterExisting(args.only, args.ogg);
     writeManifest();
     return;
   }

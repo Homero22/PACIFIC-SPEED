@@ -23,8 +23,9 @@ El motor (`src/client/audioEngine.ts`) lee `manifest.json`, precarga todas las v
 azar sin repetir la última. Si un cue no tiene audio, el manifiesto apunta a otro compatible
 (`FALLBACK_CUE`) o el cue simplemente no suena; nunca se piden archivos que no existen.
 
-> Estado actual: solo existen los MP3 antiguos de `cmd_*` (voz de Google, tono militar). Son
-> provisionales y deben reemplazarse generando el banco nuevo con un proveedor profesional.
+> Estado actual: banco completo (40 variantes, 18 cues) generado con ElevenLabs
+> `eleven_multilingual_v2` — guía: *Isabella* (`p18tR9wFA5Ng9WhfWI0o`), capitán: *Brian, latino*
+> (`jBlmi27XRORxjPquUeCh`). Todas entre −16,5 y −16,9 LUFS.
 
 ## Generar el banco
 
@@ -64,10 +65,10 @@ azar sin repetir la última. Si un cue no tiene audio, el manifiesto apunta a ot
 
 ### Masterización
 
-Si `ffmpeg` está en el PATH, cada línea se procesa así:
+Si `ffmpeg` está en el PATH, cada línea se procesa así (`--remaster` repite este paso sobre los MP3 existentes, sin API):
 
 - recorte de silencios al inicio y al final (umbral −45 dB);
-- normalización de sonoridad en dos pasadas a **−16 LUFS**, pico real −1,5 dBTP;
+- normalización a **−16 LUFS** (medición EBU R128 + ganancia ajustada en hasta 4 pasadas) con limitador de picos;
 - MP3 mono 44,1 kHz 96 kbps (y Opus 64 kbps con `--ogg`).
 
 Sin ffmpeg se guarda el MP3 del proveedor tal cual (con aviso).

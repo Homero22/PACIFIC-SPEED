@@ -1,46 +1,82 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-14T17:16:23.860Z",
+  "generatedAt": "2026-10-14T17:32:38.827Z",
   "cues": {
-    "athena_online": [],
+    "athena_online": [
+      "athena_online.mp3",
+      "athena_online_2.mp3",
+      "athena_online_3.mp3"
+    ],
     "athena_stall": [
-      "cmd_mayday.mp3"
+      "athena_stall.mp3",
+      "athena_stall_2.mp3"
     ],
     "athena_overdrive": [
-      "cmd_overdrive.mp3"
+      "athena_overdrive.mp3",
+      "athena_overdrive_2.mp3"
     ],
     "athena_breach": [
-      "cmd_bogey.mp3"
+      "athena_breach.mp3",
+      "athena_breach_2.mp3"
     ],
-    "athena_revive": [],
-    "athena_eject": [],
+    "athena_revive": [
+      "athena_revive.mp3",
+      "athena_revive_2.mp3"
+    ],
+    "athena_eject": [
+      "athena_eject.mp3",
+      "athena_eject_2.mp3",
+      "athena_eject_3.mp3"
+    ],
     "cmd_bogey": [
-      "cmd_bogey.mp3"
+      "cmd_bogey.mp3",
+      "cmd_bogey_2.mp3"
     ],
     "cmd_intercept": [
-      "cmd_intercept.mp3"
+      "cmd_intercept.mp3",
+      "cmd_intercept_2.mp3",
+      "cmd_intercept_3.mp3"
     ],
     "cmd_double_streak": [
-      "cmd_double_streak.mp3"
+      "cmd_double_streak.mp3",
+      "cmd_double_streak_2.mp3"
     ],
     "cmd_unstoppable": [
-      "cmd_unstoppable.mp3"
+      "cmd_unstoppable.mp3",
+      "cmd_unstoppable_2.mp3"
     ],
     "cmd_close_call": [
-      "cmd_close_call.mp3"
+      "cmd_close_call.mp3",
+      "cmd_close_call_2.mp3",
+      "cmd_close_call_3.mp3"
     ],
     "cmd_overdrive": [
-      "cmd_overdrive.mp3"
+      "cmd_overdrive.mp3",
+      "cmd_overdrive_2.mp3"
     ],
     "cmd_mayday": [
-      "cmd_mayday.mp3"
+      "cmd_mayday.mp3",
+      "cmd_mayday_2.mp3"
     ],
     "cmd_milestone": [
-      "cmd_milestone.mp3"
+      "cmd_milestone.mp3",
+      "cmd_milestone_2.mp3"
     ],
-    "social_food": [],
-    "social_shelter": [],
-    "social_team": [],
-    "social_thanks": []
+    "social_food": [
+      "social_food.mp3",
+      "social_food_2.mp3"
+    ],
+    "social_shelter": [
+      "social_shelter.mp3",
+      "social_shelter_2.mp3"
+    ],
+    "social_team": [
+      "social_team.mp3",
+      "social_team_2.mp3"
+    ],
+    "social_thanks": [
+      "social_thanks.mp3",
+      "social_thanks_2.mp3"
+    ]
   }
 }
