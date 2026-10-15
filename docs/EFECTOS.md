@@ -72,6 +72,9 @@ node scripts/generate-sfx.mjs
 node scripts/generate-sfx.mjs --yes --only=shield_double
 ```
 
+> Estado actual: banco completo generado (15 efectos, 31 archivos, 969 créditos en total). Todas las
+> categorías quedan a ±1 LU de su objetivo y los 4 loops empalman sin silencio ni salto de nivel.
+
 Sin `--yes` es una simulación que no llama a la API. Costo medido: **~10 créditos por segundo** de audio
 (`shield_double`, 3 × 1,4 s = 42 créditos). El catálogo completo son 31 archivos y 96,9 s, unos
 **970 créditos**. Otras opciones: `--remaster` (re-masteriza sin API), `--manifest-only`, `--ogg`.

@@ -1,7 +1,62 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-15T13:32:44.884Z",
+  "generatedAt": "2026-10-15T13:41:06.602Z",
   "sounds": {
+    "amb_tension_low": {
+      "files": [
+        "amb_tension_low.mp3"
+      ],
+      "loop": true,
+      "category": "ambience"
+    },
+    "amb_tension_high": {
+      "files": [
+        "amb_tension_high.mp3"
+      ],
+      "loop": true,
+      "category": "ambience"
+    },
+    "impact_light": {
+      "files": [
+        "impact_light.mp3",
+        "impact_light_2.mp3",
+        "impact_light_3.mp3"
+      ],
+      "loop": false,
+      "category": "impact"
+    },
+    "impact_medium": {
+      "files": [
+        "impact_medium.mp3",
+        "impact_medium_2.mp3",
+        "impact_medium_3.mp3"
+      ],
+      "loop": false,
+      "category": "impact"
+    },
+    "impact_heavy": {
+      "files": [
+        "impact_heavy.mp3",
+        "impact_heavy_2.mp3",
+        "impact_heavy_3.mp3"
+      ],
+      "loop": false,
+      "category": "impact"
+    },
+    "dmg_sparks": {
+      "files": [
+        "dmg_sparks.mp3"
+      ],
+      "loop": true,
+      "category": "damage_loop"
+    },
+    "dmg_critical": {
+      "files": [
+        "dmg_critical.mp3"
+      ],
+      "loop": true,
+      "category": "damage_loop"
+    },
     "shield_double": {
       "files": [
         "shield_double.mp3",
@@ -10,6 +65,63 @@
       ],
       "loop": false,
       "category": "shield"
+    },
+    "shield_up": {
+      "files": [
+        "shield_up.mp3",
+        "shield_up_2.mp3"
+      ],
+      "loop": false,
+      "category": "shield"
+    },
+    "shield_deflect": {
+      "files": [
+        "shield_deflect.mp3",
+        "shield_deflect_2.mp3",
+        "shield_deflect_3.mp3"
+      ],
+      "loop": false,
+      "category": "shield"
+    },
+    "destroy_metal": {
+      "files": [
+        "destroy_metal.mp3",
+        "destroy_metal_2.mp3"
+      ],
+      "loop": false,
+      "category": "impact"
+    },
+    "repair": {
+      "files": [
+        "repair.mp3",
+        "repair_2.mp3"
+      ],
+      "loop": false,
+      "category": "pickup"
+    },
+    "turbo": {
+      "files": [
+        "turbo.mp3",
+        "turbo_2.mp3"
+      ],
+      "loop": false,
+      "category": "pickup"
+    },
+    "radar_ping": {
+      "files": [
+        "radar_ping.mp3",
+        "radar_ping_2.mp3"
+      ],
+      "loop": false,
+      "category": "ui"
+    },
+    "reward_rescue": {
+      "files": [
+        "reward_rescue.mp3",
+        "reward_rescue_2.mp3"
+      ],
+      "loop": false,
+      "category": "pickup"
     }
   }
 }
