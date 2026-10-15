@@ -2,13 +2,14 @@
 
 El narrador habla en español latino neutro con dos personajes:
 
-| Voz | Personaje | Cues |
-| --- | --- | --- |
-| `guia` | Guía de rescate, femenina, cálida | `athena_*`, `social_food`, `social_shelter`, `social_thanks` |
-| `capitan` | Capitán de patrulla, masculino, épico | `cmd_*`, `social_team` |
+| Voz | Personaje | ElevenLabs | Cues |
+| --- | --- | --- | --- |
+| `guia` | Guía de rescate, alegre y cálida | *Lulu – Adorable, Bright & Playful* (`CPv3Zr3CQCqE4ZzuCgBP`), latina | `athena_*`, `social_food`, `social_shelter`, `social_thanks` |
+| `capitan` | Capitán de patrulla, épico | *Comandante perruno* (`tBmHCnOxpyPXXVK6IJrd`), voz clonada | `cmd_*`, `social_team` |
 
 Los IDs de cue (`athena_*`, `cmd_*`) se conservan por compatibilidad con el código de eventos; el
-guion completo vive en `scripts/generate-voices.mjs` (`VOICE_SCRIPT`).
+guion completo vive en `scripts/generate-voices.mjs` (`VOICE_SCRIPT`) y se lista abajo en
+[Textos del narrador](#textos-del-narrador).
 
 ## Archivos
 
@@ -24,8 +25,7 @@ azar sin repetir la última. Si un cue no tiene audio, el manifiesto apunta a ot
 (`FALLBACK_CUE`) o el cue simplemente no suena; nunca se piden archivos que no existen.
 
 > Estado actual: banco completo (40 variantes, 18 cues) generado con ElevenLabs
-> `eleven_multilingual_v2` — guía: *Isabella* (`p18tR9wFA5Ng9WhfWI0o`), capitán: *Brian, latino*
-> (`jBlmi27XRORxjPquUeCh`). Todas entre −16,5 y −16,9 LUFS.
+> `eleven_multilingual_v2` con las voces de la tabla. Todas entre −16,4 y −16,8 LUFS.
 
 ## Generar el banco
 
@@ -37,7 +37,14 @@ azar sin repetir la última. Si un cue no tiene audio, el manifiesto apunta a ot
    ELEVENLABS_API_KEY=...
    ELEVENLABS_VOICE_GUIA=<voice_id femenina latina>
    ELEVENLABS_VOICE_CAPITAN=<voice_id masculina latina>
+   # opcionales: ajustes por voz
+   ELEVENLABS_STABILITY_CAPITAN=0.85
+   ELEVENLABS_STYLE_CAPITAN=0
    ```
+
+   Por defecto la guía usa estabilidad 0,45 y estilo 0,35 (expresiva), y el capitán estabilidad 0,85 y
+   estilo 0. Con estilo alto, la voz clonada del capitán improvisaba sonidos de más: un «¡Turbo!» de 4 s.
+   Si cambias de voz y las frases salen mucho más largas de lo esperado, sube la estabilidad.
 
    **Azure Neural** (es-EC / es-MX):
    ```
@@ -54,7 +61,7 @@ azar sin repetir la última. Si un cue no tiene audio, el manifiesto apunta a ot
    node scripts/generate-voices.mjs
    ```
 
-3. Generar (consume cuota del proveedor, ~1.700 caracteres para todo el banco):
+3. Generar (consume cuota del proveedor, ~1.260 caracteres para todo el banco):
    ```bash
    node scripts/generate-voices.mjs --yes
    ```
@@ -77,6 +84,63 @@ Sin ffmpeg se guarda el MP3 del proveedor tal cual (con aviso).
 
 Revisa que el plan del proveedor permita uso comercial (ElevenLabs: planes de pago; Azure: incluido en
 el servicio). No uses el endpoint de Google Translate TTS: no es apto para uso comercial.
+
+## Textos del narrador
+
+Generado desde `VOICE_SCRIPT` (`scripts/generate-voices.mjs`), que es la fuente de verdad: si cambias un
+texto ahí, regenera ese cue con `--only` y actualiza esta tabla.
+
+### Guía — Lulu
+
+| Momento | Archivo | Texto |
+| --- | --- | --- |
+| Inicio de misión | `athena_online` | ¡Patrulla de rescate en marcha! Los peluditos nos esperan. |
+|  | `athena_online_2` | ¡Motores listos, equipo! Hoy salimos a rescatar. |
+|  | `athena_online_3` | ¡Arrancamos! Cada carrera cuenta para el refugio. |
+| Velocidad crítica | `athena_stall` | ¡Cuidado, vamos muy lentos! Acelera, que nos necesitan. |
+|  | `athena_stall_2` | ¡Perdemos velocidad! Dale más fuerza, compañero. |
+| Turbo | `athena_overdrive` | ¡Turbo de rescate activado! |
+|  | `athena_overdrive_2` | ¡Turbo al máximo! ¡Vamos volando! |
+| Impacto | `athena_breach` | ¡Recibimos un golpe! Tranquilos, seguimos en pie. |
+|  | `athena_breach_2` | ¡Auch! Daño en el vehículo, mantén el rumbo. |
+| Reparación | `athena_revive` | ¡Reparación completa! De vuelta al rescate. |
+|  | `athena_revive_2` | ¡Listo, como nuevo! Seguimos adelante. |
+| Misión fallida | `athena_eject` | Misión terminada… pero cada intento suma para el refugio. ¡Otra vez! |
+|  | `athena_eject_2` | Nos detuvimos aquí, equipo. ¡Gracias por correr por ellos! |
+|  | `athena_eject_3` | Fin del recorrido. Respira, y volvemos a intentarlo. |
+| Social: comida | `social_food` | ¡Cada kilómetro suma comida para el refugio! |
+|  | `social_food_2` | ¡Sigue corriendo! Cada punto es un platito lleno. |
+| Social: refugio | `social_shelter` | Parte de tu inscripción va directo al refugio. ¡Gracias! |
+|  | `social_shelter_2` | Hoy tu carrera ayuda a darles un hogar calientito. |
+| Social: gracias | `social_thanks` | De parte de todos los peluditos: ¡gracias, héroe! |
+|  | `social_thanks_2` | Ellos no lo saben, pero hoy corriste por ellos. ¡Gracias! |
+
+### Capitán — Comandante perruno
+
+Frases de 1–4 palabras (~0,6–1,5 s) para no frenar la acción.
+
+| Momento | Archivo | Texto |
+| --- | --- | --- |
+| Alerta de obstáculo | `cmd_bogey` | ¡Obstáculo! ¡Escudo! |
+|  | `cmd_bogey_2` | ¡Cuidado, escudo arriba! |
+| Escudo perfecto | `cmd_intercept` | ¡Perfecto! |
+|  | `cmd_intercept_2` | ¡Bloqueado! |
+|  | `cmd_intercept_3` | ¡Impecable! |
+| Racha x2 | `cmd_double_streak` | ¡Doble defensa! |
+|  | `cmd_double_streak_2` | ¡Dos de dos! |
+| Racha imparable | `cmd_unstoppable` | ¡Imparable! |
+|  | `cmd_unstoppable_2` | ¡Nadie los detiene! |
+| Casi-choque | `cmd_close_call` | ¡Por un pelito! |
+|  | `cmd_close_call_2` | ¡Qué reflejos! |
+|  | `cmd_close_call_3` | ¡Casi! |
+| Turbo | `cmd_overdrive` | ¡Turbo! |
+|  | `cmd_overdrive_2` | ¡A fondo! |
+| Peligro | `cmd_mayday` | ¡Peligro! ¡Acelera! |
+|  | `cmd_mayday_2` | ¡Dale todo! |
+| Récord | `cmd_milestone` | ¡Nuevo récord! |
+|  | `cmd_milestone_2` | ¡Récord superado! |
+| Social: equipo | `social_team` | ¡Por los peluditos! |
+|  | `social_team_2` | ¡Nadie se queda atrás! |
 
 ## Mezcla en el juego
 

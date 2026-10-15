@@ -21,6 +21,7 @@
  *   ELEVENLABS_VOICE_GUIA   voice_id de la voz femenina (guía de rescate)
  *   ELEVENLABS_VOICE_CAPITAN voice_id de la voz masculina (capitán de patrulla)
  *   ELEVENLABS_MODEL        opcional, por defecto eleven_multilingual_v2
+ *   ELEVENLABS_STABILITY_GUIA / _CAPITAN, ELEVENLABS_STYLE_GUIA / _CAPITAN  opcionales (ajustes por voz)
  *   AZURE_SPEECH_KEY        clave de Azure Speech
  *   AZURE_SPEECH_REGION     región, p. ej. eastus
  *   AZURE_VOICE_GUIA        opcional, por defecto es-EC-AndreaNeural
@@ -42,6 +43,7 @@ const MANIFEST_PATH = path.join(OUT_DIR, 'manifest.json');
  * Guion. Cada cue conserva su ID histórico (el código de eventos no cambia);
  * la variante 1 se guarda como `${id}.mp3` y las demás como `${id}_N.mp3`.
  * guia = voz femenina cálida (sistema/estado); capitan = voz masculina épica (acción/hype).
+ * Las frases del capitán son de 1–4 palabras: su voz es pausada y deben durar ~1–2 s.
  */
 export const VOICE_SCRIPT = {
   // Inicio de misión
@@ -94,51 +96,42 @@ export const VOICE_SCRIPT = {
   // Alerta de obstáculo
   cmd_bogey: {
     voice: 'capitan',
-    lines: [
-      '¡Atención! Obstáculo al frente, ¡activa el escudo!',
-      '¡Ojo, viene algo por el flanco! ¡Escudo arriba!'
-    ]
+    lines: ['¡Obstáculo! ¡Escudo!', '¡Cuidado, escudo arriba!']
   },
   // Escudo perfecto
   cmd_intercept: {
     voice: 'capitan',
-    lines: ['¡Escudo perfecto!', '¡Bloqueado! ¡Así se protege!', '¡Impecable, nada nos detiene!']
+    lines: ['¡Perfecto!', '¡Bloqueado!', '¡Impecable!']
   },
   // Racha x2
   cmd_double_streak: {
     voice: 'capitan',
-    lines: ['¡Doble defensa! ¡Qué equipo!', '¡Dos de dos! ¡Están en llamas!']
+    lines: ['¡Doble defensa!', '¡Dos de dos!']
   },
   // Racha imparable
   cmd_unstoppable: {
     voice: 'capitan',
-    lines: [
-      '¡Racha imparable! ¡Esta patrulla no se rinde!',
-      '¡Nadie los detiene! ¡Puro corazón de rescatista!'
-    ]
+    lines: ['¡Imparable!', '¡Nadie los detiene!']
   },
   // Casi-choque
   cmd_close_call: {
     voice: 'capitan',
-    lines: ['¡Uff, por un pelito!', '¡Qué reflejos! ¡Eso estuvo cerquita!', '¡Casi! ¡Bien esquivado!']
+    lines: ['¡Por un pelito!', '¡Qué reflejos!', '¡Casi!']
   },
   // Turbo (voz del capitán)
   cmd_overdrive: {
     voice: 'capitan',
-    lines: ['¡Turbo encendido! ¡A toda velocidad!', '¡Pisa a fondo! ¡El refugio nos espera!']
+    lines: ['¡Turbo!', '¡A fondo!']
   },
   // Peligro
   cmd_mayday: {
     voice: 'capitan',
-    lines: ['¡Peligro, peligro! ¡Acelera ahora!', '¡Estamos en problemas! ¡Dale todo!']
+    lines: ['¡Peligro! ¡Acelera!', '¡Dale todo!']
   },
   // Récord
   cmd_milestone: {
     voice: 'capitan',
-    lines: [
-      '¡Nuevo récord! ¡Esta patrulla es leyenda!',
-      '¡Récord superado! ¡Sigan así, rescatistas!'
-    ]
+    lines: ['¡Nuevo récord!', '¡Récord superado!']
   },
   // ——— Impacto social (nuevos) ———
   social_food: {
@@ -157,10 +150,7 @@ export const VOICE_SCRIPT = {
   },
   social_team: {
     voice: 'capitan',
-    lines: [
-      '¡Juntos somos la patrulla que ellos necesitan!',
-      '¡Ningún peludito se queda atrás!'
-    ]
+    lines: ['¡Por los peluditos!', '¡Nadie se queda atrás!']
   },
   social_thanks: {
     voice: 'guia',
@@ -224,6 +214,23 @@ function makeProvider() {
   if (name === 'elevenlabs') {
     const key = process.env.ELEVENLABS_API_KEY;
     const voices = { guia: process.env.ELEVENLABS_VOICE_GUIA, capitan: process.env.ELEVENLABS_VOICE_CAPITAN };
+    // Ajustes por voz. Las voces clonadas con estilo alto improvisan sonidos de más (un "¡Turbo!" de 4 s),
+    // por eso el capitán usa estabilidad alta y estilo 0. Se pueden sobrescribir con ELEVENLABS_STABILITY_<VOZ>
+    // y ELEVENLABS_STYLE_<VOZ> (p. ej. ELEVENLABS_STABILITY_CAPITAN=0.7).
+    const defaults = {
+      guia: { stability: 0.45, similarity_boost: 0.8, style: 0.35 },
+      capitan: { stability: 0.85, similarity_boost: 0.6, style: 0 }
+    };
+    const settingsFor = (voice) => {
+      const env = (name) => process.env[`ELEVENLABS_${name}_${voice.toUpperCase()}`];
+      const d = defaults[voice];
+      return {
+        stability: Number(env('STABILITY') ?? d.stability),
+        similarity_boost: d.similarity_boost,
+        style: Number(env('STYLE') ?? d.style),
+        use_speaker_boost: true
+      };
+    };
     const model = process.env.ELEVENLABS_MODEL || 'eleven_multilingual_v2';
     const missing = [!key && 'ELEVENLABS_API_KEY', !voices.guia && 'ELEVENLABS_VOICE_GUIA', !voices.capitan && 'ELEVENLABS_VOICE_CAPITAN'].filter(Boolean);
     return {
@@ -239,7 +246,7 @@ function makeProvider() {
               text,
               model_id: model,
               language_code: 'es',
-              voice_settings: { stability: 0.45, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true }
+              voice_settings: settingsFor(voice)
             })
           }
         );
