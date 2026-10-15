@@ -100,12 +100,19 @@ export type SoundEventType =
   | 'ping_deployed'
   | 'overdrive_activated'
   | 'explosion'
-  | 'revive';
+  | 'revive'
+  | 'repair_collected'
+  | 'shield_up'
+  | 'shield_double';
 
 export interface SoundEvent {
   id: string;
   type: SoundEventType;
   timestamp: number;
+  /** Posición estéreo del origen: -1 izquierda, 0 centro, 1 derecha. */
+  pan?: number;
+  /** 0..1. En choques: gravedad según la integridad que queda (1 = destruida). */
+  intensity?: number;
 }
 
 export interface ServerWorldStatePayload {

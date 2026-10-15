@@ -331,6 +331,23 @@ export class GameRenderer {
           alpha: 1.5,
           color: '#ffb703'
         });
+      } else if (ev.type === 'repair_collected') {
+        this.shockwaves.push({
+          x: this.smoothMechaX,
+          y: this.smoothMechaY,
+          radius: 20,
+          maxRadius: 170,
+          alpha: 1.0,
+          color: '#00ff9d'
+        });
+        this.callouts.push({
+          text: 'REPARACIÓN',
+          subtext: '+25% INTEGRIDAD',
+          x: this.smoothMechaX,
+          y: this.smoothMechaY - 75,
+          alpha: 1.4,
+          color: '#00ff9d'
+        });
       }
     }
   }

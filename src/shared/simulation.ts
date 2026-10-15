@@ -41,6 +41,7 @@ export class GameSimulation {
 
   private shieldLeft = false;
   private shieldRight = false;
+  private lastShieldSoundAt = -Infinity;
   private shieldEnergy: number = GAMEPLAY_CONSTANTS.MAX_SHIELD_ENERGY;
   private radarRevealTimer = 0;
 
@@ -88,6 +89,7 @@ export class GameSimulation {
 
     this.shieldLeft = false;
     this.shieldRight = false;
+    this.lastShieldSoundAt = -Infinity;
     this.shieldEnergy = GAMEPLAY_CONSTANTS.MAX_SHIELD_ENERGY;
     this.radarRevealTimer = 0;
 
@@ -284,6 +286,7 @@ export class GameSimulation {
     const wantsLeft = this.navigatorFlags.shield_left;
     const wantsRight = this.navigatorFlags.shield_right;
     const activeCount = (wantsLeft ? 1 : 0) + (wantsRight ? 1 : 0);
+    const prevShieldCount = (this.shieldLeft ? 1 : 0) + (this.shieldRight ? 1 : 0);
 
     if (activeCount > 0 && this.shieldEnergy > 1) {
       this.shieldLeft = wantsLeft;
@@ -301,6 +304,17 @@ export class GameSimulation {
         GAMEPLAY_CONSTANTS.MAX_SHIELD_ENERGY,
         this.shieldEnergy + GAMEPLAY_CONSTANTS.SHIELD_RECHARGE_PER_SECOND * dt
       );
+    }
+
+    // Sonido al encender escudos (flanco de subida, con pausa mínima para no repetir al alternar)
+    const shieldCount = (this.shieldLeft ? 1 : 0) + (this.shieldRight ? 1 : 0);
+    if (shieldCount > prevShieldCount) {
+      const minGap = shieldCount === 2 ? 1.0 : 0.35;
+      if (this.survivalTime - this.lastShieldSoundAt >= minGap) {
+        this.lastShieldSoundAt = this.survivalTime;
+        const pan = shieldCount === 2 ? 0 : this.shieldLeft ? -0.6 : 0.6;
+        this.emitSound(shieldCount === 2 ? 'shield_double' : 'shield_up', { pan });
+      }
     }
 
     // 6. Process Navigator Radar Pulse & Tactical Pings
@@ -406,7 +420,7 @@ export class GameSimulation {
         this.shieldLeft &&
         checkCircleToLine(obsCircle, leftShieldStart, leftShieldEnd)
       ) {
-        this.emitSound('shield_deflect');
+        this.emitSound('shield_deflect', { pan: this.panFor(obs.x) });
         this.obstacles.splice(i, 1);
         continue;
       }
@@ -416,7 +430,7 @@ export class GameSimulation {
         this.shieldRight &&
         checkCircleToLine(obsCircle, rightShieldStart, rightShieldEnd)
       ) {
-        this.emitSound('shield_deflect');
+        this.emitSound('shield_deflect', { pan: this.panFor(obs.x) });
         this.obstacles.splice(i, 1);
         continue;
       }
@@ -434,13 +448,13 @@ export class GameSimulation {
           this.isOverdrive = true;
           this.overdriveTimer = GAMEPLAY_CONSTANTS.OVERDRIVE_DURATION_SECONDS;
           this.collisionPenalty = Math.max(0, this.collisionPenalty - 35);
-          this.emitSound('overdrive_activated');
+          this.emitSound('overdrive_activated', { pan: this.panFor(obs.x) });
         } else if (obs.type === 'repair_cell') {
           this.integrity = Math.min(
             GAMEPLAY_CONSTANTS.MAX_INTEGRITY,
             this.integrity + GAMEPLAY_CONSTANTS.REPAIR_CELL_BONUS
           );
-          this.emitSound('overdrive_activated');
+          this.emitSound('repair_collected', { pan: this.panFor(obs.x) });
         } else {
           // Hazard collision: evaluate shield absorption formula
           const result = computeCollisionDamage(obs.side_threat, {
@@ -448,11 +462,14 @@ export class GameSimulation {
             right: this.shieldRight
           });
           if (result.deflected) {
-            this.emitSound('shield_deflect');
+            this.emitSound('shield_deflect', { pan: this.panFor(obs.x) });
           } else {
             this.integrity = Math.max(0, this.integrity - result.damage);
             this.collisionPenalty += GAMEPLAY_CONSTANTS.COLLISION_SPEED_PENALTY;
-            this.emitSound('collision_damage');
+            this.emitSound('collision_damage', {
+              pan: this.panFor(obs.x),
+              intensity: 1 - this.integrity / GAMEPLAY_CONSTANTS.MAX_INTEGRITY
+            });
           }
         }
         this.obstacles.splice(i, 1);
@@ -474,7 +491,7 @@ export class GameSimulation {
 
     // 11. Check Integrity or Self-Destruct Failure
     if (this.integrity <= 0 || sdState.exploded) {
-      this.emitSound('explosion');
+      this.emitSound('explosion', { intensity: 1 });
       if (!this.adReviveUsed) {
         this.status = 'ad_revive_prompt';
       } else {
@@ -546,11 +563,19 @@ export class GameSimulation {
     });
   }
 
-  private emitSound(type: SoundEventType): void {
+  /** Posición estéreo de un punto respecto al vehículo (-1 izquierda … 1 derecha). */
+  private panFor(x: number): number {
+    const halfRoad = (TRACK_CONFIG.ROAD_RIGHT - TRACK_CONFIG.ROAD_LEFT) / 2;
+    return Number(clamp((x - this.mechaX) / halfRoad, -1, 1).toFixed(2));
+  }
+
+  private emitSound(type: SoundEventType, opts: { pan?: number; intensity?: number } = {}): void {
     this.recentEvents.push({
       id: `snd-${++this.entityCounter}-${this.tickCount}`,
       type,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      ...(opts.pan !== undefined && { pan: opts.pan }),
+      ...(opts.intensity !== undefined && { intensity: Number(opts.intensity.toFixed(2)) })
     });
     if (this.recentEvents.length > 12) {
       this.recentEvents.shift();

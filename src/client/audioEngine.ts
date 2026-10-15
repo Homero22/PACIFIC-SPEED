@@ -1,4 +1,5 @@
 import type { SoundEventType, TacticalCommsPreset } from '../shared/types.js';
+import { SfxBank, type SfxId } from './sfxBank.js';
 
 export type VoiceCueId =
   | 'athena_online'
@@ -45,6 +46,7 @@ const GUIA_CUES = new Set<VoiceCueId>([
 const DUCK_TURBINE = 0.35;
 const DUCK_SFX = 0.7;
 const DUCK_MUSIC = 0.4;
+const DUCK_AMBIENCE = 0.5;
 
 // Anti-solapamiento de voces
 const VOICE_GAP_MS = 1600; // silencio mínimo tras una voz antes de otra no prioritaria
@@ -93,6 +95,7 @@ export class AudioEngine {
   private turbineDuckGain: GainNode | null = null;
   private sfxBus: GainNode | null = null;
   private musicBus: GainNode | null = null;
+  private ambienceBus: GainNode | null = null;
   private voiceBus: GainNode | null = null;
   private compressor: DynamicsCompressorNode | null = null;
   private reverbNode: ConvolverNode | null = null;
@@ -129,6 +132,11 @@ export class AudioEngine {
   private nextAlarmPulseTime = 0;
   private shieldStreak = 0;
   private processedEventIds = new Set<string>();
+
+  // Efectos grabados (ElevenLabs) y capas en loop de tensión/daño
+  private sfx: SfxBank | null = null;
+  private loops = new Map<SfxId, { src: AudioBufferSourceNode; gain: GainNode }>();
+  private silenceUntil = 0; // silencio dramático tras la destrucción (tiempo del AudioContext)
 
   public init(): void {
     if (this.ctx) {
@@ -169,6 +177,8 @@ export class AudioEngine {
     this.musicBus.connect(this.compressor);
     this.voiceBus = this.ctx.createGain();
     this.voiceBus.connect(this.compressor);
+    this.ambienceBus = this.ctx.createGain();
+    this.ambienceBus.connect(this.compressor);
 
     // Spatial Acoustic Reverb (Metallic Canyon / Cockpit Impulse)
     this.reverbNode = this.ctx.createConvolver();
@@ -187,6 +197,8 @@ export class AudioEngine {
 
     this.setupJetTurbineLayers();
     void this.preloadNeuralVoiceBank();
+    this.sfx = new SfxBank(this.ctx);
+    void this.sfx.load();
   }
 
   public getRecordingAudioTracks(): MediaStreamTrack[] {
@@ -364,7 +376,8 @@ export class AudioEngine {
   public updateTelemetryAudio(
     isRunning: boolean,
     currentSpeed: number,
-    isCriticalSpeed: boolean
+    isCriticalSpeed: boolean,
+    integrityRatio = 1
   ): void {
     if (
       !this.ctx ||
@@ -386,8 +399,11 @@ export class AudioEngine {
       this.spoolGain.gain.setTargetAtTime(0, now, 0.08);
       this.alarmActive = false;
       this.nextSocialCueAt = 0;
+      this.stopLoops();
       return;
     }
+
+    this.updateTensionLayers(currentSpeed, integrityRatio);
 
     // Recordatorios de impacto social cada ~40-60 s de carrera, solo si el narrador está libre
     const nowMs = Date.now();
@@ -406,7 +422,9 @@ export class AudioEngine {
     this.subRotorOsc.frequency.setTargetAtTime(42 + speedNorm * 68, now, 0.06);
     this.subRotorGain.gain.setTargetAtTime(0.055 + speedNorm * 0.045, now, 0.08);
 
-    this.jetNoiseFilter.frequency.setTargetAtTime(220 + speedNorm * 1350, now, 0.06);
+    // Con daño alto el motor suena más apagado
+    const damageMuffle = 1 - Math.max(0, Math.min(1, 1 - integrityRatio)) * 0.45;
+    this.jetNoiseFilter.frequency.setTargetAtTime((220 + speedNorm * 1350) * damageMuffle, now, 0.06);
     this.jetNoiseGain.gain.setTargetAtTime(0.07 + speedNorm * 0.11, now, 0.08);
 
     this.spoolOsc.frequency.setTargetAtTime(390 + speedNorm * 980, now, 0.06);
@@ -427,7 +445,9 @@ export class AudioEngine {
     }
   }
 
-  public processServerEvents(events: Array<{ id: string; type: SoundEventType }>): void {
+  public processServerEvents(
+    events: Array<{ id: string; type: SoundEventType; pan?: number; intensity?: number }>
+  ): void {
     for (const ev of events) {
       if (this.processedEventIds.has(ev.id)) continue;
       this.processedEventIds.add(ev.id);
@@ -435,11 +455,11 @@ export class AudioEngine {
         const first = this.processedEventIds.values().next().value;
         if (first) this.processedEventIds.delete(first);
       }
-      this.triggerSoundEffect(ev.type);
+      this.triggerSoundEffect(ev.type, ev.pan ?? 0, ev.intensity);
     }
   }
 
-  public triggerSoundEffect(type: SoundEventType, stereoPan = 0): void {
+  public triggerSoundEffect(type: SoundEventType, stereoPan = 0, intensity?: number): void {
     if (this.isMuted) return;
     this.init();
     if (!this.ctx) return;
@@ -447,7 +467,9 @@ export class AudioEngine {
     switch (type) {
       case 'shield_deflect':
         this.shieldStreak++;
-        this.playShieldDeflect(stereoPan);
+        if (!this.playSample('shield_deflect', { pan: stereoPan, reverb: 0.3 })) {
+          this.playShieldDeflect(stereoPan);
+        }
         if (this.shieldStreak === 2) {
           this.playNarratorCue('cmd_double_streak', true);
         } else if (this.shieldStreak >= 3) {
@@ -457,32 +479,234 @@ export class AudioEngine {
         }
         break;
 
+      case 'shield_up':
+        this.playSample('shield_up', { pan: stereoPan, gain: 0.7 });
+        break;
+
+      case 'shield_double':
+        if (!this.playSample('shield_double', { wide: true, reverb: 0.35 })) {
+          this.playShieldDeflect(0);
+        }
+        break;
+
       case 'explosion':
         this.shieldStreak = 0;
-        this.playExplosion();
+        this.playDestruction();
         this.playNarratorCue('athena_eject', true);
         break;
 
       case 'collision_damage':
         this.shieldStreak = 0;
-        this.playCollisionImpact(stereoPan);
+        this.playCollision(stereoPan, intensity ?? 0.35);
         this.playNarratorCue('athena_breach', true);
         break;
 
       case 'ping_deployed':
-        this.playTacticalPing(stereoPan);
+        if (!this.playSample('radar_ping', { pan: stereoPan, gain: 0.8 })) {
+          this.playTacticalPing(stereoPan);
+        }
         break;
 
       case 'overdrive_activated':
-        this.playOverdrivePowerup();
+        if (!this.playSample('turbo', { pan: stereoPan * 0.5, reverb: 0.2 })) {
+          this.playOverdrivePowerup();
+        }
         this.playNarratorCue(this.pickOne<VoiceCueId>(['cmd_overdrive', 'athena_overdrive']), true);
         break;
 
+      case 'repair_collected':
+        if (!this.playSample('repair', { pan: stereoPan * 0.5 })) {
+          this.playOverdrivePowerup();
+        }
+        this.playNarratorCue('athena_revive', true);
+        break;
+
       case 'revive':
-        this.playOverdrivePowerup();
+        if (!this.playSample('repair')) {
+          this.playOverdrivePowerup();
+        }
         this.playNarratorCue('athena_revive', true);
         break;
     }
+  }
+
+  /** Diagnóstico/pruebas: reproduce un efecto grabado. Devuelve false si no está cargado. */
+  public playSfx(id: SfxId, opts: { pan?: number; gain?: number; wide?: boolean } = {}): boolean {
+    this.init();
+    return this.playSample(id, opts);
+  }
+
+  /** Diagnóstico: efectos grabados cargados y número de variantes. */
+  public getLoadedSfx(): Record<string, number> {
+    return this.sfx?.loaded() ?? {};
+  }
+
+  /**
+   * Reproduce una variante grabada. Devuelve false si el efecto no está en el banco, para que el
+   * llamador use el sintetizado. `wide` añade una copia retardada 14 ms al lado opuesto (efecto Haas)
+   * para que el golpe se sienta envolvente.
+   */
+  private playSample(
+    id: SfxId,
+    o: { pan?: number; gain?: number; reverb?: number; wide?: boolean; delay?: number } = {}
+  ): boolean {
+    if (!this.ctx || !this.sfxBus || !this.sfx) return false;
+    const buffer = this.sfx.pick(id);
+    if (!buffer) return false;
+
+    const at = this.ctx.currentTime + (o.delay ?? 0);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
+    src.playbackRate.value = 1 + (Math.random() * 2 - 1) * 0.03; // ±3 % para que no suene repetido
+
+    const gain = this.ctx.createGain();
+    gain.gain.value = o.gain ?? 1;
+    const pan = Math.max(-1, Math.min(1, o.pan ?? 0)) * 0.8;
+    const panner = this.ctx.createStereoPanner();
+    panner.pan.value = pan;
+
+    src.connect(gain);
+    gain.connect(panner);
+    panner.connect(this.sfxBus);
+
+    if (o.wide) {
+      const haasDelay = this.ctx.createDelay(0.05);
+      haasDelay.delayTime.value = 0.014;
+      const haasGain = this.ctx.createGain();
+      haasGain.gain.value = 0.55;
+      const haasPan = this.ctx.createStereoPanner();
+      haasPan.pan.value = pan === 0 ? 0.7 : -Math.sign(pan) * 0.7;
+      gain.connect(haasDelay);
+      haasDelay.connect(haasGain);
+      haasGain.connect(haasPan);
+      haasPan.connect(this.sfxBus);
+    }
+    if (o.reverb && this.reverbSendGain) {
+      const send = this.ctx.createGain();
+      send.gain.value = o.reverb;
+      panner.connect(send);
+      send.connect(this.reverbSendGain);
+    }
+
+    src.start(at);
+    return true;
+  }
+
+  /** Choque: muestra según gravedad + golpe grave sintetizado para dar peso + caída breve del resto. */
+  private playCollision(pan: number, intensity: number): void {
+    const level = Math.max(0, Math.min(1, intensity));
+    const id: SfxId = level >= 0.7 ? 'impact_heavy' : level >= 0.35 ? 'impact_medium' : 'impact_light';
+    const played = this.playSample(id, {
+      pan,
+      wide: true,
+      reverb: 0.2 + level * 0.3,
+      gain: 0.85 + level * 0.15
+    });
+    if (!played) this.playCollisionImpact(pan);
+    this.playSubBoom(90 - level * 30, 0.35 + level * 0.35, 0.3 + level * 0.4);
+    this.punchDuck(0.15 + level * 0.1);
+  }
+
+  /** Destrucción: golpe pesado → desgarro metálico → cola de escombros, con silencio dramático. */
+  private playDestruction(): void {
+    if (!this.ctx) return;
+    this.silenceUntil = this.ctx.currentTime + 1.5;
+    this.stopLoops(0.08);
+    if (this.sfx?.has('destroy_metal')) {
+      this.playSample('impact_heavy', { wide: true, reverb: 0.3 });
+      this.playSample('destroy_metal', { wide: true, reverb: 0.45, delay: 0.12 });
+      this.playSubBoom(70, 1.2, 0.7);
+    } else {
+      this.playExplosion();
+    }
+  }
+
+  private playSubBoom(freqHz: number, durationSec: number, peak: number): void {
+    if (!this.ctx || !this.sfxBus) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freqHz, now);
+    osc.frequency.exponentialRampToValueAtTime(22, now + durationSec);
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(peak, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + durationSec);
+    osc.connect(gain);
+    gain.connect(this.sfxBus);
+    osc.start(now);
+    osc.stop(now + durationSec);
+  }
+
+  /** Baja motor y fondos un instante para que el golpe se sienta (respeta el ducking de voz). */
+  private punchDuck(holdSec: number): void {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const speaking = this.activeVoiceSource !== null;
+    const targets: Array<[GainNode | null, number]> = [
+      [this.turbineDuckGain, speaking ? DUCK_TURBINE : 1],
+      [this.ambienceBus, speaking ? DUCK_AMBIENCE : 1]
+    ];
+    for (const [node, restore] of targets) {
+      if (!node) continue;
+      node.gain.cancelScheduledValues(now);
+      node.gain.setTargetAtTime(restore * 0.35, now, 0.01);
+      node.gain.setTargetAtTime(restore, now + holdSec, 0.12);
+    }
+  }
+
+  /**
+   * Capas en loop según la tensión: fondo bajo ↔ alto según velocidad y daño, chispas desde 35 % de
+   * daño y estructura crítica desde 70 %. Tras la destrucción todo queda en silencio un momento.
+   */
+  private updateTensionLayers(currentSpeed: number, integrityRatio: number): void {
+    if (!this.ctx || !this.sfx) return;
+    const damage = Math.max(0, Math.min(1, 1 - integrityRatio));
+    const speedNorm = Math.max(0, Math.min(1, currentSpeed / 250));
+    const tension = Math.max(speedNorm * 0.6, damage);
+    const silent = this.ctx.currentTime < this.silenceUntil;
+    const level = (v: number) => (silent ? 0 : v);
+
+    this.setLoopLevel('amb_tension_low', level(0.9 * (1 - tension * 0.7)));
+    this.setLoopLevel('amb_tension_high', level(0.9 * tension));
+    this.setLoopLevel('dmg_sparks', level(damage >= 0.7 ? 0.35 : damage >= 0.35 ? 0.6 : 0));
+    this.setLoopLevel('dmg_critical', level(damage >= 0.7 ? 0.8 : 0));
+  }
+
+  private setLoopLevel(id: SfxId, target: number): void {
+    if (!this.ctx || !this.ambienceBus || !this.sfx) return;
+    let layer = this.loops.get(id);
+    if (!layer) {
+      if (target <= 0.001) return;
+      const buffer = this.sfx.pick(id);
+      if (!buffer) return;
+      const src = this.ctx.createBufferSource();
+      src.buffer = buffer;
+      src.loop = true;
+      const gain = this.ctx.createGain();
+      gain.gain.value = 0;
+      src.connect(gain);
+      gain.connect(this.ambienceBus);
+      src.start();
+      layer = { src, gain };
+      this.loops.set(id, layer);
+    }
+    // ~2 s de transición entre niveles de tensión
+    layer.gain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.7);
+  }
+
+  private stopLoops(fadeSec = 0.6): void {
+    if (!this.ctx || this.loops.size === 0) return;
+    const now = this.ctx.currentTime;
+    for (const { src, gain } of this.loops.values()) {
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setTargetAtTime(0, now, fadeSec / 3);
+      try {
+        src.stop(now + fadeSec * 2);
+      } catch {
+        // Ya detenido
+      }
+    }
+    this.loops.clear();
   }
 
   /**
@@ -616,6 +840,9 @@ export class AudioEngine {
 
     this.activeVoiceSource = source;
     source.start(startAt);
+    if (cueId === 'cmd_milestone' || SOCIAL_CUES.includes(cueId)) {
+      this.playSample('reward_rescue', { gain: 0.6 });
+    }
     return true;
   }
 
@@ -624,7 +851,8 @@ export class AudioEngine {
     const ramps: Array<[GainNode | null, number]> = [
       [this.turbineDuckGain, active ? DUCK_TURBINE : 1],
       [this.sfxBus, active ? DUCK_SFX : 1],
-      [this.musicBus, active ? DUCK_MUSIC : 1]
+      [this.musicBus, active ? DUCK_MUSIC : 1],
+      [this.ambienceBus, active ? DUCK_AMBIENCE : 1]
     ];
     for (const [node, target] of ramps) {
       if (!node) continue;

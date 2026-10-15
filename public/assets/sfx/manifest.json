@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-15T13:32:44.884Z",
+  "sounds": {
+    "shield_double": {
+      "files": [
+        "shield_double.mp3",
+        "shield_double_2.mp3",
+        "shield_double_3.mp3"
+      ],
+      "loop": false,
+      "category": "shield"
+    }
+  }
+}

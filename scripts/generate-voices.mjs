@@ -32,10 +32,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { spawnSync } from 'child_process';
-import { fileURLToPath } from 'url';
-
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+import { ROOT, fileNameFor, hasFfmpeg, loadVoicesEnv, masterAudio } from './lib/audio-tools.mjs';
 const OUT_DIR = path.join(ROOT, 'public/assets/voice');
 const MANIFEST_PATH = path.join(OUT_DIR, 'manifest.json');
 
@@ -186,24 +183,6 @@ function parseArgs(argv) {
   return args;
 }
 
-function loadVoicesEnv() {
-  const envFile = path.join(ROOT, '.env.voices');
-  if (!fs.existsSync(envFile)) return;
-  for (const raw of fs.readFileSync(envFile, 'utf8').split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#')) continue;
-    const eq = line.indexOf('=');
-    if (eq < 0) continue;
-    const key = line.slice(0, eq).trim();
-    const value = line.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
-    if (!(key in process.env) && value) process.env[key] = value;
-  }
-}
-
-function fileNameFor(cueId, variantIdx, ext = 'mp3') {
-  return variantIdx === 0 ? `${cueId}.${ext}` : `${cueId}_${variantIdx + 1}.${ext}`;
-}
-
 function escapeXml(s) {
   return s.replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c]);
 }
@@ -293,55 +272,6 @@ function makeProvider() {
   return { name: null, missing: ['VOICE_PROVIDER (elevenlabs | azure)'] };
 }
 
-function hasFfmpeg() {
-  const r = spawnSync('ffmpeg', ['-hide_banner', '-version'], { stdio: 'ignore' });
-  return r.status === 0;
-}
-
-const TRIM =
-  'silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.04,' +
-  'areverse,silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.08,areverse';
-const TARGET_LUFS = -16;
-// Limitador (0.75 ≈ −2,5 dBFS de muestra) para que el pico real del MP3 quede ≤ −1,5 dBTP
-const LIMITER = 'alimiter=limit=0.75:attack=2:release=40:level=false';
-
-function measureLufs(file, preFilter) {
-  const af = preFilter ? `${preFilter},ebur128` : 'ebur128';
-  const probe = spawnSync('ffmpeg', ['-hide_banner', '-nostats', '-i', file, '-af', af, '-f', 'null', '-'], {
-    encoding: 'utf8'
-  });
-  const measured = /I:\s+(-?[\d.]+) LUFS/.exec((probe.stderr || '').split('Summary:').pop());
-  return measured ? Number(measured[1]) : null;
-}
-
-/**
- * Recorta silencios y normaliza a −16 LUFS con ganancia + limitador. Como el limitador baja la
- * sonoridad de las exclamaciones, se mide el resultado y se corrige la ganancia (hasta 4 pasadas).
- * (loudnorm es impreciso en clips de 1–2 s.)
- */
-function masterWithFfmpeg(rawPath, outMp3, outOgg) {
-  const trimmed = rawPath.replace(/.[^.]+$/, '') + '.trim.wav';
-  const ffmpeg = (args) => {
-    const r = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args], { encoding: 'utf8' });
-    if (r.status !== 0) throw new Error(`ffmpeg falló: ${r.stderr}`);
-  };
-  ffmpeg(['-i', rawPath, '-af', TRIM, '-ar', '44100', '-ac', '1', trimmed]);
-
-  const initial = measureLufs(trimmed);
-  let gainDb = initial === null ? 0 : TARGET_LUFS - initial;
-  for (let pass = 0; pass < 4; pass++) {
-    gainDb = Math.max(-20, Math.min(30, gainDb));
-    const result = measureLufs(trimmed, `volume=${gainDb.toFixed(2)}dB,${LIMITER}`);
-    if (result === null || Math.abs(TARGET_LUFS - result) < 0.5) break;
-    gainDb += TARGET_LUFS - result;
-  }
-
-  const filter = `volume=${gainDb.toFixed(2)}dB,${LIMITER}`;
-  ffmpeg(['-i', trimmed, '-af', filter, '-ar', '44100', '-ac', '1', '-c:a', 'libmp3lame', '-b:a', '96k', outMp3]);
-  if (outOgg) ffmpeg(['-i', trimmed, '-af', filter, '-ar', '48000', '-ac', '1', '-c:a', 'libopus', '-b:a', '64k', outOgg]);
-  fs.rmSync(trimmed, { force: true });
-}
-
 /** Vuelve a masterizar los MP3 existentes sin llamar a la API. */
 function remasterExisting(only, ogg) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ps-remaster-'));
@@ -354,7 +284,7 @@ function remasterExisting(only, ogg) {
         if (!fs.existsSync(outMp3)) return;
         const src = path.join(tmpDir, file);
         fs.copyFileSync(outMp3, src);
-        masterWithFfmpeg(src, outMp3, ogg ? outMp3.replace(/.mp3$/, '.ogg') : null);
+        masterAudio(src, outMp3, ogg ? outMp3.replace(/\.mp3$/, '.ogg') : null);
         console.log(`  ✓ ${file}`);
       });
     }
@@ -430,7 +360,7 @@ async function main() {
       if (ffmpeg) {
         const rawPath = path.join(tmpDir, j.file);
         fs.writeFileSync(rawPath, raw);
-        masterWithFfmpeg(rawPath, outMp3, args.ogg ? outMp3.replace(/\.mp3$/, '.ogg') : null);
+        masterAudio(rawPath, outMp3, args.ogg ? outMp3.replace(/\.mp3$/, '.ogg') : null);
       } else {
         fs.writeFileSync(outMp3, raw);
       }

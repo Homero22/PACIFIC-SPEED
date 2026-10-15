@@ -81,6 +81,11 @@ class PacificSpeedClientApp {
   private isRecordingClip = false;
 
   constructor() {
+    // Solo en local: __audio.playSfx('impact_heavy', { pan: -0.5 }) en la consola para probar efectos
+    if (['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+      (window as unknown as { __audio: AudioEngine }).__audio = this.audio;
+    }
+
     // The server assigns player_id and a secret session token on room_joined.
     this.playerId = '';
 
@@ -1157,7 +1162,8 @@ class PacificSpeedClientApp {
     const isCritical =
       isRunning &&
       currentSpeed < this.currentWorldState.speed_multiplier.critical_threshold;
-    this.audio.updateTelemetryAudio(isRunning, currentSpeed, isCritical);
+    const ws = this.currentWorldState.world_state;
+    this.audio.updateTelemetryAudio(isRunning, currentSpeed, isCritical, ws.integrity / ws.max_integrity);
 
     this.renderer.render(
       this.currentWorldState,
