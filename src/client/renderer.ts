@@ -1294,36 +1294,49 @@ export class GameRenderer {
     ctx.restore();
   }
 
+  /**
+   * Navigator's "safe lane" marker (K). Display only: the ping still lasts its full ttl in the
+   * game (the AI driver relies on it), but on screen it shows ~1.2 s and is kept compact so it
+   * does not cover the road. Repeated pings on a lane draw only the newest one.
+   */
   private drawTacticalPings(state: ServerWorldStatePayload): void {
     const { ctx } = this;
+    const VISIBLE_S = 1.2;
+    const FADE_S = 0.35;
 
-    for (const ping of state.world_state.active_pings) {
-      const alpha = Math.min(1, ping.ttl / 0.6);
+    const newestPerLane = new Map<number, (typeof state.world_state.active_pings)[number]>();
+    for (const ping of state.world_state.active_pings) newestPerLane.set(ping.lane, ping);
+
+    for (const ping of newestPerLane.values()) {
+      const elapsed = ping.max_ttl - ping.ttl;
+      if (elapsed >= VISIBLE_S) continue;
+      const alpha = Math.min(1, (VISIBLE_S - elapsed) / FADE_S);
       const laneX = getLaneCenterX(ping.lane);
       const targetY = Math.min(ping.y_offset, this.smoothMechaY - 175);
 
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.strokeStyle = '#2ec4b6';
-      ctx.fillStyle = 'rgba(46, 196, 182, 0.13)';
+      ctx.fillStyle = 'rgba(46, 196, 182, 0.12)';
       ctx.lineWidth = 2;
 
-      const boxW = TRACK_CONFIG.LANE_WIDTH * 0.82;
-      ctx.fillRect(laneX - boxW * 0.5, targetY - 55, boxW, 195);
-      ctx.strokeRect(laneX - boxW * 0.5, targetY - 55, boxW, 195);
+      const boxW = TRACK_CONFIG.LANE_WIDTH * 0.7;
+      const boxH = 120;
+      ctx.fillRect(laneX - boxW * 0.5, targetY - 40, boxW, boxH);
+      ctx.strokeRect(laneX - boxW * 0.5, targetY - 40, boxW, boxH);
 
-      // Guidance vector line from Mecha nose to Ping corridor
+      // Dashed guide from the vehicle to the safe lane
       ctx.setLineDash([6, 4]);
       ctx.beginPath();
       ctx.moveTo(this.smoothMechaX, this.smoothMechaY - 42);
-      ctx.lineTo(laneX, targetY + 35);
+      ctx.lineTo(laneX, targetY + 20);
       ctx.stroke();
       ctx.setLineDash([]);
 
       ctx.fillStyle = '#7ee8d8';
-      ctx.font = 'bold 13px system-ui, sans-serif';
+      ctx.font = 'bold 12px system-ui, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`CARRIL SEGURO ${ping.lane + 1}`, laneX, targetY - 22);
+      ctx.fillText(`CARRIL SEGURO ${ping.lane + 1}`, laneX, targetY - 12);
       ctx.restore();
     }
   }
