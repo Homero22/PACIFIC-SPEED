@@ -7,12 +7,17 @@ import {
   getLaneCenterX,
   TRACK_CONFIG
 } from './math.js';
+import { createRng, randomSeed } from './random.js';
 import {
   computeCollisionDamage,
-  computeTotalScore,
+  computeScoreIncrement,
   computeVehicleSpeed,
   GAMEPLAY_CONSTANTS,
-  updateSelfDestructCountdown
+  getDifficultyPhase,
+  isBreatherStretch,
+  TRACK_RULES,
+  updateSelfDestructCountdown,
+  type WaveKind
 } from './rules.js';
 import type {
   ClientInputPayload,
@@ -25,6 +30,26 @@ import type {
   SoundEventType,
   TacticalPing
 } from './types.js';
+
+/** Obstacles scroll at speed*2.35 px/s while distance grows speed/10 m/s: 23.5 px per meter. */
+const PX_PER_METER = 23.5;
+
+/** Meters until the next wave: breathers are sparse, phases get denser with distance. */
+function spacingAfter(waveAt: number): number {
+  return isBreatherStretch(waveAt) ? TRACK_RULES.BREATHER_SPACING : getDifficultyPhase(waveAt).spacing;
+}
+
+/** Picks a key with probability proportional to its weight, using roll in [0, 1). */
+function pickWeighted(weights: Record<WaveKind, number>, roll: number): WaveKind {
+  const entries = Object.entries(weights) as Array<[WaveKind, number]>;
+  const total = entries.reduce((sum, [, w]) => sum + w, 0);
+  let acc = 0;
+  for (const [kind, w] of entries) {
+    acc += w / total;
+    if (roll < acc) return kind;
+  }
+  return entries[entries.length - 1][0];
+}
 
 export class GameSimulation {
   private tickCount = 0;
@@ -63,18 +88,62 @@ export class GameSimulation {
     ping_lane: null as LaneIndex | null
   };
 
-  private spawnCooldown = 1.1;
   private entityCounter = 0;
   private lastPingLane: LaneIndex | null = null;
   private pingCooldown = 0;
 
-  constructor(autoStart = false) {
+  // Track generation (deterministic per seed, laid out by distance)
+  private trackSeed = 0;
+  private rng: () => number = Math.random;
+  private nextWaveDistance: number = TRACK_RULES.FIRST_WAVE_DISTANCE;
+  private lastBarrierWave: { distance: number; freeLanes: LaneIndex[] } | null = null;
+  private breatherFlip = false;
+  /** Exact (fractional) score; totalScore is its floor. */
+  private scoreAccumulator = 0;
+
+  constructor(autoStart = false, seed?: number) {
     if (autoStart) {
-      this.startMatch();
+      this.startMatch(seed);
     }
   }
 
-  public startMatch(): void {
+  public getTrackSeed(): number {
+    return this.trackSeed;
+  }
+
+  /**
+   * Generates the track of a seed up to `untilMeters` without playing it: the exact waves a
+   * crew will meet, meter by meter (used by tests and to audit a tournament track).
+   */
+  public static generateTrackLayout(
+    seed: number,
+    untilMeters: number
+  ): Array<{ meter: number; obstacles: Array<Pick<ObstacleEntity, 'type' | 'lane'>> }> {
+    const sim = new GameSimulation(false);
+    sim.startMatch(seed);
+    const layout: Array<{ meter: number; obstacles: Array<Pick<ObstacleEntity, 'type' | 'lane'>> }> = [];
+    while (sim.nextWaveDistance <= untilMeters) {
+      const waveAt = sim.nextWaveDistance;
+      sim.distanceTraveled = waveAt;
+      sim.obstacles = [];
+      sim.spawnWave(waveAt);
+      layout.push({ meter: waveAt, obstacles: sim.obstacles.map((o) => ({ type: o.type, lane: o.lane })) });
+      sim.nextWaveDistance = waveAt + spacingAfter(waveAt);
+    }
+    return layout;
+  }
+
+  /**
+   * Starts a match. With a seed, the track (which obstacle appears at which meter) is
+   * identical for everyone using that seed; without one, every match gets a new track.
+   */
+  public startMatch(seed?: number): void {
+    this.trackSeed = (seed ?? randomSeed()) >>> 0;
+    this.rng = createRng(this.trackSeed);
+    this.nextWaveDistance = TRACK_RULES.FIRST_WAVE_DISTANCE;
+    this.lastBarrierWave = null;
+    this.breatherFlip = false;
+    this.scoreAccumulator = 0;
     this.tickCount = 0;
     this.status = 'running';
     this.distanceTraveled = 0;
@@ -102,7 +171,6 @@ export class GameSimulation {
     this.obstacles = [];
     this.activePings = [];
     this.recentEvents = [];
-    this.spawnCooldown = 1.0;
     this.pingCooldown = 0;
   }
 
@@ -359,12 +427,11 @@ export class GameSimulation {
       }
     }
 
-    // 7. Spawn Procedural Obstacles
-    this.spawnCooldown -= dt;
-    if (this.spawnCooldown <= 0) {
-      this.spawnWave();
-      const speedFactor = clamp(this.currentSpeed / GAMEPLAY_CONSTANTS.BASE_SPEED, 0.7, 2.2);
-      this.spawnCooldown = clamp(1.25 / speedFactor, 0.48, 1.35);
+    // 7. Spawn the track by distance: same seed => same obstacle at the same meter
+    while (this.distanceTraveled >= this.nextWaveDistance) {
+      const waveAt = this.nextWaveDistance;
+      this.spawnWave(waveAt);
+      this.nextWaveDistance = waveAt + spacingAfter(waveAt);
     }
 
     // 8. Move Obstacles & Check Collisions (AABB + Circle-to-Line)
@@ -486,8 +553,9 @@ export class GameSimulation {
     const sdState = updateSelfDestructCountdown(this.currentSpeed, this.selfDestructTimer, dt);
     this.selfDestructTimer = sdState.timer;
 
-    // 10. Update Total Score formula
-    this.totalScore = computeTotalScore(this.distanceTraveled, this.survivalTime, this.isOverdrive);
+    // 10. Accumulate score: Overdrive only doubles what is earned while active; never decreases
+    this.scoreAccumulator += computeScoreIncrement(distanceDelta, dt, this.isOverdrive);
+    this.totalScore = Math.floor(this.scoreAccumulator);
 
     // 11. Check Integrity or Self-Destruct Failure
     if (this.integrity <= 0 || sdState.exploded) {
@@ -502,42 +570,82 @@ export class GameSimulation {
     return this.getWorldStatePayload();
   }
 
-  private spawnWave(): void {
-    const roll = Math.random();
-    const lane = Math.floor(Math.random() * 3) as LaneIndex;
+  /**
+   * Generates the wave placed at meter `waveAt`. Every random draw comes from the seeded
+   * generator and happens in a fixed order, so a seed always yields the same track.
+   */
+  private spawnWave(waveAt: number): void {
+    // The wave was due at waveAt: place it as far down as it would already have scrolled
+    const scrolledPx = (this.distanceTraveled - waveAt) * PX_PER_METER;
+    const rng = this.rng;
+    const lane = Math.floor(rng() * 3) as LaneIndex;
 
-    if (roll < 0.42) {
-      // Standard road barrier (sometimes double lane to require Navigator ping)
-      this.createObstacle('barrier', lane, getLaneCenterX(lane), -60);
-      if (Math.random() < 0.35 && this.distanceTraveled > 60) {
-        const secondLane = ((lane + 1) % 3) as LaneIndex;
-        this.createObstacle('barrier', secondLane, getLaneCenterX(secondLane), -60);
-      }
-    } else if (roll < 0.65) {
-      // Left flank threat requiring Navigator Left Shield (J)
-      this.createObstacle(
-        'flank_left',
-        0,
-        TRACK_CONFIG.ROAD_LEFT - 25,
-        -40,
-        'left'
-      );
-    } else if (roll < 0.88) {
-      // Right flank threat requiring Navigator Right Shield (L)
-      this.createObstacle(
-        'flank_right',
-        2,
-        TRACK_CONFIG.ROAD_RIGHT + 25,
-        -40,
-        'right'
-      );
-    } else if (roll < 0.95) {
-      // Overdrive cell
-      this.createObstacle('overdrive_cell', lane, getLaneCenterX(lane), -50);
-    } else {
-      // Repair cell
-      this.createObstacle('repair_cell', lane, getLaneCenterX(lane), -50);
+    if (isBreatherStretch(waveAt)) {
+      // Breather: only pickups, alternating repair / overdrive
+      this.breatherFlip = !this.breatherFlip;
+      this.createObstacle(this.breatherFlip ? 'repair_cell' : 'overdrive_cell', lane, getLaneCenterX(lane), -50 + scrolledPx);
+      return;
     }
+
+    const phase = getDifficultyPhase(waveAt);
+    const kind = pickWeighted(phase.weights, rng());
+    const doubleRoll = rng(); // always drawn, so later draws do not depend on the wave kind
+
+    switch (kind) {
+      case 'barrier': {
+        const blocked: LaneIndex[] = [lane];
+        if (doubleRoll < phase.doubleBarrierChance) {
+          blocked.push(((lane + 1 + Math.floor(rng() * 2)) % 3) as LaneIndex);
+        }
+        for (const l of this.makeBarrierPassable(blocked, waveAt)) {
+          this.createObstacle('barrier', l, getLaneCenterX(l), -60 + scrolledPx);
+        }
+        break;
+      }
+      case 'flank_left':
+        this.createObstacle('flank_left', 0, TRACK_CONFIG.ROAD_LEFT - 25, -40 + scrolledPx, 'left');
+        break;
+      case 'flank_right':
+        this.createObstacle('flank_right', 2, TRACK_CONFIG.ROAD_RIGHT + 25, -40 + scrolledPx, 'right');
+        break;
+      case 'flank_pair':
+        // Both flanks at once: the Navigator must raise both shields
+        this.createObstacle('flank_left', 0, TRACK_CONFIG.ROAD_LEFT - 25, -40 + scrolledPx, 'left');
+        this.createObstacle('flank_right', 2, TRACK_CONFIG.ROAD_RIGHT + 25, -40 + scrolledPx, 'right');
+        break;
+      case 'overdrive_cell':
+      case 'repair_cell':
+        this.createObstacle(kind, lane, getLaneCenterX(lane), -50 + scrolledPx);
+        break;
+    }
+  }
+
+  /**
+   * Guarantees every barrier wave can be passed: from the lanes left open by the previous
+   * barrier wave there must be an open lane reachable in time, even at max speed. If not,
+   * the barriers are moved (deterministically) so that a previously open lane stays open.
+   */
+  private makeBarrierPassable(blocked: LaneIndex[], waveAt: number): LaneIndex[] {
+    const all: LaneIndex[] = [0, 1, 2];
+    let result = Array.from(new Set(blocked)).slice(0, 2);
+    const prev = this.lastBarrierWave;
+
+    if (prev) {
+      const gap = waveAt - prev.distance;
+      const maxShift = gap >= TRACK_RULES.SAFE_GAP_TWO_LANES ? 2 : gap >= TRACK_RULES.SAFE_GAP_ONE_LANE ? 1 : 0;
+      const reachable = (free: LaneIndex[]) =>
+        free.some((f) => prev.freeLanes.some((p) => Math.abs(f - p) <= maxShift));
+
+      if (!reachable(all.filter((l) => !result.includes(l)))) {
+        // Keep the lane the crew is most likely in (a previously open lane) open
+        const keep = prev.freeLanes[0];
+        const candidates = all.filter((l) => l !== keep);
+        result = result.length === 2 ? candidates : [candidates[Math.floor(this.rng() * candidates.length)]];
+      }
+    }
+
+    this.lastBarrierWave = { distance: waveAt, freeLanes: all.filter((l) => !result.includes(l)) };
+    return result;
   }
 
   private createObstacle(
@@ -614,7 +722,11 @@ export class GameSimulation {
           max_energy: GAMEPLAY_CONSTANTS.MAX_SHIELD_ENERGY
         },
         active_pings: [...this.activePings],
-        events: [...this.recentEvents]
+        events: [...this.recentEvents],
+        difficulty_phase: isBreatherStretch(this.distanceTraveled)
+          ? 'Respiro'
+          : getDifficultyPhase(this.distanceTraveled).name,
+        track_seed: this.trackSeed
       },
       entity_positions: {
         mecha: {

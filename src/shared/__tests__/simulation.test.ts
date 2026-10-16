@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { checkAABB, checkCircleToLine, clampVector } from '../math.js';
 import {
   computeCollisionDamage,
-  computeTotalScore,
+  computeScoreIncrement,
   computeVehicleSpeed,
   GAMEPLAY_CONSTANTS,
   updateSelfDestructCountdown
@@ -37,13 +37,11 @@ describe('PACIFIC SPEED: OVERDRIVE - Core Rules & Math Engine', () => {
     expect(recovered.exploded).toBe(false);
   });
 
-  it('calculates total score with and without Overdrive multiplier (2.0x)', () => {
-    // total_score = (distance * 10) + (survival_time * 50) * (is_overdrive ? 2.0 : 1.0)
-    const normalScore = computeTotalScore(120, 10, false);
-    expect(normalScore).toBe(120 * 10 + 10 * 50 * 1.0); // 1700
-
-    const overdriveScore = computeTotalScore(120, 10, true);
-    expect(overdriveScore).toBe(120 * 10 + 10 * 50 * 2.0); // 2200
+  it('scores per tick: Overdrive (2.0x) only doubles survival points earned while active', () => {
+    // Δscore = Δdistance * 10 + Δt * 50 * (is_overdrive ? 2.0 : 1.0)
+    expect(computeScoreIncrement(12, 1, false)).toBe(12 * 10 + 1 * 50); // 170
+    expect(computeScoreIncrement(12, 1, true)).toBe(12 * 10 + 1 * 50 * 2); // 220
+    expect(computeScoreIncrement(-5, -1, true)).toBe(0); // never negative
   });
 
   it('negates 100% of collision damage when corresponding flank shield is active', () => {

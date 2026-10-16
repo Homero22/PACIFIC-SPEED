@@ -1,5 +1,6 @@
 import type { WebSocket } from 'ws';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { tournamentTrackSeed } from '../../shared/random.js';
 import { ROOM_CODE_PATTERN } from '../../shared/types.js';
 import type { CosmeticLoadout, WsServerMessage } from '../../shared/types.js';
 
@@ -352,9 +353,25 @@ describe('RoomManager — room lifecycle', () => {
   describe('tournament pass', () => {
     const verifier = vi.fn(async (code: string) =>
       code === 'PASS-OK'
-        ? { valid: true, driver_name: 'PAID_DRIVER', navigator_name: 'PAID_NAV' }
+        ? { valid: true, driver_name: 'PAID_DRIVER', navigator_name: 'PAID_NAV', tournament_id: 'T-OFFICIAL' }
         : { valid: false }
     );
+
+    it('tournament matches run on the official track; practice matches get a new one', async () => {
+      const seedOf = (code: string) => (rm as any).rooms.get(code).simulation.getTrackSeed() as number;
+
+      const pro = create();
+      await rm.handleSetTournamentPass(pro.s.ws, 'PASS-OK');
+      rm.startMatch(pro.s.ws);
+      expect(seedOf(pro.code)).toBe(tournamentTrackSeed('T-OFFICIAL'));
+
+      const practiceA = create();
+      rm.startMatch(practiceA.s.ws);
+      const practiceB = create();
+      rm.startMatch(practiceB.s.ws);
+      expect(seedOf(practiceA.code)).not.toBe(tournamentTrackSeed('T-OFFICIAL'));
+      expect(seedOf(practiceA.code)).not.toBe(seedOf(practiceB.code));
+    });
 
     beforeEach(() => {
       rm.dispose();

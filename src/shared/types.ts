@@ -138,6 +138,10 @@ export interface ServerWorldStatePayload {
     };
     active_pings: TacticalPing[];
     events: SoundEvent[];
+    /** Current difficulty phase name (e.g. "Tormenta") or "Respiro". */
+    difficulty_phase?: string;
+    /** Seed of the track: tournament matches share it, practice matches get a new one. */
+    track_seed?: number;
   };
   entity_positions: {
     mecha: {

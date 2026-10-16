@@ -1,5 +1,6 @@
 import { randomBytes, randomInt } from 'crypto';
 import type { WebSocket } from 'ws';
+import { tournamentTrackSeed } from '../shared/random.js';
 import { GameSimulation } from '../shared/simulation.js';
 import { antiCheatEngine } from './antiCheat.js';
 import {
@@ -53,12 +54,15 @@ interface GameRoom {
   isTournamentVerified?: boolean;
   tournamentPass?: string;
   tournamentPair?: { driver_name: string; navigator_name: string };
+  /** Tournament of the verified pass: its matches run on the tournament's official track. */
+  tournamentId?: string;
 }
 
 export type TournamentPassVerifier = (passCode: string) => Promise<{
   valid: boolean;
   driver_name?: string;
   navigator_name?: string;
+  tournament_id?: string;
 }>;
 
 export interface MatchScoreStorage {
@@ -475,6 +479,7 @@ export class RoomManager {
     room.isTournamentVerified = false;
     room.tournamentPass = undefined;
     room.tournamentPair = undefined;
+    room.tournamentId = undefined;
   }
 
   private clearRoomTimers(room: GameRoom): void {
@@ -581,7 +586,10 @@ export class RoomManager {
       return;
     }
 
-    room.simulation.startMatch();
+    // Tournament: every pair races the same official track. Practice: a new track each match.
+    room.simulation.startMatch(
+      room.isTournamentVerified && room.tournamentId ? tournamentTrackSeed(room.tournamentId) : undefined
+    );
     room.lastStatus = 'running';
     room.scoreRecorded = false;
     seats.forEach((p) => (p.ready = false));
@@ -738,6 +746,7 @@ export class RoomManager {
       driver_name: check.driver_name || 'PILOT_A',
       navigator_name: check.navigator_name || 'PILOT_B'
     };
+    room.tournamentId = check.tournament_id;
     this.touch(room);
     this.broadcastLobby(room);
   }
