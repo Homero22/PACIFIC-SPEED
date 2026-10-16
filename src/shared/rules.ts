@@ -111,7 +111,14 @@ export function computeScoreIncrement(
 // Track generation: difficulty phases by distance (meters)
 // -------------------------------------------------------------
 
-export type WaveKind = 'barrier' | 'flank_left' | 'flank_right' | 'flank_pair' | 'overdrive_cell' | 'repair_cell';
+export type WaveKind =
+  | 'barrier'
+  | 'flank_left'
+  | 'flank_right'
+  | 'flank_pair'
+  | 'flank_cross'
+  | 'overdrive_cell'
+  | 'repair_cell';
 
 export interface DifficultyPhase {
   id: string;
@@ -136,7 +143,7 @@ export const DIFFICULTY_PHASES: readonly DifficultyPhase[] = [
     fromDistance: 0,
     spacing: 15,
     doubleBarrierChance: 0,
-    weights: { barrier: 0.5, flank_left: 0.17, flank_right: 0.17, flank_pair: 0, overdrive_cell: 0.09, repair_cell: 0.07 }
+    weights: { barrier: 0.5, flank_left: 0.17, flank_right: 0.17, flank_pair: 0, flank_cross: 0, overdrive_cell: 0.09, repair_cell: 0.07 }
   },
   {
     id: 'patrol',
@@ -144,7 +151,7 @@ export const DIFFICULTY_PHASES: readonly DifficultyPhase[] = [
     fromDistance: 250,
     spacing: 13,
     doubleBarrierChance: 0.3,
-    weights: { barrier: 0.44, flank_left: 0.21, flank_right: 0.21, flank_pair: 0, overdrive_cell: 0.08, repair_cell: 0.06 }
+    weights: { barrier: 0.44, flank_left: 0.21, flank_right: 0.21, flank_pair: 0, flank_cross: 0, overdrive_cell: 0.08, repair_cell: 0.06 }
   },
   {
     id: 'storm',
@@ -152,7 +159,7 @@ export const DIFFICULTY_PHASES: readonly DifficultyPhase[] = [
     fromDistance: 800,
     spacing: 11.5,
     doubleBarrierChance: 0.4,
-    weights: { barrier: 0.42, flank_left: 0.19, flank_right: 0.19, flank_pair: 0.08, overdrive_cell: 0.07, repair_cell: 0.05 }
+    weights: { barrier: 0.42, flank_left: 0.16, flank_right: 0.16, flank_pair: 0.08, flank_cross: 0.07, overdrive_cell: 0.07, repair_cell: 0.05 }
   },
   {
     id: 'rescue',
@@ -160,7 +167,7 @@ export const DIFFICULTY_PHASES: readonly DifficultyPhase[] = [
     fromDistance: 1600,
     spacing: 10,
     doubleBarrierChance: 0.5,
-    weights: { barrier: 0.42, flank_left: 0.18, flank_right: 0.18, flank_pair: 0.12, overdrive_cell: 0.06, repair_cell: 0.04 }
+    weights: { barrier: 0.42, flank_left: 0.14, flank_right: 0.14, flank_pair: 0.11, flank_cross: 0.09, overdrive_cell: 0.06, repair_cell: 0.04 }
   },
   {
     id: 'legend',
@@ -168,7 +175,7 @@ export const DIFFICULTY_PHASES: readonly DifficultyPhase[] = [
     fromDistance: 2800,
     spacing: 9,
     doubleBarrierChance: 0.55,
-    weights: { barrier: 0.43, flank_left: 0.17, flank_right: 0.17, flank_pair: 0.15, overdrive_cell: 0.05, repair_cell: 0.03 }
+    weights: { barrier: 0.43, flank_left: 0.12, flank_right: 0.12, flank_pair: 0.14, flank_cross: 0.11, overdrive_cell: 0.05, repair_cell: 0.03 }
   }
 ];
 
@@ -184,7 +191,16 @@ export const TRACK_RULES = {
    */
   SAFE_GAP_ONE_LANE: 18,
   /** Same for crossing two lanes: 280px / 310px/s = 0.9s + 0.25s reaction. */
-  SAFE_GAP_TWO_LANES: 29
+  SAFE_GAP_TWO_LANES: 29,
+  /**
+   * A crossing branch or a flank pair never follows another one within this many meters,
+   * so the shield energy always covers both (otherwise it becomes a single flank).
+   */
+  HEAVY_FLANK_GAP: 25,
+  /** A crossing branch never lands within this many meters of a double barrier. */
+  CROSS_AFTER_DOUBLE_BARRIER_GAP: 15,
+  /** Horizontal speed of a crossing branch (px/s): ~1.4 s to sweep the whole road. */
+  BRANCH_CROSS_SPEED: 340
 } as const;
 
 export function getDifficultyPhase(distance: number): DifficultyPhase {

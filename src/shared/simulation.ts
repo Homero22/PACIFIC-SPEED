@@ -97,6 +97,8 @@ export class GameSimulation {
   private rng: () => number = Math.random;
   private nextWaveDistance: number = TRACK_RULES.FIRST_WAVE_DISTANCE;
   private lastBarrierWave: { distance: number; freeLanes: LaneIndex[] } | null = null;
+  /** Meter of the last flank pair or crossing branch (they need spacing for shield energy). */
+  private lastHeavyFlankAt = -Infinity;
   private breatherFlip = false;
   /** Exact (fractional) score; totalScore is its floor. */
   private scoreAccumulator = 0;
@@ -152,6 +154,7 @@ export class GameSimulation {
     this.rng = createRng(this.trackSeed);
     this.nextWaveDistance = TRACK_RULES.FIRST_WAVE_DISTANCE;
     this.lastBarrierWave = null;
+    this.lastHeavyFlankAt = -Infinity;
     this.breatherFlip = false;
     this.scoreAccumulator = 0;
     this.tickCount = 0;
@@ -473,11 +476,32 @@ export class GameSimulation {
 
     for (let i = this.obstacles.length - 1; i >= 0; i--) {
       const obs = this.obstacles[i];
-      obs.x += obs.vx * dt;
-      obs.y += (scrollSpeedPx + obs.vy) * dt;
+
+      if (obs.type === 'flank_cross') {
+        // Falls along its edge; at the vehicle's height the wind sweeps it across the whole road
+        if (!obs.crossing) {
+          obs.y += (scrollSpeedPx + obs.vy) * dt;
+          if (obs.y >= this.mechaY) {
+            obs.crossing = true;
+            obs.y = this.mechaY;
+          }
+        } else {
+          obs.x += (obs.side_threat === 'left' ? 1 : -1) * TRACK_RULES.BRANCH_CROSS_SPEED * dt;
+          obs.y = this.mechaY;
+          const crossed =
+            obs.side_threat === 'left' ? obs.x > TRACK_CONFIG.ROAD_RIGHT + 40 : obs.x < TRACK_CONFIG.ROAD_LEFT - 40;
+          if (crossed) {
+            this.obstacles.splice(i, 1);
+            continue;
+          }
+        }
+      } else {
+        obs.x += obs.vx * dt;
+        obs.y += (scrollSpeedPx + obs.vy) * dt;
+      }
 
       // Homing behavior for lateral flank drones as they approach the Mecha's Y plane
-      if (obs.side_threat === 'left' || obs.side_threat === 'right') {
+      if ((obs.side_threat === 'left' || obs.side_threat === 'right') && obs.type !== 'flank_cross') {
         const dy = this.mechaY - obs.y;
         if (dy > -50 && dy < 260) {
           const dirX = Math.sign(this.mechaX - obs.x);
@@ -619,10 +643,32 @@ export class GameSimulation {
         this.createObstacle('flank_right', 2, TRACK_CONFIG.ROAD_RIGHT + 25, -40 + scrolledPx, 'right');
         break;
       case 'flank_pair':
-        // Both flanks at once: the Navigator must raise both shields
-        this.createObstacle('flank_left', 0, TRACK_CONFIG.ROAD_LEFT - 25, -40 + scrolledPx, 'left');
-        this.createObstacle('flank_right', 2, TRACK_CONFIG.ROAD_RIGHT + 25, -40 + scrolledPx, 'right');
+      case 'flank_cross': {
+        const fromLeft = doubleRoll < 0.5;
+        const sideX = fromLeft ? TRACK_CONFIG.ROAD_LEFT - 25 : TRACK_CONFIG.ROAD_RIGHT + 25;
+        const side = fromLeft ? 'left' : 'right';
+        const tooSoon = waveAt - this.lastHeavyFlankAt < TRACK_RULES.HEAVY_FLANK_GAP;
+        const nearDoubleBarrier =
+          kind === 'flank_cross' &&
+          this.lastBarrierWave !== null &&
+          this.lastBarrierWave.freeLanes.length === 1 &&
+          waveAt - this.lastBarrierWave.distance < TRACK_RULES.CROSS_AFTER_DOUBLE_BARRIER_GAP;
+        if (tooSoon || nearDoubleBarrier) {
+          // Keep it always blockable: a single, ordinary flank instead
+          this.createObstacle(fromLeft ? 'flank_left' : 'flank_right', fromLeft ? 0 : 2, sideX, -40 + scrolledPx, side);
+          break;
+        }
+        this.lastHeavyFlankAt = waveAt;
+        if (kind === 'flank_cross') {
+          // Crosses from one edge to the other: blocked by the shield on its origin side
+          this.createObstacle('flank_cross', fromLeft ? 0 : 2, sideX, -40 + scrolledPx, side);
+        } else {
+          // Both flanks at once: the Navigator must raise both shields
+          this.createObstacle('flank_left', 0, TRACK_CONFIG.ROAD_LEFT - 25, -40 + scrolledPx, 'left');
+          this.createObstacle('flank_right', 2, TRACK_CONFIG.ROAD_RIGHT + 25, -40 + scrolledPx, 'right');
+        }
         break;
+      }
       case 'overdrive_cell':
       case 'repair_cell':
         this.createObstacle(kind, lane, getLaneCenterX(lane), -50 + scrolledPx);
@@ -666,7 +712,7 @@ export class GameSimulation {
     sideThreat?: 'left' | 'right'
   ): void {
     const isBarrier = type === 'barrier';
-    const isFlank = type === 'flank_left' || type === 'flank_right';
+    const isFlank = type === 'flank_left' || type === 'flank_right' || type === 'flank_cross';
     this.obstacles.push({
       id: `obs-${++this.entityCounter}`,
       type,
@@ -677,7 +723,8 @@ export class GameSimulation {
       height: isBarrier ? 34 : isFlank ? 38 : 42,
       vx: 0,
       vy: isFlank ? 75 : 0,
-      side_threat: sideThreat
+      side_threat: sideThreat,
+      ...(type === 'flank_cross' && { crossing: false })
     });
   }
 

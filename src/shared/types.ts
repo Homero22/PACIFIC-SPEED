@@ -69,6 +69,8 @@ export type ObstacleType =
   | 'barrier'
   | 'flank_left'
   | 'flank_right'
+  /** Branch blown across the whole road at the vehicle's height (blocked by the shield on its origin side). */
+  | 'flank_cross'
   | 'overdrive_cell'
   | 'repair_cell';
 
@@ -83,6 +85,8 @@ export interface ObstacleEntity {
   vx: number;
   vy: number;
   side_threat?: ShieldSide;
+  /** flank_cross only: true once it is sweeping across the road at the vehicle's height. */
+  crossing?: boolean;
 }
 
 export interface TacticalPing {
