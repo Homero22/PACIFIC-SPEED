@@ -46,12 +46,20 @@ const GUIA_CUES = new Set<VoiceCueId>([
 const DUCK_TURBINE = 0.35;
 const DUCK_SFX = 0.7;
 const DUCK_MUSIC = 0.4;
-const DUCK_AMBIENCE = 0.5;
+const DUCK_AMBIENCE = 0.7; // el fondo baja menos al hablar: antes casi desaparecía
 
-// Anti-solapamiento de voces
-const VOICE_GAP_MS = 1600; // silencio mínimo tras una voz antes de otra no prioritaria
-const PRIORITY_MIN_PLAY_MS = 900; // una prioritaria no corta a otra que lleva menos de esto
-const SAME_CUE_COOLDOWN_MS = 4000;
+// Nivel base del fondo (ambiente de tormenta) y del motor: el fondo se oía demasiado bajo
+const AMBIENCE_LEVEL = 1.9;
+const ENGINE_LEVEL = 1.25;
+
+// Frecuencia de voces: tres niveles para no saturar (ver playNarratorCue)
+const VOICE_GAP_MS = 7000; // comentarios: silencio mínimo tras la última voz
+const IMPORTANT_GAP_MS = 4000; // importantes (choque, turbo, rachas, récord)
+const PRIORITY_MIN_PLAY_MS = 900; // una esencial no corta a otra que lleva menos de esto
+const SAME_CUE_COOLDOWN_MS = 12000; // la misma frase no se repite antes de esto
+const ESSENTIAL_SAME_CUE_COOLDOWN_MS = 1500; // anti-spam para las esenciales
+const CHATTY_CUE_CHANCE = 0.5; // los comentarios más frecuentes suenan la mitad de las veces
+const CHATTY_CUES = new Set<VoiceCueId>(['cmd_intercept', 'cmd_close_call']);
 
 const ALL_VOICE_CUES: VoiceCueId[] = [
   'athena_online',
@@ -167,7 +175,7 @@ export class AudioEngine {
 
     // Ducking bus for engine turbine (ducks down when Narrator speaks)
     this.turbineDuckGain = this.ctx.createGain();
-    this.turbineDuckGain.gain.value = 1.0;
+    this.turbineDuckGain.gain.value = ENGINE_LEVEL;
     this.turbineDuckGain.connect(this.compressor);
 
     // Buses de efectos, música (reservado) y voz; efectos y música se atenúan cuando habla el narrador
@@ -178,6 +186,7 @@ export class AudioEngine {
     this.voiceBus = this.ctx.createGain();
     this.voiceBus.connect(this.compressor);
     this.ambienceBus = this.ctx.createGain();
+    this.ambienceBus.gain.value = AMBIENCE_LEVEL;
     this.ambienceBus.connect(this.compressor);
 
     // Spatial Acoustic Reverb (Metallic Canyon / Cockpit Impulse)
@@ -405,13 +414,13 @@ export class AudioEngine {
 
     this.updateTensionLayers(currentSpeed, integrityRatio);
 
-    // Recordatorios de impacto social cada ~40-60 s de carrera, solo si el narrador está libre
+    // Recordatorios de impacto social cada ~60-90 s de carrera, solo si el narrador está libre
     const nowMs = Date.now();
     if (this.nextSocialCueAt === 0) {
       this.nextSocialCueAt = nowMs + 30000;
     } else if (nowMs >= this.nextSocialCueAt) {
       if (this.playNarratorCue(this.pickOne(SOCIAL_CUES), false)) {
-        this.nextSocialCueAt = nowMs + 40000 + Math.random() * 20000;
+        this.nextSocialCueAt = nowMs + 60000 + Math.random() * 30000;
       } else {
         this.nextSocialCueAt = nowMs + 5000;
       }
@@ -434,7 +443,7 @@ export class AudioEngine {
       if (!this.alarmActive) {
         this.alarmActive = true;
         this.nextAlarmPulseTime = now;
-        this.playNarratorCue(this.pickOne<VoiceCueId>(['cmd_mayday', 'athena_stall']), true);
+        this.playNarratorCue(this.pickOne<VoiceCueId>(['cmd_mayday', 'athena_stall']), true, true);
       }
       if (now >= this.nextAlarmPulseTime) {
         this.triggerWarningAlarmPulse();
@@ -492,7 +501,7 @@ export class AudioEngine {
       case 'explosion':
         this.shieldStreak = 0;
         this.playDestruction();
-        this.playNarratorCue('athena_eject', true);
+        this.playNarratorCue('athena_eject', true, true);
         break;
 
       case 'collision_damage':
@@ -518,14 +527,14 @@ export class AudioEngine {
         if (!this.playSample('repair', { pan: stereoPan * 0.5 })) {
           this.playOverdrivePowerup();
         }
-        this.playNarratorCue('athena_revive', true);
+        this.playNarratorCue('athena_revive', true, true);
         break;
 
       case 'revive':
         if (!this.playSample('repair')) {
           this.playOverdrivePowerup();
         }
-        this.playNarratorCue('athena_revive', true);
+        this.playNarratorCue('athena_revive', true, true);
         break;
     }
   }
@@ -643,8 +652,8 @@ export class AudioEngine {
     const now = this.ctx.currentTime;
     const speaking = this.activeVoiceSource !== null;
     const targets: Array<[GainNode | null, number]> = [
-      [this.turbineDuckGain, speaking ? DUCK_TURBINE : 1],
-      [this.ambienceBus, speaking ? DUCK_AMBIENCE : 1]
+      [this.turbineDuckGain, ENGINE_LEVEL * (speaking ? DUCK_TURBINE : 1)],
+      [this.ambienceBus, AMBIENCE_LEVEL * (speaking ? DUCK_AMBIENCE : 1)]
     ];
     for (const [node, restore] of targets) {
       if (!node) continue;
@@ -666,7 +675,7 @@ export class AudioEngine {
     const silent = this.ctx.currentTime < this.silenceUntil;
     const level = (v: number) => (silent ? 0 : v);
 
-    this.setLoopLevel('amb_tension_low', level(0.9 * (1 - tension * 0.7)));
+    this.setLoopLevel('amb_tension_low', level(0.9 * (1 - tension * 0.45)));
     this.setLoopLevel('amb_tension_high', level(0.9 * tension));
     this.setLoopLevel('dmg_sparks', level(damage >= 0.7 ? 0.35 : damage >= 0.35 ? 0.6 : 0));
     this.setLoopLevel('dmg_critical', level(damage >= 0.7 ? 0.8 : 0));
@@ -723,25 +732,32 @@ export class AudioEngine {
       mayday_panic: 'cmd_mayday'
     };
 
-    this.playNarratorCue(presetToCue[preset], true);
+    this.playNarratorCue(presetToCue[preset], true, true);
   }
 
   /**
    * Reproduce un cue del narrador (variante al azar). Devuelve true si sonó.
-   * - No prioritario: solo si no hay voz activa y pasó VOICE_GAP_MS desde la última.
-   * - Prioritario: puede cortar una voz que ya lleva PRIORITY_MIN_PLAY_MS sonando.
+   * - Esencial (aviso de la pareja, velocidad crítica, destrucción, reparación, inicio):
+   *   siempre suena; puede cortar una voz que ya lleva PRIORITY_MIN_PLAY_MS sonando.
+   * - Importante (`priority`: choque, turbo, rachas, récord): sin voz activa y con
+   *   IMPORTANT_GAP_MS de silencio desde la última.
+   * - Comentario: sin voz activa, VOICE_GAP_MS de silencio y, los más frecuentes, al azar.
    */
-  public playNarratorCue(cueId: VoiceCueId, priority = false): boolean {
+  public playNarratorCue(cueId: VoiceCueId, priority = false, essential = false): boolean {
     if (this.isMuted || this.voiceMode === 'off') return false;
     this.init();
     if (!this.ctx || !this.voiceBus || !this.turbineDuckGain) return false;
 
     const nowMs = Date.now();
-    if (nowMs - (this.lastCueTime.get(cueId) ?? 0) < SAME_CUE_COOLDOWN_MS) return false;
-    if (this.activeVoiceSource) {
-      if (!priority || nowMs - this.activeVoiceStartedAt < PRIORITY_MIN_PLAY_MS) return false;
-    } else if (!priority && nowMs - this.lastVoiceEndedAt < VOICE_GAP_MS) {
-      return false;
+    const sinceSameCue = nowMs - (this.lastCueTime.get(cueId) ?? 0);
+    if (sinceSameCue < (essential ? ESSENTIAL_SAME_CUE_COOLDOWN_MS : SAME_CUE_COOLDOWN_MS)) return false;
+    if (essential) {
+      if (this.activeVoiceSource && nowMs - this.activeVoiceStartedAt < PRIORITY_MIN_PLAY_MS) return false;
+    } else {
+      if (this.activeVoiceSource) return false;
+      const sinceLastVoice = nowMs - this.lastVoiceEndedAt;
+      if (sinceLastVoice < (priority ? IMPORTANT_GAP_MS : VOICE_GAP_MS)) return false;
+      if (!priority && CHATTY_CUES.has(cueId) && Math.random() >= CHATTY_CUE_CHANCE) return false;
     }
 
     const buffer = this.pickVariant(cueId);
@@ -834,7 +850,7 @@ export class AudioEngine {
       if (this.ctx) this.setDuck(false, this.ctx.currentTime + 0.08);
       // Tras una misión fallida, recordamos a quién ayudó la carrera
       if (cueId === 'athena_eject') {
-        setTimeout(() => this.playNarratorCue('social_thanks', true), 500);
+        setTimeout(() => this.playNarratorCue('social_thanks', true, true), 500);
       }
     };
 
@@ -849,10 +865,10 @@ export class AudioEngine {
   private setDuck(active: boolean, at: number): void {
     const timeConstant = active ? 0.05 : 0.18;
     const ramps: Array<[GainNode | null, number]> = [
-      [this.turbineDuckGain, active ? DUCK_TURBINE : 1],
+      [this.turbineDuckGain, ENGINE_LEVEL * (active ? DUCK_TURBINE : 1)],
       [this.sfxBus, active ? DUCK_SFX : 1],
       [this.musicBus, active ? DUCK_MUSIC : 1],
-      [this.ambienceBus, active ? DUCK_AMBIENCE : 1]
+      [this.ambienceBus, AMBIENCE_LEVEL * (active ? DUCK_AMBIENCE : 1)]
     ];
     for (const [node, target] of ramps) {
       if (!node) continue;

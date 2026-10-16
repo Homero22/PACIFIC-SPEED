@@ -137,7 +137,7 @@ export class GameRenderer {
   public showCommsBanner(event: TacticalCommsEvent): void {
     this.activeCommsBanner = {
       event,
-      ttl: 3.4
+      ttl: 2.2
     };
     this.shakeIntensity = Math.max(this.shakeIntensity, 4);
   }
@@ -1332,8 +1332,9 @@ export class GameRenderer {
     const { ctx } = this;
     for (let i = this.callouts.length - 1; i >= 0; i--) {
       const c = this.callouts[i];
-      c.y -= 42 * dt;
-      c.alpha -= 1.05 * dt;
+      c.y -= 48 * dt;
+      // ~0.7 s on screen (was ~1.4 s): short enough not to cover the road
+      c.alpha -= 1.9 * dt;
       if (c.alpha <= 0) {
         this.callouts.splice(i, 1);
         continue;
@@ -1344,17 +1345,17 @@ export class GameRenderer {
       ctx.fillStyle = 'rgba(20, 16, 22, 0.88)';
       ctx.strokeStyle = c.color;
       ctx.lineWidth = 1.5;
-      this.roundedRect(c.x - 125, c.y - 22, 250, 38, 10);
+      this.roundedRect(c.x - 105, c.y - 19, 210, 32, 9);
       ctx.fill();
       ctx.stroke();
 
       ctx.fillStyle = c.color;
-      ctx.font = 'bold 13px system-ui, sans-serif';
+      ctx.font = 'bold 12px system-ui, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(c.text, c.x, c.y - 5);
+      ctx.fillText(c.text, c.x, c.y - 4);
 
       ctx.fillStyle = '#f3ece2';
-      ctx.font = '11px system-ui, sans-serif';
+      ctx.font = '10px system-ui, sans-serif';
       ctx.fillText(c.subtext, c.x, c.y + 9);
       ctx.restore();
     }
@@ -1375,10 +1376,10 @@ export class GameRenderer {
     const { ctx } = this;
     const { event, ttl } = this.activeCommsBanner;
     const alpha = Math.min(1, ttl / 0.4);
-    const boxX = 75;
+    const boxW = 400;
+    const boxX = (TRACK_CONFIG.WORLD_WIDTH - boxW) / 2;
     const boxY = 122;
-    const boxW = TRACK_CONFIG.WORLD_WIDTH - 150;
-    const boxH = 54;
+    const boxH = 46;
 
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -1391,21 +1392,21 @@ export class GameRenderer {
     // Animated Voice Oscilloscope Bars
     ctx.fillStyle = ctx.strokeStyle;
     for (let i = 0; i < 8; i++) {
-      const barH = 6 + Math.abs(Math.sin(Date.now() * 0.02 + i)) * 24;
-      ctx.fillRect(boxX + 14 + i * 6, boxY + 27 - barH * 0.5, 4, barH);
+      const barH = 6 + Math.abs(Math.sin(Date.now() * 0.02 + i)) * 20;
+      ctx.fillRect(boxX + 14 + i * 6, boxY + 23 - barH * 0.5, 4, barH);
     }
 
     ctx.textAlign = 'left';
-    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.font = 'bold 10px system-ui, sans-serif';
     ctx.fillText(
       `RADIO · ${event.sender_name} (${event.sender_role === 'driver' ? 'PILOTO' : 'NAVEGANTE'})`,
       boxX + 72,
-      boxY + 20
+      boxY + 18
     );
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 14px system-ui, sans-serif';
-    ctx.fillText(event.label, boxX + 72, boxY + 40);
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.fillText(event.label, boxX + 72, boxY + 36);
     ctx.restore();
   }
 

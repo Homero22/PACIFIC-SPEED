@@ -461,7 +461,7 @@ class PacificSpeedClientApp {
     // Step 01 Modal Buttons
     document.getElementById('btn-execute-launch')?.addEventListener('click', () => {
       this.closeModal('modal-confirm-crew');
-      this.audio.playNarratorCue('athena_online', true);
+      this.audio.playNarratorCue('athena_online', true, true);
       this.triggerStartOrRematch();
     });
 
@@ -481,7 +481,7 @@ class PacificSpeedClientApp {
     // Instant Rematch & Back to Lobby
     document.getElementById('btn-instant-rematch')?.addEventListener('click', () => {
       this.audio.init();
-      this.audio.playNarratorCue('athena_online', true);
+      this.audio.playNarratorCue('athena_online', true, true);
       this.triggerStartOrRematch();
     });
 
