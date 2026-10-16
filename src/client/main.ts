@@ -1,5 +1,6 @@
 import { escapeHtml, safeHttpUrl } from '../shared/escapeHtml.js';
 import { calculateTransactionSplits, round2 } from '../shared/financialConfig.js';
+import { foodKgFromUsd, rescuedCount, weatherForPhase } from './rescueTheme.js';
 import { GameSimulation } from '../shared/simulation.js';
 import { normalizeRoomCode } from '../shared/types.js';
 import type {
@@ -23,10 +24,10 @@ import { InputManager } from './inputManager.js';
 import { GameRenderer } from './renderer.js';
 
 const LOCAL_COMMS_MAP: Record<TacticalCommsPreset, { code: string; label: string }> = {
-  bogey_alert: { code: 'TAC-01 // ALERTA OBSTACULO', label: '[ALERTA] OBSTACULO AL FRENTE - ACTIVA ESCUDO LATERAL' },
-  nice_deflect: { code: 'TAC-02 // INTERCEPCION', label: '[ESCUDO] DESVIO EXITOSO - IMPACTO ANULADO' },
-  engage_overdrive: { code: 'TAC-03 // PROPULSION', label: '[TURBO] ACTIVA POSQUEMADOR AHORA' },
-  mayday_panic: { code: 'TAC-04 // CRITICO', label: '[PELIGRO] PERDIDA DE SUSTENTACION - ACELERA' }
+  bogey_alert: { code: 'AVISO', label: '¡Cuidado, viene una rama! Sube el escudo' },
+  nice_deflect: { code: 'BIEN', label: '¡Bien bloqueado! La carga está a salvo' },
+  engage_overdrive: { code: 'TURBO', label: '¡Ve por el hueso dorado: turbo croqueta!' },
+  mayday_panic: { code: 'PELIGRO', label: '¡Acelera, que el motor se apaga!' }
 };
 
 class PacificSpeedClientApp {
@@ -305,7 +306,7 @@ class PacificSpeedClientApp {
         const btn = document.getElementById('btn-copy-link');
         if (btn) {
           const prev = btn.textContent;
-          btn.textContent = '[COPIADO] ENLACE TACTICO COPIADO';
+          btn.textContent = '¡ENLACE COPIADO!';
           setTimeout(() => {
             btn.textContent = prev;
           }, 2200);
@@ -356,7 +357,7 @@ class PacificSpeedClientApp {
       const btn = document.getElementById('btn-tiktok-mode');
       if (btn) {
         btn.classList.toggle('active', this.isTikTokMode);
-        btn.textContent = this.isTikTokMode ? '9:16 ON' : '9:16 STREAM';
+        btn.textContent = this.isTikTokMode ? '9:16 ON' : '9:16';
       }
     });
 
@@ -383,7 +384,7 @@ class PacificSpeedClientApp {
       this.audio.init();
       const muted = this.audio.toggleMute();
       const btn = document.getElementById('btn-mute-audio');
-      if (btn) btn.textContent = muted ? 'SFX: OFF' : 'SFX: ON';
+      if (btn) btn.textContent = muted ? 'SONIDO: OFF' : 'SONIDO: ON';
     });
 
     // Live Tactical Comms Reaction Buttons
@@ -431,7 +432,7 @@ class PacificSpeedClientApp {
           const btn = document.getElementById('btn-banner-action');
           if (btn) {
             const prev = btn.textContent;
-            btn.textContent = '[COPIADO] ENLACE DE TORNEO COPIADO';
+            btn.textContent = '¡ENLACE DEL TORNEO COPIADO!';
             setTimeout(() => {
               btn.textContent = prev;
             }, 2000);
@@ -658,7 +659,7 @@ class PacificSpeedClientApp {
       this.mediaRecorder.stop();
       this.isRecordingClip = false;
       if (btn) {
-        btn.textContent = 'REC CLIP';
+        btn.textContent = 'GRABAR CLIP';
         btn.classList.remove('recording-active');
       }
       return;
@@ -701,7 +702,7 @@ class PacificSpeedClientApp {
       this.mediaRecorder.start();
       this.isRecordingClip = true;
       if (btn) {
-        btn.textContent = 'STOP & SAVE';
+        btn.textContent = 'DETENER Y GUARDAR';
         btn.classList.add('recording-active');
       }
     } catch {
@@ -731,9 +732,9 @@ class PacificSpeedClientApp {
       this.nextScoreMilestone += 5000;
       this.audio.playNarratorCue('cmd_milestone', true);
       this.renderer.triggerCustomCallout(
-        'SECTOR RECORD BROKEN!',
-        `SCORE PASSED ${(this.nextScoreMilestone - 5000).toLocaleString()} PTS`,
-        '#ffb703'
+        '¡NUEVO RÉCORD DE PATRULLA!',
+        `Superaste ${(this.nextScoreMilestone - 5000).toLocaleString()} puntos`,
+        '#ffc94d'
       );
     }
 
@@ -751,9 +752,9 @@ class PacificSpeedClientApp {
         if (dx > 38 && dx < 96 && state.speed_multiplier.current_speed >= 120) {
           this.audio.playNarratorCue('cmd_close_call', false);
           this.renderer.triggerCustomCallout(
-            'RAZOR CLOSE CALL!',
-            'EVASIVE MANEUVER // MILLIMETER CLEARANCE',
-            '#00f0ff'
+            '¡UFF, POR POCO!',
+            'Esquivaste a milímetros',
+            '#7ee8d8'
           );
         }
       }
@@ -780,7 +781,7 @@ class PacificSpeedClientApp {
       const pct = ((5.0 - remaining) / 5.0) * 100;
       if (progressEl) progressEl.style.width = `${pct}%`;
       if (statusText) {
-        statusText.textContent = `RECALIBRANDO BLINDAJE DE TITANIO... ${remaining.toFixed(1)}s`;
+        statusText.textContent = `El equipo veterinario está reparando tu vehículo... ${remaining.toFixed(1)} s`;
       }
 
       if (remaining <= 0) {
@@ -793,7 +794,7 @@ class PacificSpeedClientApp {
         if (progressEl) progressEl.style.width = '0%';
         if (statusText) {
           statusText.textContent =
-            'PROTOCOLO DE EMERGENCIA: TRANSMISIÓN DE 5S PARA RESTAURAR 100% DE INTEGRIDAD';
+            'Mira un video de 5 segundos y el equipo veterinario deja tu vehículo al 100% para seguir rescatando.';
         }
 
         if (this.mode === 'online' && this.wsConnected) {
@@ -881,11 +882,11 @@ class PacificSpeedClientApp {
     const before = prev.players.find((p) => p.player_id !== this.playerId);
     const after = next.players.find((p) => p.player_id !== this.playerId);
     if (before?.connected && after && !after.connected) {
-      this.renderer.triggerCustomCallout('PAREJA DESCONECTADA', 'IA AL MANDO // RECONECTANDO (30 S)', '#ffb703');
+      this.renderer.triggerCustomCallout('TU PAREJA SE DESCONECTÓ', 'La IA ayuda mientras vuelve (30 s)', '#ffc94d');
     } else if (before && !before.connected && after?.connected) {
-      this.renderer.triggerCustomCallout('PAREJA RECONECTADA', `${after.name} DE VUELTA EN CABINA`, '#00ff9d');
+      this.renderer.triggerCustomCallout('¡TU PAREJA VOLVIÓ!', `${after.name} está de nuevo en la patrulla`, '#7bd88f');
     } else if (before && !after) {
-      this.renderer.triggerCustomCallout('PAREJA FUERA DE LA SALA', 'IA AUXILIAR AL MANDO', '#ff2a54');
+      this.renderer.triggerCustomCallout('TU PAREJA SALIÓ DE LA SALA', 'La IA te acompaña', '#ff5a5f');
     }
   }
 
@@ -1096,8 +1097,8 @@ class PacificSpeedClientApp {
     const localEntry: LeaderboardEntry = {
       id: `local-${Date.now()}`,
       room_code: this.mode === 'local_coop' ? 'LOCAL-2P' : 'SOLO-AI',
-      driver_name: this.activeRole === 'driver' ? this.pilotName : 'AWACS_AI',
-      navigator_name: this.activeRole === 'navigator' ? this.pilotName : 'AWACS_AI',
+      driver_name: this.activeRole === 'driver' ? this.pilotName : 'IA_APOYO',
+      navigator_name: this.activeRole === 'navigator' ? this.pilotName : 'IA_APOYO',
       total_score: ws.total_score,
       distance_traveled: ws.distance_traveled,
       survival_time: ws.survival_time,
@@ -1188,15 +1189,16 @@ class PacificSpeedClientApp {
     };
 
     setTxt('hud-score', ws.total_score.toLocaleString());
-    setTxt('hud-speed', `${Math.round(sm.current_speed)} KT`);
-    setTxt('hud-distance', `${ws.distance_traveled.toFixed(0)} M`);
+    setTxt('hud-speed', `${Math.round(sm.current_speed)}`);
+    setTxt('hud-distance', `${ws.distance_traveled.toFixed(0)} m`);
+    setTxt('hud-rescued', `${rescuedCount(ws.distance_traveled)}`);
     setTxt('hud-integrity-text', `${Math.round(ws.integrity)}%`);
     setTxt('hud-shield-text', `${Math.round(ws.active_shields.energy)}%`);
     setTxt(
       'hud-role-badge',
       this.activeRole === 'driver'
-        ? 'PILOT A // STEALTH DRIVER [LOW-VIS CONE]'
-        : 'PILOT B // AWACS NAVIGATOR [OVERHEAD RADAR]'
+        ? 'PILOTO · MANEJAS EL VEHÍCULO'
+        : 'NAVEGANTE · ESCUDOS Y RADAR'
     );
 
     const integrityBar = document.getElementById('hud-integrity-bar');
@@ -1213,7 +1215,7 @@ class PacificSpeedClientApp {
     if (overdriveBadge) {
       if (ws.is_overdrive) {
         overdriveBadge.classList.remove('hidden');
-        overdriveBadge.textContent = `MACH 2.0 OVERDRIVE (${ws.overdrive_timer.toFixed(1)}s)`;
+        overdriveBadge.textContent = `TURBO CROQUETA · PUNTOS x2 (${ws.overdrive_timer.toFixed(1)} s)`;
       } else {
         overdriveBadge.classList.add('hidden');
       }
@@ -1224,11 +1226,11 @@ class PacificSpeedClientApp {
     const el = document.getElementById('ws-status-badge');
     if (!el) return;
     if (online) {
-      el.textContent = `DATALINK ACTIVE // ${this.roomCode}`;
+      el.textContent = `EN LÍNEA · SALA ${this.roomCode}`;
       el.classList.add('status-online');
       el.classList.remove('status-offline');
     } else {
-      el.textContent = 'LOCAL SIM STANDBY';
+      el.textContent = 'SIN CONEXIÓN · MODO LOCAL';
       el.classList.add('status-offline');
       el.classList.remove('status-online');
     }
@@ -1314,8 +1316,8 @@ class PacificSpeedClientApp {
           <td>0${idx + 1}</td>
           <td>${escapeHtml(entry.driver_name)} / ${escapeHtml(entry.navigator_name)}</td>
           <td style="color: var(--accent); font-weight: 700">${Number(entry.total_score).toLocaleString()}</td>
-          <td>${Number(entry.distance_traveled).toFixed(0)}m (${Number(entry.survival_time).toFixed(1)}s)</td>
-          <td>${entry.is_tournament ? '<span style="color:var(--accent);font-weight:700;">[TORNEO]</span>' : '<span style="color:var(--phosphor);">[PRACTICA]</span>'}</td>
+          <td>${Number(entry.distance_traveled).toFixed(0)} m · 🐾 ${rescuedCount(Number(entry.distance_traveled))}</td>
+          <td>${entry.is_tournament ? '<span style="color:var(--accent);font-weight:700;">TORNEO</span>' : '<span style="color:var(--phosphor);">PRÁCTICA</span>'}</td>
         </tr>
       `
       )
@@ -1359,7 +1361,7 @@ class PacificSpeedClientApp {
 
     if (pilotNameEl) pilotNameEl.textContent = this.pilotName;
     if (pilotRoleEl) {
-      pilotRoleEl.textContent = this.activeRole === 'driver' ? 'PILOTO // DRIVER' : 'NAVEGANTE // AWACS';
+      pilotRoleEl.textContent = this.activeRole === 'driver' ? 'PILOTO' : 'NAVEGANTE';
     }
     if (roomCodeEl) roomCodeEl.textContent = this.roomCode;
 
@@ -1367,30 +1369,30 @@ class PacificSpeedClientApp {
       const players = this.lobbyState?.players || [];
       const copilot = players.find((p) => p.player_id !== this.playerId);
       if (this.mode !== 'online') {
-        copilotStatusEl.textContent = this.mode === 'local_coop' ? 'OPERADOR LOCAL (TECLADO)' : 'IA AUXILIAR INTEGRADA';
+        copilotStatusEl.textContent = this.mode === 'local_coop' ? 'JUGADOR 2 (MISMO TECLADO)' : 'IA DE APOYO';
         copilotStatusEl.style.color = 'var(--cyan)';
       } else if (copilot) {
-        copilotStatusEl.textContent = `CONECTADO // ${copilot.name} (${copilot.role === 'driver' ? 'DRIVER' : 'NAV'})`;
+        copilotStatusEl.textContent = `CONECTADA · ${copilot.name} (${copilot.role === 'driver' ? 'PILOTO' : 'NAVEGANTE'})`;
         copilotStatusEl.style.color = 'var(--phosphor)';
       } else {
-        copilotStatusEl.textContent = 'EN ESPERA (IA AUXILIAR LISTA PARA VUELO)';
+        copilotStatusEl.textContent = 'EN ESPERA (LA IA TE ACOMPAÑA SI NO LLEGA)';
         copilotStatusEl.style.color = 'var(--accent)';
       }
     }
 
     if (this.isTournamentVerified && this.tournamentPass) {
       if (flightModeEl) {
-        flightModeEl.textContent = `TORNEO OFICIAL // PASE #${this.tournamentPass}`;
+        flightModeEl.textContent = `TORNEO OFICIAL · PASE ${this.tournamentPass}`;
         flightModeEl.style.color = '#ffb703';
       }
-      if (execBtn) execBtn.textContent = 'CONFIRMAR DESPEGUE (TORNEO OFICIAL)';
+      if (execBtn) execBtn.textContent = '¡SALIR AL RESCATE! (TORNEO)';
       if (tourneyGotoBtn) tourneyGotoBtn.style.display = 'none';
     } else {
       if (flightModeEl) {
         flightModeEl.textContent = 'PRACTICA LIBRE (100% GRATIS)';
         flightModeEl.style.color = 'var(--phosphor)';
       }
-      if (execBtn) execBtn.textContent = 'CONFIRMAR DESPEGUE (PRACTICA GRATIS)';
+      if (execBtn) execBtn.textContent = '¡SALIR AL RESCATE! (PRÁCTICA)';
       if (tourneyGotoBtn) tourneyGotoBtn.style.display = 'block';
     }
 
@@ -1590,10 +1592,15 @@ class PacificSpeedClientApp {
       const ws = this.currentWorldState.world_state;
       const finalScore = document.getElementById('gameover-score');
       const finalBreakdown = document.getElementById('gameover-breakdown');
+      const rescuedEl = document.getElementById('gameover-rescued');
+      const impactEl = document.getElementById('gameover-impact');
       if (finalScore) finalScore.textContent = ws.total_score.toLocaleString();
+      if (rescuedEl) rescuedEl.textContent = `${rescuedCount(ws.distance_traveled)}`;
       if (finalBreakdown) {
-        finalBreakdown.textContent = `DISTANCIA: ${ws.distance_traveled.toFixed(1)}M (x10) // TIEMPO EN VUELO: ${ws.survival_time.toFixed(1)}S (x50)`;
+        const phase = ws.difficulty_phase ?? 'Calentamiento';
+        finalBreakdown.textContent = `${ws.distance_traveled.toFixed(0)} m recorridos · ${ws.survival_time.toFixed(0)} s de patrulla · llegaste a: ${phase} (${weatherForPhase(phase).label.toLowerCase()})`;
       }
+      if (impactEl) impactEl.textContent = this.describeRealImpact();
     }
 
     this.renderLobbyPlayers();
@@ -1635,6 +1642,25 @@ class PacificSpeedClientApp {
     }
   }
 
+  /**
+   * End-of-match message tying the game to the real donation, using live server figures:
+   * what this pair's entry gave (tournament) and what everyone has raised so far.
+   */
+  private describeRealImpact(): string {
+    const status = this.activeTourneyStatus;
+    if (!status) return 'Cada partida ayuda a difundir la causa del refugio. ¡Compártela!';
+    const fee = status.tournament.entry_fee_usd;
+    const perPair = calculateTransactionSplits(fee, status.config, true).allocated_to_charity;
+    const total = status.tournament.accumulated_charity;
+    const together =
+      total > 0
+        ? `Entre todos llevamos $${total.toFixed(2)} para el refugio (≈ ${foodKgFromUsd(total)} kg de alimento).`
+        : 'El fondo del refugio recién empieza: ¡tu pareja puede ser la primera en aportar!';
+    return this.isTournamentVerified
+      ? `Tu inscripción aportó $${perPair.toFixed(2)} al refugio. ${together}`
+      : `Esta partida fue de práctica, gratis. ${together} Con el torneo, $${perPair.toFixed(2)} de cada inscripción van al refugio.`;
+  }
+
   /** "$11" for whole amounts, "$12.50" otherwise; `fixed` always shows cents. */
   private formatEntryFee(fixed = false): string {
     const fee = this.activeTourneyStatus?.tournament.entry_fee_usd ?? 10;
@@ -1671,6 +1697,16 @@ class PacificSpeedClientApp {
       const value = values[el.dataset.bind || ''];
       if (value !== undefined && el.textContent !== value) el.textContent = value;
     });
+
+    // Live shelter total in the hangar mission card
+    const charityTotal = data.tournament.accumulated_charity;
+    const charityLine = document.getElementById('mission-charity-line');
+    if (charityLine) {
+      charityLine.textContent =
+        charityTotal > 0
+          ? `Entre todos llevamos ${usd(charityTotal)} para el refugio ≈ ${foodKgFromUsd(charityTotal)} kg de alimento`
+          : 'El fondo del refugio recién empieza: ¡sé de las primeras parejas en aportar!';
+    }
   }
 }
 
