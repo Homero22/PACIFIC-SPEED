@@ -48,9 +48,22 @@ const DUCK_SFX = 0.7;
 const DUCK_MUSIC = 0.4;
 const DUCK_AMBIENCE = 0.7; // el fondo baja menos al hablar: antes casi desaparecía
 
-// Nivel base del fondo (ambiente de tormenta) y del motor: el fondo se oía demasiado bajo
-const AMBIENCE_LEVEL = 1.9;
+// Nivel del motor; el del fondo (ambiente de tormenta) lo elige el jugador con el botón FONDO
 const ENGINE_LEVEL = 1.25;
+
+export type AmbienceLevel = 'alto' | 'medio' | 'bajo' | 'off';
+const AMBIENCE_LEVELS: Record<AmbienceLevel, number> = { alto: 1.9, medio: 1.2, bajo: 0.6, off: 0 };
+const AMBIENCE_STORAGE_KEY = 'ps_ambience_level';
+
+function loadStoredAmbienceLevel(): AmbienceLevel {
+  try {
+    const stored = localStorage.getItem(AMBIENCE_STORAGE_KEY);
+    if (stored === 'alto' || stored === 'medio' || stored === 'bajo' || stored === 'off') return stored;
+  } catch {
+    // Storage bloqueado: usar el valor por defecto
+  }
+  return 'alto';
+}
 
 // Frecuencia de voces: tres niveles para no saturar (ver playNarratorCue)
 const VOICE_GAP_MS = 7000; // comentarios: silencio mínimo tras la última voz
@@ -112,6 +125,7 @@ export class AudioEngine {
 
   private isMuted = false;
   private voiceMode: VoiceMode = loadStoredVoiceMode();
+  private ambienceLevel: AmbienceLevel = loadStoredAmbienceLevel();
 
   // Banco de voces precargado: cada cue tiene 1..N variantes
   private voiceBuffers = new Map<VoiceCueId, AudioBuffer[]>();
@@ -186,7 +200,7 @@ export class AudioEngine {
     this.voiceBus = this.ctx.createGain();
     this.voiceBus.connect(this.compressor);
     this.ambienceBus = this.ctx.createGain();
-    this.ambienceBus.gain.value = AMBIENCE_LEVEL;
+    this.ambienceBus.gain.value = this.ambienceVolume();
     this.ambienceBus.connect(this.compressor);
 
     // Spatial Acoustic Reverb (Metallic Canyon / Cockpit Impulse)
@@ -369,6 +383,32 @@ export class AudioEngine {
       this.stopActiveVoice();
     }
     return this.voiceMode;
+  }
+
+  public getAmbienceLevel(): AmbienceLevel {
+    return this.ambienceLevel;
+  }
+
+  /** Botón FONDO: alto → medio → bajo → apagado. Se recuerda en el navegador. */
+  public cycleAmbienceLevel(): AmbienceLevel {
+    const order: AmbienceLevel[] = ['alto', 'medio', 'bajo', 'off'];
+    this.ambienceLevel = order[(order.indexOf(this.ambienceLevel) + 1) % order.length];
+    try {
+      localStorage.setItem(AMBIENCE_STORAGE_KEY, this.ambienceLevel);
+    } catch {
+      // Storage bloqueado: el nivel dura solo esta sesión
+    }
+    if (this.ctx && this.ambienceBus) {
+      const speaking = this.activeVoiceSource !== null;
+      const target = this.ambienceVolume() * (speaking ? DUCK_AMBIENCE : 1);
+      this.ambienceBus.gain.cancelScheduledValues(this.ctx.currentTime);
+      this.ambienceBus.gain.setTargetAtTime(target, this.ctx.currentTime, 0.1);
+    }
+    return this.ambienceLevel;
+  }
+
+  private ambienceVolume(): number {
+    return AMBIENCE_LEVELS[this.ambienceLevel];
   }
 
   public resetStreak(): void {
@@ -653,7 +693,7 @@ export class AudioEngine {
     const speaking = this.activeVoiceSource !== null;
     const targets: Array<[GainNode | null, number]> = [
       [this.turbineDuckGain, ENGINE_LEVEL * (speaking ? DUCK_TURBINE : 1)],
-      [this.ambienceBus, AMBIENCE_LEVEL * (speaking ? DUCK_AMBIENCE : 1)]
+      [this.ambienceBus, this.ambienceVolume() * (speaking ? DUCK_AMBIENCE : 1)]
     ];
     for (const [node, restore] of targets) {
       if (!node) continue;
@@ -868,7 +908,7 @@ export class AudioEngine {
       [this.turbineDuckGain, ENGINE_LEVEL * (active ? DUCK_TURBINE : 1)],
       [this.sfxBus, active ? DUCK_SFX : 1],
       [this.musicBus, active ? DUCK_MUSIC : 1],
-      [this.ambienceBus, AMBIENCE_LEVEL * (active ? DUCK_AMBIENCE : 1)]
+      [this.ambienceBus, this.ambienceVolume() * (active ? DUCK_AMBIENCE : 1)]
     ];
     for (const [node, target] of ramps) {
       if (!node) continue;

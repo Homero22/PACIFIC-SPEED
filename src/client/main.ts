@@ -20,7 +20,7 @@ import type {
   WsClientMessage,
   WsServerMessage
 } from '../shared/types.js';
-import { AudioEngine, type VoiceMode } from './audioEngine.js';
+import { AudioEngine, type AmbienceLevel, type VoiceMode } from './audioEngine.js';
 import { InputManager } from './inputManager.js';
 import { GameRenderer } from './renderer.js';
 
@@ -384,6 +384,20 @@ class PacificSpeedClientApp {
     voiceBtn?.addEventListener('click', () => {
       this.audio.init();
       voiceBtn.textContent = voiceLabels[this.audio.cycleVoiceMode()];
+    });
+
+    // Background (storm ambience) volume: alto → medio → bajo → apagado, remembered per browser
+    const ambienceLabels: Record<AmbienceLevel, string> = {
+      alto: 'FONDO: ALTO',
+      medio: 'FONDO: MEDIO',
+      bajo: 'FONDO: BAJO',
+      off: 'FONDO: OFF'
+    };
+    const ambienceBtn = document.getElementById('btn-ambience');
+    if (ambienceBtn) ambienceBtn.textContent = ambienceLabels[this.audio.getAmbienceLevel()];
+    ambienceBtn?.addEventListener('click', () => {
+      this.audio.init();
+      ambienceBtn.textContent = ambienceLabels[this.audio.cycleAmbienceLevel()];
     });
 
     // Master Audio Toggle
