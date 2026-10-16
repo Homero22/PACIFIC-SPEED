@@ -7,6 +7,7 @@
  * Presentation only: the server stays authoritative for collisions, score and pickups.
  */
 import { clamp, clampVector, TRACK_CONFIG } from '../shared/math.js';
+import { TRACK_RULES } from '../shared/rules.js';
 import type { ServerWorldStatePayload } from '../shared/types.js';
 
 export const TICK_MS = 1000 / 60;
@@ -79,6 +80,20 @@ export function extrapolateWorld(state: ServerWorldStatePayload, seconds: number
     );
     mechaY = clamp(mechaY + mecha.vy * dt, TRACK_CONFIG.MECHA_MIN_Y, TRACK_CONFIG.MECHA_MAX_Y);
     for (const o of obstacles) {
+      if (o.type === 'flank_cross') {
+        // Same rule as the simulation: fall, then sweep across at the vehicle's height
+        if (!o.crossing) {
+          o.y += (scroll + o.vy) * dt;
+          if (o.y >= mechaY) {
+            o.crossing = true;
+            o.y = mechaY;
+          }
+        } else {
+          o.x += (o.side_threat === 'left' ? 1 : -1) * TRACK_RULES.BRANCH_CROSS_SPEED * dt;
+          o.y = mechaY;
+        }
+        continue;
+      }
       o.x += o.vx * dt;
       o.y += (scroll + o.vy) * dt;
       if (o.side_threat === 'left' || o.side_threat === 'right') {

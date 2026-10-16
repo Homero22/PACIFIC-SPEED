@@ -68,6 +68,11 @@ const TRAIL_COLORS: Record<CosmeticLoadout['neonTrail'], string> = {
   solar_flare: '#ffb347' // Naranja
 };
 
+/** Left x for a label of `width` px starting at `x`, kept within [4, canvasWidth - 4]. */
+function clampLabelX(x: number, width: number, canvasWidth: number): number {
+  return Math.max(4, Math.min(x, canvasWidth - 4 - width));
+}
+
 export class GameRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -619,6 +624,47 @@ export class GameRenderer {
           ctx.fillStyle = pulse > 0.5 ? '#ffffff' : '#ffd9a8';
           ctx.fillRect(cx - 4, obs.y - 1, 8, 3);
         }
+      } else if (obs.type === 'flank_cross') {
+        // Crossing branch: its wind path runs down its edge, then across the whole road
+        const fromLeft = obs.side_threat === 'left';
+        const farEdge = fromLeft ? TRACK_CONFIG.ROAD_RIGHT + 30 : TRACK_CONFIG.ROAD_LEFT - 30;
+        ctx.save();
+        ctx.strokeStyle = role === 'navigator' ? 'rgba(255, 196, 90, 0.8)' : 'rgba(255, 196, 90, 0.4)';
+        ctx.lineWidth = role === 'navigator' ? 2.2 : 1.4;
+        ctx.setLineDash([4, 8]);
+        ctx.lineDashOffset = -now * 0.06;
+        ctx.beginPath();
+        ctx.moveTo(obs.x, obs.y);
+        if (!obs.crossing) ctx.lineTo(obs.x, this.smoothMechaY);
+        ctx.lineTo(farEdge, this.smoothMechaY);
+        ctx.stroke();
+        ctx.restore();
+
+        // A longer, leafier branch tumbling in the wind
+        ctx.save();
+        ctx.translate(obs.x, obs.y);
+        ctx.rotate((now * (obs.crossing ? 0.012 : 0.006) * (fromLeft ? 1 : -1)) % (Math.PI * 2));
+        ctx.strokeStyle = '#6b4426';
+        ctx.lineWidth = 4.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-22, 0);
+        ctx.lineTo(22, 0);
+        ctx.moveTo(6, 0);
+        ctx.lineTo(14, -10);
+        ctx.moveTo(-8, 0);
+        ctx.lineTo(-15, 9);
+        ctx.moveTo(-2, 0);
+        ctx.lineTo(4, 10);
+        ctx.stroke();
+        ctx.fillStyle = '#3f8a4b';
+        const crossLeaves: Array<[number, number]> = [[22, 0], [14, -11], [-15, 10], [-22, 0], [4, 11], [-6, -5]];
+        for (const [lx, ly] of crossLeaves) {
+          ctx.beginPath();
+          ctx.ellipse(lx, ly, 6.5, 3.8, lx * 0.05, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
       } else if (obs.type === 'flank_left' || obs.type === 'flank_right') {
         const isLeft = obs.type === 'flank_left';
         const targetFlankX = this.smoothMechaX + (isLeft ? -44 : 44);
@@ -713,7 +759,7 @@ export class GameRenderer {
       const distMeters = Math.max(0, Math.round((this.smoothMechaY - obs.y) / 23.5));
       const ahead = obs.y < this.smoothMechaY + 20;
       if (ahead && (role === 'navigator' || this.smoothMechaY - obs.y < 210)) {
-        this.drawTargetLockBox(obs.x, obs.y, obs.width + 14, obs.height + 14, obs.type, distMeters);
+        this.drawTargetLockBox(obs.x, obs.y, obs.width + 14, obs.height + 14, obs.type, distMeters, obs.side_threat);
       }
 
       ctx.restore();
@@ -726,7 +772,8 @@ export class GameRenderer {
     w: number,
     h: number,
     type: string,
-    distMeters: number
+    distMeters: number,
+    side?: 'left' | 'right'
   ): void {
     const { ctx } = this;
     const x = cx - w * 0.5;
@@ -764,12 +811,17 @@ export class GameRenderer {
         ? 'RAMA ← escudo [J]'
         : type === 'flank_right'
         ? 'RAMA → escudo [L]'
+        : type === 'flank_cross'
+        ? `RAMA ⇄ cruza · escudo ${side === 'left' ? '[J]' : '[L]'}`
         : type === 'barrier'
         ? `TRONCO · ${distMeters} m`
         : type === 'overdrive_cell'
         ? 'TURBO'
         : 'BOTIQUÍN';
-    ctx.fillText(tag, x, y - 4);
+    // Keep the label inside the canvas: near the right edge it grows leftwards
+    const tagWidth = ctx.measureText(tag).width;
+    const tagX = clampLabelX(x, tagWidth, TRACK_CONFIG.WORLD_WIDTH);
+    ctx.fillText(tag, tagX, y - 4);
     ctx.restore();
   }
 
