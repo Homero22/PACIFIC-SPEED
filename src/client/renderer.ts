@@ -625,7 +625,7 @@ export class GameRenderer {
           ctx.fillRect(cx - 4, obs.y - 1, 8, 3);
         }
       } else if (obs.type === 'flank_cross') {
-        // Crossing branch: its wind path runs down its edge, then across the whole road
+        // Crossing sign (flank_cross): its wind path runs down its edge, then across the whole road
         const fromLeft = obs.side_threat === 'left';
         const farEdge = fromLeft ? TRACK_CONFIG.ROAD_RIGHT + 30 : TRACK_CONFIG.ROAD_LEFT - 30;
         ctx.save();
@@ -640,30 +640,48 @@ export class GameRenderer {
         ctx.stroke();
         ctx.restore();
 
-        // A longer, leafier branch tumbling in the wind
+        // A "watch for animals" road sign torn off by the wind, spinning (same hitbox as a branch)
         ctx.save();
         ctx.translate(obs.x, obs.y);
         ctx.rotate((now * (obs.crossing ? 0.012 : 0.006) * (fromLeft ? 1 : -1)) % (Math.PI * 2));
-        ctx.strokeStyle = '#6b4426';
-        ctx.lineWidth = 4.5;
-        ctx.lineCap = 'round';
+        // Warm glow so it reads at a glance in the storm
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const signGlow = ctx.createRadialGradient(0, 0, 4, 0, 0, 34);
+        signGlow.addColorStop(0, 'rgba(255, 200, 40, 0.45)');
+        signGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = signGlow;
         ctx.beginPath();
-        ctx.moveTo(-22, 0);
-        ctx.lineTo(22, 0);
-        ctx.moveTo(6, 0);
-        ctx.lineTo(14, -10);
-        ctx.moveTo(-8, 0);
-        ctx.lineTo(-15, 9);
-        ctx.moveTo(-2, 0);
-        ctx.lineTo(4, 10);
+        ctx.arc(0, 0, 34, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        // Snapped piece of the post
+        ctx.fillStyle = '#8f969c';
+        ctx.fillRect(-2.5, 14, 5, 12);
+        // Yellow diamond with a black border
+        const half = 19;
+        ctx.beginPath();
+        ctx.moveTo(0, -half);
+        ctx.lineTo(half, 0);
+        ctx.lineTo(0, half);
+        ctx.lineTo(-half, 0);
+        ctx.closePath();
+        ctx.fillStyle = '#ffcc1a';
+        ctx.fill();
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = '#1b1b1b';
         ctx.stroke();
-        ctx.fillStyle = '#3f8a4b';
-        const crossLeaves: Array<[number, number]> = [[22, 0], [14, -11], [-15, 10], [-22, 0], [4, 11], [-6, -5]];
-        for (const [lx, ly] of crossLeaves) {
-          ctx.beginPath();
-          ctx.ellipse(lx, ly, 6.5, 3.8, lx * 0.05, 0, Math.PI * 2);
-          ctx.fill();
-        }
+        // Inner border line, like a real road sign
+        ctx.beginPath();
+        ctx.moveTo(0, -half + 4);
+        ctx.lineTo(half - 4, 0);
+        ctx.lineTo(0, half - 4);
+        ctx.lineTo(-half + 4, 0);
+        ctx.closePath();
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // Paw print pictogram
+        this.drawPaw(0, 1, 9, '#1b1b1b');
         ctx.restore();
       } else if (obs.type === 'flank_left' || obs.type === 'flank_right') {
         const isLeft = obs.type === 'flank_left';
@@ -812,7 +830,7 @@ export class GameRenderer {
         : type === 'flank_right'
         ? 'RAMA → escudo [L]'
         : type === 'flank_cross'
-        ? `RAMA ⇄ cruza · escudo ${side === 'left' ? '[J]' : '[L]'}`
+        ? `SEÑAL ⇄ cruza · escudo ${side === 'left' ? '[J]' : '[L]'}`
         : type === 'barrier'
         ? `TRONCO · ${distMeters} m`
         : type === 'overdrive_cell'
