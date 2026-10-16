@@ -23,6 +23,13 @@ import type {
 
 export const MAX_PLAYERS_PER_ROOM = 2;
 
+/** Simulation tick length (60 ticks per real second). */
+const TICK_MS = 1000 / 60;
+/** World state is sent every 2 ticks (30/s); clients smooth the frames in between. */
+export const BROADCAST_EVERY_TICKS = 2;
+/** After a long stall, catch up at most this many ticks instead of fast-forwarding. */
+const MAX_CATCH_UP_STEPS = 6;
+
 interface Seat {
   player_id: string;
   session_token: string;
@@ -34,6 +41,8 @@ interface Seat {
   ws: WebSocket | null;
   disconnectedAt: number | null;
   graceTimer: ReturnType<typeof setTimeout> | null;
+  /** seq of the last input applied for this seat (sent back so the driver can predict). */
+  lastInputSeq: number;
 }
 
 interface PendingRoleSwap {
@@ -117,6 +126,8 @@ export class RoomManager {
   // A tournament pass can only be active in one room at a time
   private passToRoom = new Map<string, string>();
   private intervals: ReturnType<typeof setInterval>[] = [];
+  private lastClockAt = 0;
+  private clockAccumulatorMs = 0;
   private readonly reconnectGraceMs: number;
   private readonly idleExpiryMs: number;
   private readonly hardIdleExpiryMs: number;
@@ -171,7 +182,8 @@ export class RoomManager {
     this.db = options.db;
 
     if (options.autoTick !== false) {
-      this.intervals.push(setInterval(() => this.tickAllRooms(), 1000 / 60));
+      this.lastClockAt = performance.now();
+      this.intervals.push(setInterval(() => this.runClock(), 1000 / 60));
       this.intervals.push(setInterval(() => this.expireIdleRooms(), 60_000));
     }
   }
@@ -392,7 +404,8 @@ export class RoomManager {
       cosmetics,
       ws: null,
       disconnectedAt: null,
-      graceTimer: null
+      graceTimer: null,
+      lastInputSeq: 0
     };
     room.players.set(seat.player_id, seat);
     if (!room.hostPlayerId) room.hostPlayerId = seat.player_id;
@@ -441,7 +454,7 @@ export class RoomManager {
     this.broadcastToRoom(room, { type: 'lobby_update', lobby });
     this.sendToClient(seat.ws, { type: 'leaderboard_update', entries: this.getLeaderboard() });
     if (room.lastStatus !== 'lobby') {
-      this.sendToClient(seat.ws, { type: 'world_state', payload: room.simulation.getWorldStatePayload() });
+      this.sendToClient(seat.ws, { type: 'world_state', payload: this.statePayloadFor(room) });
     }
   }
 
@@ -633,7 +646,8 @@ export class RoomManager {
     const { room, seat } = ctx;
     room.lastActivity = Date.now();
 
-    const mechaPos = room.simulation.getWorldStatePayload().entity_positions.mecha;
+    // Cheap read: building the full payload for every input (60/s per player) was wasted work
+    const mechaPos = room.simulation.getMechaPosition();
     const { sanitized } = antiCheatEngine.sanitizeClientInput(
       input,
       mechaPos.x,
@@ -645,6 +659,8 @@ export class RoomManager {
       player_id: seat.player_id,
       role: seat.role
     });
+    // The socket delivers in order, so the latest seq is the highest (it restarts on reconnect)
+    seat.lastInputSeq = sanitized.seq;
   }
 
   public handleWatchRewardedAd(ws: WebSocket): void {
@@ -666,37 +682,77 @@ export class RoomManager {
     ctx.room.simulation.declineRewardedAd();
   }
 
-  public tickAllRooms(): void {
+  /**
+   * Fixed-timestep clock: advances the simulation by the real time elapsed (60 ticks per
+   * real second) instead of trusting setInterval, which fires late and made the game drift.
+   */
+  private runClock(): void {
+    const now = performance.now();
+    this.clockAccumulatorMs += now - this.lastClockAt;
+    this.lastClockAt = now;
+    let steps = Math.floor(this.clockAccumulatorMs / TICK_MS);
+    if (steps <= 0) return;
+    this.clockAccumulatorMs -= steps * TICK_MS;
+    if (steps > MAX_CATCH_UP_STEPS) {
+      // The process was blocked for a long time: skip ahead instead of fast-forwarding
+      steps = MAX_CATCH_UP_STEPS;
+      this.clockAccumulatorMs = 0;
+    }
+    this.tickAllRooms(steps);
+  }
+
+  /**
+   * Advances every running room by `steps` ticks. The state is sent every
+   * BROADCAST_EVERY_TICKS ticks (30 per second) — clients smooth in between — and always
+   * right away when the match status changes.
+   */
+  public tickAllRooms(steps = 1): void {
     for (const room of this.rooms.values()) {
       const status = room.simulation.getStatus();
       if (status === 'running') {
         const connected = Array.from(room.players.values()).filter((p) => p.ws !== null);
         // Nobody watching: pause until someone reconnects.
         if (connected.length === 0) continue;
-        if (!connected.some((p) => p.role === 'driver')) {
-          room.simulation.updateBotCoPilot('driver');
-        }
-        if (!connected.some((p) => p.role === 'navigator')) {
-          room.simulation.updateBotCoPilot('navigator');
+
+        let statePayload: ReturnType<GameSimulation['step']> | null = null;
+        let statusChanged = false;
+        const tickBefore = room.simulation.getTick();
+        for (let i = 0; i < steps && room.simulation.getStatus() === 'running'; i++) {
+          if (!connected.some((p) => p.role === 'driver')) {
+            room.simulation.updateBotCoPilot('driver');
+          }
+          if (!connected.some((p) => p.role === 'navigator')) {
+            room.simulation.updateBotCoPilot('navigator');
+          }
+          room.simulation.step(1 / 60);
+          if (room.simulation.getStatus() !== room.lastStatus) {
+            statusChanged = true;
+            break;
+          }
         }
 
-        const statePayload = room.simulation.step(1 / 60);
-        this.broadcastToRoom(room, {
-          type: 'world_state',
-          payload: statePayload
-        });
+        // Send whenever a broadcast tick was crossed (several steps can run in one call)
+        const crossed =
+          Math.floor(room.simulation.getTick() / BROADCAST_EVERY_TICKS) > Math.floor(tickBefore / BROADCAST_EVERY_TICKS);
+        if (statusChanged || crossed) {
+          statePayload = this.statePayloadFor(room);
+          this.broadcastToRoom(room, {
+            type: 'world_state',
+            payload: statePayload
+          });
+        }
 
-        const nextStatus = statePayload.world_state.status;
+        const nextStatus = room.simulation.getStatus();
         if (nextStatus !== room.lastStatus) {
           room.lastStatus = nextStatus;
           this.broadcastLobby(room);
 
           if (nextStatus === 'gameover' && !room.scoreRecorded) {
-            this.recordRoomScore(room, statePayload);
+            this.recordRoomScore(room, statePayload ?? this.statePayloadFor(room));
           }
         }
       } else if (status === 'gameover' && !room.scoreRecorded) {
-        const statePayload = room.simulation.getWorldStatePayload();
+        const statePayload = this.statePayloadFor(room);
         room.lastStatus = 'gameover';
         this.recordRoomScore(room, statePayload);
         this.broadcastToRoom(room, {
@@ -706,6 +762,15 @@ export class RoomManager {
         this.broadcastLobby(room);
       }
     }
+  }
+
+  /** World state plus the last input seq applied for each seat (for client prediction). */
+  private statePayloadFor(room: GameRoom): ReturnType<GameSimulation['getWorldStatePayload']> {
+    const payload = room.simulation.getWorldStatePayload();
+    const acks: Record<string, number> = {};
+    for (const seat of room.players.values()) acks[seat.player_id] = seat.lastInputSeq;
+    payload.input_acks = acks;
+    return payload;
   }
 
   public async handleSetTournamentPass(ws: WebSocket, passCodeRaw: string): Promise<void> {

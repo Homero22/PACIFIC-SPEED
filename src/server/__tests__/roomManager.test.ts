@@ -452,6 +452,51 @@ describe('RoomManager — room lifecycle', () => {
     });
   });
 
+  describe('network smoothness', () => {
+    const worldStates = (s: FakeSocket) => s.sent.filter((m) => m.type === 'world_state') as Array<Extract<WsServerMessage, { type: 'world_state' }>>;
+
+    it('advances several ticks per call (real clock) and sends the state every 2 ticks', () => {
+      const a = create();
+      rm.startMatch(a.s.ws);
+      a.s.sent = [];
+      rm.tickAllRooms(3);
+      const tickAfter3 = (rm as any).rooms.get(a.code).simulation.getTick();
+      expect(tickAfter3).toBe(3);
+      for (let i = 0; i < 57; i++) rm.tickAllRooms();
+      // 60 ticks → ~30 states (status changes may add one)
+      expect(worldStates(a.s).length).toBeGreaterThanOrEqual(29);
+      expect(worldStates(a.s).length).toBeLessThanOrEqual(31);
+    });
+
+    it('keeps sending 30 states per second when the clock runs two ticks at once from an odd tick', () => {
+      const a = create();
+      rm.startMatch(a.s.ws);
+      rm.tickAllRooms(1); // now on an odd tick
+      a.s.sent = [];
+      for (let i = 0; i < 30; i++) rm.tickAllRooms(2); // 60 ticks, always ending on odd ticks
+      expect(worldStates(a.s).length).toBeGreaterThanOrEqual(29);
+    });
+
+    it('acknowledges the last input applied for each player', () => {
+      const a = create();
+      const b = join(a.code);
+      rm.startMatch(a.s.ws);
+      rm.startMatch(b.ws);
+      const driverId = a.joined.player_id;
+      rm.handlePlayerInput(a.s.ws, {
+        player_id: driverId,
+        role: 'driver',
+        input_vector: { x: 1, y: 0 },
+        action_flags: { shield_left: false, shield_right: false, radar_pulse: false, ping_lane: null },
+        timestamp: Date.now(),
+        seq: 41
+      });
+      rm.tickAllRooms(2);
+      const last = worldStates(b).pop()!;
+      expect(last.payload.input_acks?.[driverId]).toBe(41);
+    });
+  });
+
   describe('expiry', () => {
     it('drops rooms with nobody connected after 30 min of inactivity', () => {
       const a = create();

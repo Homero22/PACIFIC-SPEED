@@ -111,6 +111,16 @@ export class GameSimulation {
     return this.trackSeed;
   }
 
+  /** Current simulation tick (cheap; does not build the full payload). */
+  public getTick(): number {
+    return this.tickCount;
+  }
+
+  /** Vehicle position (cheap; does not build the full payload). */
+  public getMechaPosition(): { x: number; y: number } {
+    return { x: this.mechaX, y: this.mechaY };
+  }
+
   /**
    * Generates the track of a seed up to `untilMeters` without playing it: the exact waves a
    * crew will meet, meter by meter (used by tests and to audit a tournament track).
