@@ -97,10 +97,10 @@ const ROOM_ERROR_MESSAGES: Record<RoomErrorCode, string> = {
 };
 
 export const COMMS_PRESET_MAP: Record<TacticalCommsPreset, { code: string; label: string }> = {
-  bogey_alert: { code: 'TAC-01 // ALERTA OBSTACULO', label: '[ALERTA] OBSTACULO AL FRENTE - ACTIVA ESCUDO LATERAL' },
-  nice_deflect: { code: 'TAC-02 // INTERCEPCION', label: '[ESCUDO] DESVIO EXITOSO - IMPACTO ANULADO' },
-  engage_overdrive: { code: 'TAC-03 // PROPULSION', label: '[TURBO] ACTIVA POSQUEMADOR AHORA' },
-  mayday_panic: { code: 'TAC-04 // CRITICO', label: '[PELIGRO] PERDIDA DE SUSTENTACION - ACELERA' }
+  bogey_alert: { code: 'AVISO', label: '¡Cuidado, viene una rama! Sube el escudo' },
+  nice_deflect: { code: 'BIEN', label: '¡Bien bloqueado! La carga está a salvo' },
+  engage_overdrive: { code: 'TURBO', label: '¡Ve por el hueso dorado: turbo croqueta!' },
+  mayday_panic: { code: 'PELIGRO', label: '¡Acelera, que el motor se apaga!' }
 };
 
 export function generateRoomCode(): string {

@@ -3,43 +3,44 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>PACIFIC SPEED: OVERDRIVE // TACTICAL STEALTH EDITION</title>
+    <title>Patrulla Huellitas · Pacific Speed</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Orbitron:wght@600;800;900&family=Rajdhani:wght@600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@600;700;800;900&display=swap"
       rel="stylesheet"
     />
     <style>
       :root {
-        --bg-obsidian: #020611;
-        --panel-glass: rgba(8, 17, 32, 0.94);
-        --accent: #ffb703;
-        --accent-glow: rgba(255, 183, 3, 0.4);
-        --phosphor: #00ff9d;
-        --phosphor-glow: rgba(0, 255, 157, 0.35);
-        --cyan: #00f0ff;
-        --cyan-glow: rgba(0, 240, 255, 0.35);
-        --danger: #ff2a54;
-        --text-primary: #f8fafc;
-        --text-muted: #94a3b8;
-        --border-glass: rgba(255, 255, 255, 0.16);
-        --font-display: 'Orbitron', sans-serif;
-        --font-tactical: 'JetBrains Mono', monospace;
-        --font-ui: 'Rajdhani', sans-serif;
+        /* Patrulla de Rescate: warm night palette (amber lamps, teal shields, soft green care) */
+        --bg-obsidian: #120f16;
+        --panel-glass: rgba(26, 21, 30, 0.94);
+        --accent: #ffb347;
+        --accent-glow: rgba(255, 179, 71, 0.4);
+        --phosphor: #7bd88f;
+        --phosphor-glow: rgba(123, 216, 143, 0.35);
+        --cyan: #2ec4b6;
+        --cyan-glow: rgba(46, 196, 182, 0.35);
+        --danger: #ff5a5f;
+        --text-primary: #fbf6ee;
+        --text-muted: #b8aca0;
+        --border-glass: rgba(255, 236, 214, 0.16);
+        --font-display: 'Fredoka', 'Nunito', sans-serif;
+        --font-tactical: 'Nunito', system-ui, sans-serif;
+        --font-ui: 'Nunito', system-ui, sans-serif;
       }
 
       body[data-hud-theme='tactical_amber'] {
-        --accent: #ffb703;
-        --accent-glow: rgba(255, 183, 3, 0.4);
+        --accent: #ffb347;
+        --accent-glow: rgba(255, 179, 71, 0.4);
       }
       body[data-hud-theme='neural_green'] {
-        --accent: #00ff9d;
-        --accent-glow: rgba(0, 255, 157, 0.4);
+        --accent: #7bd88f;
+        --accent-glow: rgba(123, 216, 143, 0.4);
       }
       body[data-hud-theme='abyssal_violet'] {
-        --accent: #00f0ff;
-        --accent-glow: rgba(0, 240, 255, 0.4);
+        --accent: #2ec4b6;
+        --accent-glow: rgba(46, 196, 182, 0.4);
       }
 
       * {
@@ -68,8 +69,10 @@
 
       body {
         background-color: var(--bg-obsidian);
-        background-image: linear-gradient(rgba(2, 6, 17, 0.76), rgba(2, 5, 14, 0.94)),
-          url('/assets/hangar_hero.jpg');
+        /* Night sky over the shelter, warm lights near the horizon (illustration pending: docs/PLAN_TEMA_RESCATE.md) */
+        background-image: radial-gradient(ellipse at 50% 115%, rgba(255, 160, 80, 0.32), transparent 60%),
+          radial-gradient(ellipse at 15% 0%, rgba(46, 196, 182, 0.12), transparent 50%),
+          linear-gradient(180deg, #17121f 0%, #120f16 70%, #1b130f 100%);
         background-size: cover;
         background-position: center;
         color: var(--text-primary);
@@ -133,6 +136,31 @@
         pointer-events: auto;
         display: flex;
         gap: 6px;
+      }
+
+      /* Top row: the four counters share the width and the buttons wrap below them,
+         so nothing spills out of the 640px game column (or the 520px 9:16 frame). */
+      .hud-top > .hud-row:first-child {
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .hud-top > .hud-row:first-child > .metric-box {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+      .hud-top > .hud-row:first-child .metric-label {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .hud-top > .hud-row:first-child > .hud-interactive {
+        width: 100%;
+      }
+      .hud-interactive .btn {
+        flex: 1 1 0;
+        font-size: 11px;
+        padding: 5px 4px;
+        white-space: nowrap;
       }
 
       .metric-box {
@@ -336,8 +364,10 @@
         z-index: 50;
         width: 100vw;
         height: 100vh;
-        background: linear-gradient(180deg, rgba(2, 6, 14, 0.8) 0%, rgba(2, 5, 12, 0.96) 100%),
-          url('/assets/hangar_hero.jpg');
+        /* Night sky over the shelter (illustration pending: docs/PLAN_TEMA_RESCATE.md) */
+        background: radial-gradient(ellipse at 50% 115%, rgba(255, 160, 80, 0.3), transparent 60%),
+          radial-gradient(ellipse at 15% 0%, rgba(46, 196, 182, 0.12), transparent 50%),
+          linear-gradient(180deg, rgba(23, 18, 31, 0.97) 0%, rgba(18, 15, 22, 0.98) 70%, rgba(27, 19, 15, 0.98) 100%);
         background-size: cover;
         background-position: center;
         display: flex;
@@ -567,6 +597,27 @@
         display: grid;
         grid-template-columns: repeat(3, 1fr);
         gap: 10px;
+      }
+
+      @media (max-width: 600px) {
+        /* Phone HUD: smaller counters and buttons */
+        .hud-top > .hud-row:first-child > .metric-box {
+          padding: 4px 6px;
+        }
+        .metric-label {
+          font-size: 9px;
+          letter-spacing: 0.2px;
+        }
+        .metric-value {
+          font-size: 15px;
+        }
+        .hud-interactive .btn {
+          font-size: 10px;
+          padding: 4px 2px;
+        }
+        .cosmetics-grid {
+          grid-template-columns: 1fr;
+        }
       }
 
       .cosmetic-field label {
@@ -992,38 +1043,42 @@
       <header class="hud-top">
         <div class="hud-row">
           <div class="metric-box">
-            <span class="metric-label">MISSION SCORE</span>
+            <span class="metric-label">PUNTOS</span>
             <span id="hud-score" class="metric-value">0</span>
           </div>
           <div class="metric-box">
-            <span class="metric-label">AIRSPEED (MIN 50)</span>
-            <span id="hud-speed" class="metric-value">100 KT</span>
+            <span class="metric-label">VELOCIDAD</span>
+            <span id="hud-speed" class="metric-value">100</span>
           </div>
           <div class="metric-box">
-            <span class="metric-label">RANGE</span>
-            <span id="hud-distance" class="metric-value">0 M</span>
+            <span class="metric-label">RECORRIDO</span>
+            <span id="hud-distance" class="metric-value">0 m</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-label">🐾 RESCATES</span>
+            <span id="hud-rescued" class="metric-value">0</span>
           </div>
           <div class="hud-interactive">
             <button id="btn-record-clip" class="btn" title="Grabar video vertical 9:16 (.webm) directo para TikTok/Reels">
-              REC CLIP
+              GRABAR CLIP
             </button>
             <button id="btn-tiktok-mode" class="btn" title="Encuadre 9:16 para TikTok / Reels">
-              9:16 STREAM
+              9:16
             </button>
-            <button id="btn-hud-swap-role" class="btn" title="Alternar asiento Driver / Navigator">
-              SWAP
+            <button id="btn-hud-swap-role" class="btn" title="Cambiar entre piloto y navegante">
+              CAMBIAR ROL
             </button>
             <button id="btn-voice-mode" class="btn" title="Narrador: voz natural / radio suave / apagado">
               VOZ: NATURAL
             </button>
-            <button id="btn-mute-audio" class="btn">SFX: ON</button>
+            <button id="btn-mute-audio" class="btn">SONIDO: ON</button>
           </div>
         </div>
 
         <div class="bars-row">
           <div>
             <div class="bar-label">
-              <span>HULL ARMOR INTEGRITY</span>
+              <span>SALUD DEL VEHÍCULO</span>
               <span id="hud-integrity-text">100%</span>
             </div>
             <div class="bar-container">
@@ -1032,7 +1087,7 @@
           </div>
           <div>
             <div class="bar-label">
-              <span>CAPACITOR / FLANK SHIELDS</span>
+              <span>ENERGÍA DE ESCUDOS</span>
               <span id="hud-shield-text">100%</span>
             </div>
             <div class="bar-container">
@@ -1042,16 +1097,16 @@
         </div>
 
         <div class="hud-row">
-          <span id="hud-role-badge" class="role-banner">PILOT A // STEALTH DRIVER [LOW-VIS CONE]</span>
-          <span id="hud-overdrive-badge" class="overdrive-pill hidden">MACH 2.0 OVERDRIVE</span>
+          <span id="hud-role-badge" class="role-banner">PILOTO · MANEJAS EL VEHÍCULO</span>
+          <span id="hud-overdrive-badge" class="overdrive-pill hidden">TURBO CROQUETA</span>
         </div>
 
         <!-- Live Holographic Comms Reactions Bar -->
         <div class="comms-strip">
-          <button class="comms-btn" data-comms="bogey_alert">ALERTA OBSTACULO</button>
-          <button class="comms-btn" data-comms="nice_deflect">ESCUDO DEFLECTOR</button>
-          <button class="comms-btn" data-comms="engage_overdrive">TURBO ACELERADOR</button>
-          <button class="comms-btn" data-comms="mayday_panic">VELOCIDAD CRITICA</button>
+          <button class="comms-btn" data-comms="bogey_alert">¡CUIDADO, RAMA!</button>
+          <button class="comms-btn" data-comms="nice_deflect">¡BIEN BLOQUEADO!</button>
+          <button class="comms-btn" data-comms="engage_overdrive">¡VE POR EL TURBO!</button>
+          <button class="comms-btn" data-comms="mayday_panic">¡ACELERA!</button>
         </div>
       </header>
 
@@ -1062,15 +1117,15 @@
 
       <!-- Bottom Touch & Tactical Controls -->
       <footer class="hud-bottom">
-        <div id="touch-joystick-zone" class="joystick-zone" title="Driver Flight Stick (WASD / Flechas)">
+        <div id="touch-joystick-zone" class="joystick-zone" title="Volante del piloto (WASD / flechas)">
           <div id="touch-joystick-knob" class="joystick-knob"></div>
         </div>
 
         <div class="navigator-buttons">
-          <button id="btn-touch-shield-left" class="tac-btn">SHIELD L [J]</button>
-          <button id="btn-touch-shield-right" class="tac-btn">SHIELD R [L]</button>
-          <button id="btn-touch-ping" class="tac-btn">VECTOR PING [K]</button>
-          <button id="btn-touch-radar" class="tac-btn">FLIR SCAN [SPACE]</button>
+          <button id="btn-touch-shield-left" class="tac-btn">ESCUDO IZQ [J]</button>
+          <button id="btn-touch-shield-right" class="tac-btn">ESCUDO DER [L]</button>
+          <button id="btn-touch-ping" class="tac-btn">AVISAR CARRIL [K]</button>
+          <button id="btn-touch-radar" class="tac-btn">RADAR [ESPACIO]</button>
         </div>
       </footer>
 
@@ -1080,8 +1135,8 @@
           <!-- Hangar Header -->
           <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid rgba(255, 255, 255, 0.12); padding-bottom: 10px;">
             <div>
-              <h1 class="game-title" style="font-size: 22px;">PACIFIC SPEED // PATRULLA DE RESCATE</h1>
-              <p class="subtitle" style="font-size: 13px;">MISIÓN SOLIDARIA &bull; MODO PRÁCTICA Y TORNEO OFICIAL</p>
+              <h1 class="game-title" style="font-size: 24px;">🐾 Patrulla Huellitas</h1>
+              <p class="subtitle" style="font-size: 13px;">Pacific Speed &bull; maneja en pareja y rescata animalitos en la tormenta</p>
             </div>
             <span id="ws-status-badge" class="status-badge status-offline">CONECTANDO...</span>
           </div>
@@ -1095,7 +1150,7 @@
               TORNEO (<span data-bind="fee">$10</span>)
             </button>
             <button class="hangar-tab-btn" data-hangar-tab="hangar-tab-chassis">
-              NAVE
+              VEHÍCULO
             </button>
             <button class="hangar-tab-btn" data-hangar-tab="hangar-tab-leaderboard">
               RANKING
@@ -1127,9 +1182,9 @@
 
                 <!-- 02: Callsign & Room -->
                 <div class="section-box" style="padding: 10px 14px; gap: 8px;">
-                  <span class="section-title">PILOTO Y SALA ONLINE</span>
+                  <span class="section-title">TU NOMBRE Y SALA</span>
                   <div class="input-row" style="gap: 6px;">
-                    <input id="pilot-name-input" type="text" placeholder="CALLSIGN (EJ: RAPTOR)" maxlength="16" style="flex: 1.2; padding: 9px 12px; font-size: 14px;" />
+                    <input id="pilot-name-input" type="text" placeholder="TU NOMBRE (EJ: LUNA)" maxlength="16" style="flex: 1.2; padding: 9px 12px; font-size: 14px;" />
                     <input id="room-code-input" type="text" placeholder="SALA (6)" maxlength="12" autocapitalize="characters" spellcheck="false" style="flex: 0.9; padding: 9px 12px; font-size: 14px; text-transform: uppercase;" />
                     <button id="btn-join-room" class="btn" style="padding: 9px 14px; font-size: 13px;">UNIRSE</button>
                   </div>
@@ -1146,21 +1201,21 @@
 
                 <!-- 03: Roles -->
                 <div class="section-box" style="padding: 10px 14px; gap: 8px;">
-                  <span class="section-title">ELIGE TU ROL EN CABINA</span>
+                  <span class="section-title">ELIGE TU ROL EN LA PATRULLA</span>
                   <div class="role-cards-grid" style="gap: 8px;">
                     <div id="btn-role-driver" class="role-card-btn active" style="padding: 10px 12px; gap: 4px;">
                       <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span class="role-card-title" style="font-size: 15px;">PILOTO</span>
                         <span class="role-tag-pill" style="margin: 0; padding: 3px 6px; font-size: 11px;">WASD</span>
                       </div>
-                      <p class="role-card-desc" style="font-size: 12.5px; margin: 0;">Timón, velocidad y maniobras evasivas</p>
+                      <p class="role-card-desc" style="font-size: 12.5px; margin: 0;">Maneja el vehículo y esquiva los troncos</p>
                     </div>
                     <div id="btn-role-navigator" class="role-card-btn" style="padding: 10px 12px; gap: 4px;">
                       <div style="display: flex; justify-content: space-between; align-items: center;">
                         <span class="role-card-title" style="font-size: 15px;">NAVEGANTE</span>
                         <span class="role-tag-pill" style="margin: 0; padding: 3px 6px; font-size: 11px;">ESPACIO</span>
                       </div>
-                      <p class="role-card-desc" style="font-size: 12.5px; margin: 0;">Escudos deflectores y radar táctico</p>
+                      <p class="role-card-desc" style="font-size: 12.5px; margin: 0;">Escudos contra ramas y radar para avisar carriles</p>
                     </div>
                   </div>
                 </div>
@@ -1175,7 +1230,10 @@
                     <span class="intel-badge" style="font-size: 11px; padding: 2px 7px;">MISIÓN SOLIDARIA</span>
                   </div>
                   <p style="font-size: 13px; color: var(--text-primary); line-height: 1.4; margin: 0;">
-                    15% de cada inscripción apoya el rescate y alimento animal en refugios.
+                    Cada 120 m un peludito espera en la orilla: pasa a su lado y sube a bordo. El <strong data-bind="pct-charity">15%</strong> de cada inscripción va al refugio.
+                  </p>
+                  <p id="mission-charity-line" style="font-size: 13px; color: var(--accent); font-weight: 800; margin: 0;">
+                    Cargando el fondo del refugio…
                   </p>
                   <div style="display: flex; gap: 12px; font-size: 12px; font-weight: 700; color: var(--accent); margin-top: 2px;">
                     <span style="color: var(--phosphor);">&bull; PUNTOS DOBLES EN PAREJA</span>
@@ -1185,14 +1243,14 @@
 
                 <!-- Cabin Seats Status -->
                 <div class="section-box" style="padding: 10px 14px; gap: 8px;">
-                  <span class="section-title">TRIPULACIÓN ACTIVA</span>
+                  <span class="section-title">TU PATRULLA</span>
                   <div id="lobby-players-list" style="display: flex; flex-direction: column; gap: 6px;"></div>
                 </div>
 
                 <!-- Hero Launch CTA Action Button -->
                 <button id="btn-start-match" class="btn btn-primary btn-launch-hero" style="padding: 14px 20px !important;">
-                  <span style="font-size: 18px; letter-spacing: 1px;">DESPEGAR AHORA</span>
-                  <span class="launch-hotkey-hint" style="font-size: 11.5px; opacity: 0.85;">[ SALIR A PISTA CON TU TRIPULACIÓN ]</span>
+                  <span style="font-size: 19px; letter-spacing: 0.5px;">¡SALIR AL RESCATE!</span>
+                  <span class="launch-hotkey-hint" style="font-size: 11.5px; opacity: 0.85;">con tu pareja de patrulla</span>
                 </button>
               </div>
             </div>
@@ -1284,59 +1342,59 @@
             <div class="hangar-chassis-split">
               <div class="hangar-col">
                 <div class="section-box">
-                  <span class="section-title">PERSONALIZACION DE AVATAR Y SISTEMAS</span>
+                  <span class="section-title">PERSONALIZA TU VEHÍCULO DE RESCATE</span>
                   <div class="cosmetics-grid" style="margin-top: 8px;">
                     <div class="cosmetic-field">
-                      <label for="select-paint">ESPECIFICACION DE BLINDAJE</label>
+                      <label for="select-paint">COLOR DEL VEHÍCULO</label>
                       <select id="select-paint">
-                        <option value="crimson_jaeger">Crimson Raptor</option>
-                        <option value="cyber_gold">Gold Vanguard</option>
-                        <option value="phantom_stealth">Phantom Nighthawk</option>
+                        <option value="crimson_jaeger">Rojo rescate</option>
+                        <option value="cyber_gold">Dorado huellita</option>
+                        <option value="phantom_stealth">Verde refugio</option>
                       </select>
                     </div>
                     <div class="cosmetic-field">
-                      <label for="select-trail">ESTELA DE POSTQUEMADOR</label>
+                      <label for="select-trail">ESTELA DE AGUA</label>
                       <select id="select-trail">
-                        <option value="plasma_cyan">Ion Cyan</option>
-                        <option value="overdrive_magenta">Thermal Magenta</option>
-                        <option value="solar_flare">Mach Afterburner</option>
+                        <option value="plasma_cyan">Turquesa</option>
+                        <option value="overdrive_magenta">Rosa</option>
+                        <option value="solar_flare">Naranja</option>
                       </select>
                     </div>
                     <div class="cosmetic-field">
-                      <label for="select-theme">PALETA DE AVIONICA HUD</label>
+                      <label for="select-theme">COLOR DEL PANEL</label>
                       <select id="select-theme">
-                        <option value="tactical_amber">Mil-Spec Amber</option>
-                        <option value="neural_green">NVG Phosphor Green</option>
-                        <option value="abyssal_violet">Deep Telemetry Cyan</option>
+                        <option value="tactical_amber">Ámbar farol</option>
+                        <option value="neural_green">Verde cuidado</option>
+                        <option value="abyssal_violet">Turquesa escudo</option>
                       </select>
                     </div>
                   </div>
 
                   <button id="btn-save-loadout" class="btn btn-primary" style="margin-top: 12px; width: 100%;">
-                    CONFIRMAR Y APLICAR EQUIPAMIENTO
+                    GUARDAR MI VEHÍCULO
                   </button>
                 </div>
               </div>
 
               <div class="hangar-col">
                 <div class="section-box" style="background: rgba(6, 12, 22, 0.9);">
-                  <span class="section-title" style="color: var(--cyan);">FICHA TECNICA DE LA NAVE DE RESCATE</span>
+                  <span class="section-title" style="color: var(--cyan);">FICHA DEL VEHÍCULO DE RESCATE</span>
                   <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 8px; font-size: 13.5px;">
                     <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px;">
-                      <span style="color: var(--text-muted);">ESTRUCTURA DE CHASIS:</span>
-                      <strong style="color: var(--text-primary);">COMPUESTO DE TITANIO AERODINAMICO</strong>
+                      <span style="color: var(--text-muted);">CAPACIDAD:</span>
+                      <strong style="color: var(--text-primary);">1 PELUDITO CADA 120 M</strong>
                     </div>
                     <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px;">
-                      <span style="color: var(--text-muted);">VELOCIDAD CRUCERO:</span>
-                      <strong style="color: var(--accent);">250 KT (VECTORIAL MAX)</strong>
+                      <span style="color: var(--text-muted);">VELOCIDAD MÁXIMA:</span>
+                      <strong style="color: var(--accent);">250</strong>
                     </div>
                     <div style="display: flex; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px;">
-                      <span style="color: var(--text-muted);">BARRERA DE DEFLEXION:</span>
-                      <strong style="color: #00f0ff;">100 MW ESCUDO DE IONES</strong>
+                      <span style="color: var(--text-muted);">ESCUDOS:</span>
+                      <strong style="color: var(--cyan);">BURBUJA PROTECTORA (IZQ / DER)</strong>
                     </div>
                     <div style="display: flex; justify-content: space-between; padding-bottom: 4px;">
-                      <span style="color: var(--text-muted);">TURBO-POSTQUEMADOR:</span>
-                      <strong style="color: #ff0055;">MACH 2.0 OVERDRIVE (4.0s)</strong>
+                      <span style="color: var(--text-muted);">TURBO CROQUETA:</span>
+                      <strong style="color: var(--accent);">PUNTOS DOBLES POR 6 S</strong>
                     </div>
                   </div>
                 </div>
@@ -1348,24 +1406,24 @@
           <div id="hangar-tab-leaderboard" class="hangar-panel">
             <div class="section-box">
               <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span class="section-title">REGISTRO GLOBAL DE ESCUADRONES</span>
-                <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">CLASIFICACION OFICIAL EN VIVO</span>
+                <span class="section-title">SALÓN DE LA FAMA · PATRULLAS</span>
+                <span style="font-size: 13px; color: var(--text-muted); font-weight: 600;">CLASIFICACIÓN EN VIVO</span>
               </div>
 
               <!-- Filter Buttons -->
               <div class="input-row" style="margin-top: 8px;">
-                <button id="btn-lb-filter-all" class="btn active" style="flex: 1;">TODOS LOS VUELOS</button>
-                <button id="btn-lb-filter-tourney" class="btn" style="flex: 1; border-color: var(--accent);">PODIO TORNEO OFICIAL</button>
-                <button id="btn-lb-filter-practice" class="btn" style="flex: 1; border-color: var(--phosphor);">RECORDS DE PRACTICA</button>
+                <button id="btn-lb-filter-all" class="btn active" style="flex: 1;">TODAS</button>
+                <button id="btn-lb-filter-tourney" class="btn" style="flex: 1; border-color: var(--accent);">TORNEO OFICIAL</button>
+                <button id="btn-lb-filter-practice" class="btn" style="flex: 1; border-color: var(--phosphor);">PRÁCTICA</button>
               </div>
 
               <table class="leaderboard-table" style="margin-top: 10px;">
                 <thead>
                   <tr>
                     <th>#</th>
-                    <th>TRIPULACION</th>
-                    <th>SCORE</th>
-                    <th>TELEMETRIA</th>
+                    <th>PAREJA</th>
+                    <th>PUNTOS</th>
+                    <th>RECORRIDO</th>
                     <th>MODO</th>
                   </tr>
                 </thead>
@@ -1376,7 +1434,7 @@
 
           <!-- Clean User Footer -->
           <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1.5px solid rgba(255, 255, 255, 0.12); padding-top: 12px; margin-top: 6px;">
-            <span style="font-size: 13px; color: var(--text-muted);">PACIFIC SPEED // PATRULLA DE RESCATE 2026</span>
+            <span style="font-size: 13px; color: var(--text-muted);">Patrulla Huellitas · Pacific Speed 2026</span>
             <span style="font-size: 13px; color: var(--cyan); font-weight: 700;"><span data-bind="pct-charity">15%</span> Donado a Rescate y Alimento Animal</span>
           </div>
         </div>
@@ -1386,44 +1444,44 @@
       <section id="modal-confirm-crew" class="submodal-overlay hidden">
         <div class="submodal-card">
           <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid rgba(255, 255, 255, 0.14); padding-bottom: 10px;">
-            <h2 class="game-title" style="font-size: 20px;">VERIFICACION PRE-VUELO</h2>
+            <h2 class="game-title" style="font-size: 20px;">ANTES DE SALIR</h2>
             <button id="btn-close-confirm-crew" class="btn" style="padding: 4px 10px; font-size: 14px;">X</button>
           </div>
           <p style="font-size: 14px; color: var(--text-muted); line-height: 1.5;">
-            Confirma la asignacion de tu tripulacion y modo antes de iniciar vuelo:
+            Revisa tu patrulla antes de salir al rescate:
           </p>
           <div class="section-box" style="background: rgba(4, 10, 20, 0.9); gap: 10px;">
             <div style="display: flex; justify-content: space-between; font-size: 14px;">
-              <span style="color: var(--text-muted);">TU CALLSIGN:</span>
+              <span style="color: var(--text-muted);">TU NOMBRE:</span>
               <strong id="confirm-pilot-name" style="color: #ffffff;">PILOT</strong>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 14px;">
-              <span style="color: var(--text-muted);">ROL EN CABINA:</span>
+              <span style="color: var(--text-muted);">TU ROL:</span>
               <strong id="confirm-pilot-role" style="color: var(--accent);">PILOTO</strong>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 14px;">
-              <span style="color: var(--text-muted);">SALA / ESCUADRON:</span>
+              <span style="color: var(--text-muted);">SALA:</span>
               <strong id="confirm-room-code" style="color: var(--cyan);">NEURAL-01</strong>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 14px;">
-              <span style="color: var(--text-muted);">COPILOTO:</span>
+              <span style="color: var(--text-muted);">TU PAREJA:</span>
               <strong id="confirm-copilot-status" style="color: var(--phosphor);">CONECTADO</strong>
             </div>
             <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px; display: flex; justify-content: space-between; font-size: 14px;">
-              <span style="color: var(--text-muted);">TIPO DE VUELO:</span>
+              <span style="color: var(--text-muted);">TIPO DE PARTIDA:</span>
               <strong id="confirm-flight-mode" style="color: var(--phosphor);">PRACTICA LIBRE (GRATIS)</strong>
             </div>
           </div>
 
           <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 6px;">
             <button id="btn-execute-launch" class="btn btn-primary" style="padding: 15px; font-size: 16px;">
-              CONFIRMAR Y DESPEGAR AHORA
+              ¡SALIR AL RESCATE!
             </button>
             <button id="btn-crew-goto-tourney" class="btn" style="border-color: var(--accent); color: var(--accent); padding: 12px; font-size: 14px; font-weight: 800;">
               CAMBIAR A TORNEO OFICIAL (<span data-bind="fee">$10</span> USD)
             </button>
             <button id="btn-cancel-launch" class="btn" style="padding: 10px; font-size: 14px;">
-              VOLVER AL HANGAR
+              VOLVER AL REFUGIO
             </button>
           </div>
         </div>
@@ -1512,29 +1570,29 @@
       <section id="modal-confirm-loadout" class="submodal-overlay hidden">
         <div class="submodal-card">
           <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1.5px solid rgba(255, 255, 255, 0.14); padding-bottom: 10px;">
-            <h2 class="game-title" style="font-size: 20px;">EQUIPAMIENTO DE CABINA</h2>
+            <h2 class="game-title" style="font-size: 20px;">TU VEHÍCULO</h2>
             <button id="btn-close-confirm-loadout" class="btn" style="padding: 4px 10px; font-size: 14px;">X</button>
           </div>
           <p style="font-size: 14px; color: var(--text-muted); line-height: 1.5;">
-            Configuracion personalizada lista para calibrar en los sistemas de la nave:
+            Así quedará tu vehículo de rescate:
           </p>
           <div class="section-box" style="background: rgba(4, 10, 20, 0.9); gap: 10px;">
             <div style="display: flex; justify-content: space-between; font-size: 14px;">
-              <span style="color: var(--text-muted);">BLINDAJE Y PINTURA:</span>
-              <strong id="confirm-loadout-paint" style="color: var(--accent);">Crimson Raptor</strong>
+              <span style="color: var(--text-muted);">COLOR:</span>
+              <strong id="confirm-loadout-paint" style="color: var(--accent);">Rojo rescate</strong>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 14px;">
-              <span style="color: var(--text-muted);">ESTELA DE TURBO:</span>
-              <strong id="confirm-loadout-trail" style="color: var(--cyan);">Ion Cyan</strong>
+              <span style="color: var(--text-muted);">ESTELA:</span>
+              <strong id="confirm-loadout-trail" style="color: var(--cyan);">Turquesa</strong>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 14px;">
-              <span style="color: var(--text-muted);">PALETA DE AVIONICA:</span>
-              <strong id="confirm-loadout-theme" style="color: var(--phosphor);">Mil-Spec Amber</strong>
+              <span style="color: var(--text-muted);">PANEL:</span>
+              <strong id="confirm-loadout-theme" style="color: var(--phosphor);">Ámbar farol</strong>
             </div>
           </div>
           <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 6px;">
             <button id="btn-execute-save-loadout" class="btn btn-primary" style="padding: 14px; font-size: 15px;">
-              APLICAR Y CALIBRAR AHORA
+              GUARDAR
             </button>
             <button id="btn-cancel-confirm-loadout" class="btn" style="padding: 10px; font-size: 14px;">
               VOLVER
@@ -1546,19 +1604,19 @@
       <!-- Modal 2: Monetization Hook - 5s Emergency Field Repair -->
       <section id="modal-ad-revive" class="modal-overlay hidden">
         <div class="modal-card" style="border-color: var(--danger)">
-          <h2 class="game-title" style="color: var(--danger)">MASTER CAUTION // HULL CRITICAL</h2>
-          <p id="ad-timer-text" class="subtitle" style="font-size: 11px; color: var(--text-primary)">
-            PROTOCOLO DE EMERGENCIA: TRANSMISIÓN DE 5S PARA RESTAURAR 100% DE INTEGRIDAD Y REINICIAR TURBINA
+          <h2 class="game-title" style="color: var(--danger)">¡El vehículo necesita reparación!</h2>
+          <p id="ad-timer-text" class="subtitle" style="font-size: 13px; color: var(--text-primary)">
+            Mira un video de 5 segundos y el equipo veterinario deja tu vehículo al 100% para seguir rescatando.
           </p>
           <div class="ad-progress-outer">
             <div id="ad-progress-bar" class="ad-progress-inner"></div>
           </div>
           <div class="input-row">
             <button id="btn-watch-ad" class="btn btn-primary" style="flex: 2">
-              ACTIVAR DRON DE REPARACIÓN (5S VIDEO AD) — 100% HULL
+              VER VIDEO Y REPARAR (5 S)
             </button>
             <button id="btn-decline-ad" class="btn" style="flex: 1; border-color: var(--danger)">
-              ABORTAR MISIÓN
+              TERMINAR MISIÓN
             </button>
           </div>
         </div>
@@ -1567,18 +1625,26 @@
       <!-- Modal 3: Mission Debrief & Instant Rematch -->
       <section id="modal-gameover" class="modal-overlay hidden">
         <div class="modal-card">
-          <h2 class="game-title">FLIGHT DEBRIEF // SIGNAL LOST</h2>
-          <div class="section-box" style="text-align: center; padding: 14px">
-            <span class="metric-label">FINAL TACTICAL SCORE</span>
-            <div id="gameover-score" class="metric-value" style="font-size: 32px">0</div>
-            <p id="gameover-breakdown" class="subtitle" style="margin-top: 6px"></p>
+          <h2 class="game-title">Misión terminada 🐾</h2>
+          <div class="section-box" style="text-align: center; padding: 14px; gap: 4px">
+            <span class="metric-label">PELUDITOS A SALVO</span>
+            <div id="gameover-rescued" class="metric-value" style="font-size: 40px; color: var(--accent)">0</div>
+            <p id="gameover-breakdown" class="subtitle" style="margin-top: 2px"></p>
+          </div>
+          <div class="section-box" style="text-align: center; padding: 12px; gap: 2px">
+            <span class="metric-label">PUNTOS</span>
+            <div id="gameover-score" class="metric-value" style="font-size: 26px">0</div>
+          </div>
+          <div class="section-box" style="padding: 12px 14px; gap: 4px; border-color: var(--cyan)">
+            <span class="section-title" style="color: var(--cyan)">TU AYUDA ES REAL</span>
+            <p id="gameover-impact" style="font-size: 13.5px; line-height: 1.5; color: var(--text-primary)"></p>
           </div>
           <div class="input-row">
             <button id="btn-instant-rematch" class="btn btn-primary" style="flex: 2">
-              INSTANT REMATCH (RE-DEPLOY SQUAD)
+              ¡OTRA VEZ!
             </button>
             <button id="btn-back-lobby" class="btn" style="flex: 1">
-              RETURN TO HANGAR
+              VOLVER AL REFUGIO
             </button>
           </div>
         </div>

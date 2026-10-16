@@ -1,4 +1,12 @@
 import { getClosestLane, getLaneCenterX, lerp, TRACK_CONFIG } from '../shared/math.js';
+import {
+  animalsBetween,
+  RESCUE_EVERY_METERS,
+  rescuedCount,
+  weatherForPhase,
+  type AnimalKind,
+  type WeatherLook
+} from './rescueTheme.js';
 import type {
   CosmeticLoadout,
   LaneIndex,
@@ -48,15 +56,16 @@ const PAINT_TINTS: Record<
   CosmeticLoadout['paintJob'],
   { primary: string; glow: string; afterburner: string }
 > = {
-  crimson_jaeger: { primary: '#ff2a54', glow: 'rgba(255, 42, 84, 0.55)', afterburner: '#ff4d00' },
-  cyber_gold: { primary: '#ffb703', glow: 'rgba(255, 183, 3, 0.55)', afterburner: '#00f0ff' },
-  phantom_stealth: { primary: '#00ff9d', glow: 'rgba(0, 255, 157, 0.55)', afterburner: '#7b2cbf' }
+  // Internal ids are kept (saved in localStorage / sent to the server); only the look changes.
+  crimson_jaeger: { primary: '#e63946', glow: 'rgba(230, 57, 70, 0.5)', afterburner: '#ff8a5b' }, // Rojo rescate
+  cyber_gold: { primary: '#f4a261', glow: 'rgba(244, 162, 97, 0.5)', afterburner: '#ffd166' }, // Dorado huellita
+  phantom_stealth: { primary: '#2a9d8f', glow: 'rgba(42, 157, 143, 0.5)', afterburner: '#7ee8d8' } // Verde refugio
 };
 
 const TRAIL_COLORS: Record<CosmeticLoadout['neonTrail'], string> = {
-  plasma_cyan: '#00f0ff',
-  overdrive_magenta: '#ff007f',
-  solar_flare: '#ff9e00'
+  plasma_cyan: '#7ee8d8', // Turquesa
+  overdrive_magenta: '#ff8fab', // Rosa
+  solar_flare: '#ffb347' // Naranja
 };
 
 export class GameRenderer {
@@ -84,7 +93,11 @@ export class GameRenderer {
   // Realistic image assets
   private roadTextureImg: HTMLImageElement | null = null;
   private roadTextureLoaded = false;
-  private mechaCutoutCanvas: HTMLCanvasElement | null = null;
+
+  // Rescue theme state (presentation only)
+  private lastRescued = 0;
+  private lightningFlash = 0;
+  private hearts: Array<{ x: number; y: number; vy: number; alpha: number }> = [];
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -119,42 +132,6 @@ export class GameRenderer {
       this.roadTextureLoaded = true;
     };
 
-    const mechaImg = new Image();
-    mechaImg.src = '/assets/mecha_unit.jpg';
-    mechaImg.onload = () => {
-      this.mechaCutoutCanvas = this.removeBlackBackground(mechaImg);
-    };
-  }
-
-  /**
-   * Converts the pure black background of the AI-generated realistic Mecha sprite
-   * into smooth alpha transparency for seamless rendering over wet asphalt.
-   */
-  private removeBlackBackground(img: HTMLImageElement): HTMLCanvasElement {
-    const off = document.createElement('canvas');
-    off.width = img.width;
-    off.height = img.height;
-    const octx = off.getContext('2d');
-    if (!octx) return off;
-
-    octx.drawImage(img, 0, 0);
-    const imgData = octx.getImageData(0, 0, off.width, off.height);
-    const data = imgData.data;
-
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const lum = Math.max(r, g, b);
-      if (lum < 22) {
-        data[i + 3] = 0;
-      } else if (lum < 52) {
-        data[i + 3] = Math.floor(((lum - 22) / 30) * 255);
-      }
-    }
-
-    octx.putImageData(imgData, 0, 0);
-    return off;
   }
 
   public showCommsBanner(event: TacticalCommsEvent): void {
@@ -223,23 +200,26 @@ export class GameRenderer {
       this.shakeIntensity = Math.max(0, this.shakeIntensity - 28 * dt);
     }
 
-    // 1. Render Realistic Wet Highway Texture & Tactical Lane Grid
-    this.drawRealisticHighway(state.world_state.is_overdrive, activeRole);
+    // Weather follows the difficulty phase (sunset → rain → storm → night → dawn)
+    const weather = weatherForPhase(state.world_state.difficulty_phase);
 
-    // 2. Render Wet Asphalt Specular Reflections & Dual Afterburner Plumes
+    // 1. Coastal road at night with roadside verges and lamps
+    this.drawRealisticHighway(state.world_state.is_overdrive, activeRole, weather);
+
+    // 2. Wet road reflections and the rescue vehicle's light trails
     this.drawAfterburnersAndParticles(cosmetics, speed, state.world_state.is_overdrive, dt);
 
-    // 3. Render Detailed Obstacles, Cruise Missiles & Laser Lock Beams
+    // 3. Storm debris: fallen logs, wind-blown branches, golden bones and vet kits
     this.drawRealisticObstacles(state, activeRole);
 
-    // 4. Render Stealth Mecha Sprite & Hexagonal Energy Shields
+    // 4. Rescue vehicle and paw-shaped protective shields
     this.drawRealisticMechaAndShields(state, cosmetics);
 
     // 5. Render Shockwave Rings & Physical Spark Debris
     this.updateAndDrawShockwaves(dt);
 
-    // 6. Render High-Speed Atmospheric Rain
-    this.updateAndDrawRain(speed, dt);
+    // 6. Weather: color grade, rain, lightning and the dawn rainbow
+    this.drawWeather(weather, speed, dt);
 
     // 7. Asymmetric Tactical Role Layer:
     // Driver gets Volumetric Headlight Cones + Night-Vision FLIR on Radar Pulse;
@@ -249,6 +229,9 @@ export class GameRenderer {
     } else {
       this.drawNavigatorStealthRadar(state);
     }
+
+    // 7b. Animals waiting on the roadside (drawn over the fog: their lamps light them up)
+    this.drawRoadsideAnimals(state, weather, dt);
 
     // 8. Render Navigator Tactical Pings & Stealth Fighter HUD Telemetry (Compass, Pitch Ladder, Callouts)
     this.drawTacticalPings(state);
@@ -276,60 +259,60 @@ export class GameRenderer {
       }
 
       if (ev.type === 'shield_deflect') {
-        this.shakeIntensity = 9;
-        this.spawnExplosionSparks(this.smoothMechaX, this.smoothMechaY - 10, '#00f0ff', 38);
+        this.shakeIntensity = 7;
+        this.spawnExplosionSparks(this.smoothMechaX, this.smoothMechaY - 10, '#7ee8d8', 30);
         this.shockwaves.push({
           x: this.smoothMechaX,
           y: this.smoothMechaY,
           radius: 25,
           maxRadius: 150,
           alpha: 1.0,
-          color: '#00f0ff'
+          color: '#2ec4b6'
         });
         this.callouts.push({
-          text: 'INTERCEPT CONFIRMED',
-          subtext: 'SHIELD ABSORPTION 100%',
+          text: '¡BIEN BLOQUEADO!',
+          subtext: 'El escudo protegió la carga',
           x: this.smoothMechaX,
           y: this.smoothMechaY - 65,
           alpha: 1.3,
-          color: '#00ff9d'
+          color: '#2ec4b6'
         });
       } else if (ev.type === 'collision_damage') {
-        this.shakeIntensity = 18;
-        this.spawnExplosionSparks(this.smoothMechaX, this.smoothMechaY, '#ff4d00', 55, true);
+        this.shakeIntensity = 16;
+        this.spawnExplosionSparks(this.smoothMechaX, this.smoothMechaY, '#ffb067', 40, true);
         this.shockwaves.push({
           x: this.smoothMechaX,
           y: this.smoothMechaY,
           radius: 20,
           maxRadius: 190,
           alpha: 1.0,
-          color: '#ff2a54'
+          color: '#ff5a5f'
         });
         this.callouts.push({
-          text: 'WARNING // HULL BREACH',
-          subtext: '-35% INTEGRITY // VELOCITY DROP',
+          text: '¡GOLPE!',
+          subtext: '-35% salud del vehículo · pierdes velocidad',
           x: this.smoothMechaX,
           y: this.smoothMechaY - 70,
           alpha: 1.4,
-          color: '#ff2a54'
+          color: '#ff5a5f'
         });
       } else if (ev.type === 'overdrive_activated') {
-        this.shakeIntensity = 11;
+        this.shakeIntensity = 9;
         this.shockwaves.push({
           x: this.smoothMechaX,
           y: this.smoothMechaY,
           radius: 20,
           maxRadius: 240,
           alpha: 1.0,
-          color: '#ffb703'
+          color: '#ffc94d'
         });
         this.callouts.push({
-          text: 'AFTERBURNER OVERDRIVE',
-          subtext: '2.0X SCORE MULTIPLIER ENGAGED',
+          text: '¡TURBO CROQUETA!',
+          subtext: 'Puntos dobles mientras dure',
           x: this.smoothMechaX,
           y: this.smoothMechaY - 80,
           alpha: 1.5,
-          color: '#ffb703'
+          color: '#ffc94d'
         });
       } else if (ev.type === 'repair_collected') {
         this.shockwaves.push({
@@ -338,15 +321,15 @@ export class GameRenderer {
           radius: 20,
           maxRadius: 170,
           alpha: 1.0,
-          color: '#00ff9d'
+          color: '#7bd88f'
         });
         this.callouts.push({
-          text: 'REPARACIÓN',
-          subtext: '+25% INTEGRIDAD',
+          text: 'BOTIQUÍN',
+          subtext: '+25% salud del vehículo',
           x: this.smoothMechaX,
           y: this.smoothMechaY - 75,
           alpha: 1.4,
-          color: '#00ff9d'
+          color: '#7bd88f'
         });
       }
     }
@@ -390,48 +373,66 @@ export class GameRenderer {
     }
   }
 
-  private drawRealisticHighway(isOverdrive: boolean, role: PlayerRole): void {
+  private drawRealisticHighway(isOverdrive: boolean, role: PlayerRole, weather: WeatherLook): void {
     const { ctx } = this;
     const { WORLD_WIDTH, WORLD_HEIGHT, ROAD_LEFT, ROAD_RIGHT, ROAD_WIDTH, LANE_WIDTH } =
       TRACK_CONFIG;
 
-    ctx.fillStyle = '#03060a';
-    ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    // Roadside verges: wet grass on the left, sand towards the Pacific on the right
+    ctx.fillStyle = '#0b1410';
+    ctx.fillRect(0, 0, ROAD_LEFT, WORLD_HEIGHT);
+    ctx.fillStyle = '#14120e';
+    ctx.fillRect(ROAD_RIGHT, 0, WORLD_WIDTH - ROAD_RIGHT, WORLD_HEIGHT);
+
+    // Bushes and sand ripples scroll with the road so the verges feel alive
+    ctx.save();
+    for (let i = 0; i < 12; i++) {
+      const y = ((i * 97 + this.roadScrollY) % (WORLD_HEIGHT + 60)) - 30;
+      ctx.fillStyle = 'rgba(40, 80, 50, 0.55)';
+      ctx.beginPath();
+      ctx.ellipse(18 + ((i * 37) % 40), y, 14, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(120, 100, 70, 0.25)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(ROAD_RIGHT + 14, y + 20);
+      ctx.quadraticCurveTo(ROAD_RIGHT + 45, y + 10, ROAD_RIGHT + 80, y + 22);
+      ctx.stroke();
+    }
+    ctx.restore();
 
     if (this.roadTextureLoaded && this.roadTextureImg) {
-      // Draw seamless scrolling realistic wet asphalt texture
+      // Scrolling wet asphalt texture
       const y1 = Math.floor(this.roadScrollY);
       const y2 = y1 - WORLD_HEIGHT;
       ctx.save();
-      ctx.globalAlpha = role === 'navigator' ? 0.55 : 0.88;
-      ctx.drawImage(this.roadTextureImg, ROAD_LEFT - 35, y1, ROAD_WIDTH + 70, WORLD_HEIGHT);
-      ctx.drawImage(this.roadTextureImg, ROAD_LEFT - 35, y2, ROAD_WIDTH + 70, WORLD_HEIGHT);
+      ctx.globalAlpha = role === 'navigator' ? 0.55 : 0.85;
+      ctx.drawImage(this.roadTextureImg, ROAD_LEFT, y1, ROAD_WIDTH, WORLD_HEIGHT);
+      ctx.drawImage(this.roadTextureImg, ROAD_LEFT, y2, ROAD_WIDTH, WORLD_HEIGHT);
       ctx.restore();
 
-      // Dark military color grade overlay
+      // Warm evening grade instead of the old military blue
       const tint = ctx.createLinearGradient(ROAD_LEFT, 0, ROAD_RIGHT, 0);
-      tint.addColorStop(0, 'rgba(3, 8, 15, 0.68)');
-      tint.addColorStop(0.5, isOverdrive ? 'rgba(35, 12, 28, 0.35)' : 'rgba(4, 14, 24, 0.32)');
-      tint.addColorStop(1, 'rgba(3, 8, 15, 0.68)');
+      tint.addColorStop(0, 'rgba(12, 10, 14, 0.62)');
+      tint.addColorStop(0.5, isOverdrive ? 'rgba(60, 40, 10, 0.3)' : 'rgba(20, 18, 24, 0.28)');
+      tint.addColorStop(1, 'rgba(12, 10, 14, 0.62)');
       ctx.fillStyle = tint;
-      ctx.fillRect(ROAD_LEFT - 35, 0, ROAD_WIDTH + 70, WORLD_HEIGHT);
+      ctx.fillRect(ROAD_LEFT, 0, ROAD_WIDTH, WORLD_HEIGHT);
     } else {
       const roadGrad = ctx.createLinearGradient(ROAD_LEFT, 0, ROAD_RIGHT, 0);
-      roadGrad.addColorStop(0, '#070d16');
-      roadGrad.addColorStop(0.5, '#0f1b29');
-      roadGrad.addColorStop(1, '#070d16');
+      roadGrad.addColorStop(0, '#121216');
+      roadGrad.addColorStop(0.5, '#1c1c22');
+      roadGrad.addColorStop(1, '#121216');
       ctx.fillStyle = roadGrad;
       ctx.fillRect(ROAD_LEFT, 0, ROAD_WIDTH, WORLD_HEIGHT);
     }
 
-    // Crisp Mil-Spec Tactical Lane Dividers
+    // Lane dividers (painted road markings)
     ctx.save();
     ctx.setLineDash([34, 26]);
     ctx.lineDashOffset = -this.roadScrollY;
-    ctx.strokeStyle =
-      role === 'navigator' ? 'rgba(0, 255, 128, 0.38)' : 'rgba(180, 225, 255, 0.24)';
-    ctx.lineWidth = 2;
-
+    ctx.strokeStyle = role === 'navigator' ? 'rgba(46, 196, 182, 0.45)' : 'rgba(255, 236, 200, 0.32)';
+    ctx.lineWidth = 3;
     for (let i = 1; i < 3; i++) {
       const laneX = ROAD_LEFT + i * LANE_WIDTH;
       ctx.beginPath();
@@ -441,8 +442,8 @@ export class GameRenderer {
     }
     ctx.restore();
 
-    // Armored Bridge Side Rails
-    ctx.strokeStyle = isOverdrive ? '#ffb703' : 'rgba(0, 240, 255, 0.55)';
+    // Road edges and guardrails
+    ctx.strokeStyle = isOverdrive ? '#ffc94d' : 'rgba(255, 214, 160, 0.6)';
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(ROAD_LEFT, 0);
@@ -450,6 +451,22 @@ export class GameRenderer {
     ctx.moveTo(ROAD_RIGHT, 0);
     ctx.lineTo(ROAD_RIGHT, WORLD_HEIGHT);
     ctx.stroke();
+
+    // Street lamps along both verges with warm pools of light
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 6; i++) {
+      const y = ((i * 170 + this.roadScrollY * 0.9) % (WORLD_HEIGHT + 120)) - 60;
+      for (const x of [ROAD_LEFT - 18, ROAD_RIGHT + 18]) {
+        const pool = ctx.createRadialGradient(x, y, 2, x, y, 70);
+        pool.addColorStop(0, weather.lampColor);
+        pool.addColorStop(0.15, 'rgba(255, 190, 110, 0.18)');
+        pool.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = pool;
+        ctx.fillRect(x - 70, y - 70, 140, 140);
+      }
+    }
+    ctx.restore();
   }
 
   private drawAfterburnersAndParticles(
@@ -462,21 +479,20 @@ export class GameRenderer {
     const trailColor = TRAIL_COLORS[cosmetics.neonTrail];
     const tint = PAINT_TINTS[cosmetics.paintJob];
 
-    // Spawn twin nozzle jet exhaust particles
-    const nozzleOffsets = [-14, 14];
-    for (const nx of nozzleOffsets) {
+    // Water spray from the rear wheels (turbo turns it golden)
+    for (const nx of [-20, 20]) {
       this.sparks.push({
         x: this.smoothMechaX + nx + (Math.random() - 0.5) * 6,
         y: this.smoothMechaY + TRACK_CONFIG.MECHA_HEIGHT * 0.44,
-        vx: (Math.random() - 0.5) * 28,
-        vy: 190 + speed * 1.65,
-        alpha: 0.85,
-        size: 3.5 + Math.random() * 4.5,
-        color: isOverdrive ? '#ffb703' : trailColor
+        vx: (Math.random() - 0.5) * 40,
+        vy: 160 + speed * 1.5,
+        alpha: 0.6,
+        size: 2.5 + Math.random() * 3.5,
+        color: isOverdrive ? '#ffc94d' : trailColor
       });
     }
 
-    // Wet Asphalt Specular Reflection Pool under the Mecha
+    // Reflection of the vehicle's lights on the wet road
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     const reflGrad = ctx.createRadialGradient(
@@ -488,33 +504,26 @@ export class GameRenderer {
       78
     );
     reflGrad.addColorStop(0, tint.glow);
-    reflGrad.addColorStop(0.5, 'rgba(0, 240, 255, 0.14)');
+    reflGrad.addColorStop(0.5, 'rgba(255, 180, 110, 0.10)');
     reflGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = reflGrad;
     ctx.fillRect(this.smoothMechaX - 85, this.smoothMechaY - 50, 170, 160);
 
-    // Twin Jet Afterburner Flame Cones
-    const flameLen = 28 + (speed / 250) * 48 + Math.random() * 12;
-    for (const nx of nozzleOffsets) {
+    // Taillight streaks: longer the faster the patrol goes
+    const streakLen = 18 + (speed / 250) * 46;
+    for (const nx of [-17, 17]) {
       const fx = this.smoothMechaX + nx;
-      const fy = this.smoothMechaY + TRACK_CONFIG.MECHA_HEIGHT * 0.42;
-
-      const flameGrad = ctx.createLinearGradient(fx, fy, fx, fy + flameLen);
-      flameGrad.addColorStop(0, '#ffffff');
-      flameGrad.addColorStop(0.35, trailColor);
-      flameGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-
-      ctx.fillStyle = flameGrad;
-      ctx.beginPath();
-      ctx.moveTo(fx - 6, fy);
-      ctx.lineTo(fx + 6, fy);
-      ctx.lineTo(fx, fy + flameLen);
-      ctx.closePath();
-      ctx.fill();
+      const fy = this.smoothMechaY + TRACK_CONFIG.MECHA_HEIGHT * 0.46;
+      const streak = ctx.createLinearGradient(fx, fy, fx, fy + streakLen);
+      streak.addColorStop(0, isOverdrive ? '#ffe08a' : '#ff5a5f');
+      streak.addColorStop(0.4, isOverdrive ? 'rgba(255, 201, 77, 0.5)' : 'rgba(255, 90, 95, 0.35)');
+      streak.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = streak;
+      ctx.fillRect(fx - 3.5, fy, 7, streakLen);
     }
     ctx.restore();
 
-    // Update & Draw all Sparks / Exhaust / Smoke particles
+    // Update & draw spray / sparks / smoke particles
     for (let i = this.sparks.length - 1; i >= 0; i--) {
       const p = this.sparks[i];
       p.x += p.vx * dt;
@@ -531,25 +540,23 @@ export class GameRenderer {
 
       ctx.save();
       ctx.globalAlpha = Math.max(0, Math.min(1, p.alpha));
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
       if (p.isSmoke) {
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fill();
       } else {
         ctx.globalCompositeOperation = 'lighter';
-        ctx.fillStyle = p.color;
-        ctx.shadowColor = p.color;
-        ctx.shadowBlur = 8;
-        ctx.fillRect(p.x - p.size * 0.5, p.y - p.size * 0.5, p.size, p.size * 2.1);
+        ctx.arc(p.x, p.y, p.size * 0.6, 0, Math.PI * 2);
       }
+      ctx.fill();
       ctx.restore();
     }
   }
 
   private drawRealisticObstacles(state: ServerWorldStatePayload, role: PlayerRole): void {
     const { ctx } = this;
-    const pulse = 0.5 + 0.5 * Math.sin(Date.now() * 0.015);
+    const now = Date.now();
+    const pulse = 0.5 + 0.5 * Math.sin(now * 0.012);
 
     for (const obs of state.entity_positions.obstacles) {
       ctx.save();
@@ -557,91 +564,107 @@ export class GameRenderer {
       const halfH = obs.height * 0.5;
 
       if (obs.type === 'barrier') {
-        // Wet road red warning reflection pool
+        // Warning glow on the wet road
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
-        const glow = ctx.createRadialGradient(obs.x, obs.y, 4, obs.x, obs.y, 65);
-        glow.addColorStop(0, `rgba(255, 35, 65, ${0.38 * pulse})`);
+        const glow = ctx.createRadialGradient(obs.x, obs.y, 4, obs.x, obs.y, 62);
+        glow.addColorStop(0, `rgba(255, 120, 60, ${0.3 * pulse})`);
         glow.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = glow;
-        ctx.fillRect(obs.x - 70, obs.y - 70, 140, 140);
+        ctx.fillRect(obs.x - 66, obs.y - 66, 132, 132);
         ctx.restore();
 
-        // Heavy Armored Titanium Barricade
-        const metalGrad = ctx.createLinearGradient(obs.x - halfW, obs.y - halfH, obs.x - halfW, obs.y + halfH);
-        metalGrad.addColorStop(0, '#3a4756');
-        metalGrad.addColorStop(0.5, '#19212b');
-        metalGrad.addColorStop(1, '#0b0f14');
-        ctx.fillStyle = metalGrad;
-        ctx.strokeStyle = '#ff2a54';
-        ctx.lineWidth = 2;
-        ctx.fillRect(obs.x - halfW, obs.y - halfH, obs.width, obs.height);
-        ctx.strokeRect(obs.x - halfW, obs.y - halfH, obs.width, obs.height);
-
-        // Diagonal warning hazard chevrons
-        ctx.fillStyle = '#ffb703';
-        for (let sx = -halfW + 8; sx < halfW - 12; sx += 18) {
-          ctx.fillRect(obs.x + sx, obs.y - 4, 10, 8);
-        }
-
-        // Dual Strobe Lights
-        ctx.fillStyle = pulse > 0.5 ? '#ff2a54' : '#ffffff';
-        ctx.beginPath();
-        ctx.arc(obs.x - halfW + 10, obs.y - halfH + 6, 4, 0, Math.PI * 2);
-        ctx.arc(obs.x + halfW - 10, obs.y - halfH + 6, 4, 0, Math.PI * 2);
+        // Fallen tree trunk across the lane
+        const bark = ctx.createLinearGradient(obs.x, obs.y - halfH, obs.x, obs.y + halfH);
+        bark.addColorStop(0, '#8a5a34');
+        bark.addColorStop(0.5, '#5e3b20');
+        bark.addColorStop(1, '#3b2414');
+        ctx.fillStyle = bark;
+        this.roundedRect(obs.x - halfW + 6, obs.y - halfH + 5, obs.width - 12, obs.height - 10, 11);
         ctx.fill();
+        ctx.strokeStyle = 'rgba(40, 22, 10, 0.8)';
+        ctx.lineWidth = 1.5;
+        for (let bx = -halfW + 18; bx < halfW - 16; bx += 14) {
+          ctx.beginPath();
+          ctx.moveTo(obs.x + bx, obs.y - 6);
+          ctx.lineTo(obs.x + bx + 7, obs.y + 5);
+          ctx.stroke();
+        }
+        // Cut ends with growth rings
+        for (const ex of [obs.x - halfW + 8, obs.x + halfW - 8]) {
+          ctx.fillStyle = '#d9a86c';
+          ctx.beginPath();
+          ctx.ellipse(ex, obs.y, 6, halfH - 5, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#8a5a34';
+          ctx.beginPath();
+          ctx.ellipse(ex, obs.y, 3, (halfH - 5) * 0.5, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        // Small leafy twig so it reads as a tree
+        ctx.fillStyle = '#3f7d4a';
+        ctx.beginPath();
+        ctx.ellipse(obs.x + 10, obs.y - halfH + 2, 10, 5, -0.4, 0, Math.PI * 2);
+        ctx.ellipse(obs.x + 20, obs.y - halfH + 4, 7, 4, 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        // Warning cones on both sides, blinking
+        for (const cx of [obs.x - halfW - 2, obs.x + halfW + 2]) {
+          ctx.fillStyle = '#ff8c2a';
+          ctx.beginPath();
+          ctx.moveTo(cx, obs.y - 12);
+          ctx.lineTo(cx - 7, obs.y + 10);
+          ctx.lineTo(cx + 7, obs.y + 10);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = pulse > 0.5 ? '#ffffff' : '#ffd9a8';
+          ctx.fillRect(cx - 4, obs.y - 1, 8, 3);
+        }
       } else if (obs.type === 'flank_left' || obs.type === 'flank_right') {
         const isLeft = obs.type === 'flank_left';
         const targetFlankX = this.smoothMechaX + (isLeft ? -44 : 44);
-        const angle = Math.atan2(this.smoothMechaY - obs.y, targetFlankX - obs.x);
 
-        // Laser Lock-On Guidance Beam to Mecha Flank
+        // Wind gust line showing where the branch is heading
         ctx.save();
-        ctx.strokeStyle = role === 'navigator' ? 'rgba(255, 60, 0, 0.7)' : 'rgba(255, 35, 65, 0.38)';
+        ctx.strokeStyle = role === 'navigator' ? 'rgba(255, 196, 90, 0.75)' : 'rgba(255, 196, 90, 0.35)';
         ctx.lineWidth = role === 'navigator' ? 2 : 1.2;
-        ctx.setLineDash([8, 6]);
+        ctx.setLineDash([4, 8]);
+        ctx.lineDashOffset = -now * 0.05;
         ctx.beginPath();
         ctx.moveTo(obs.x, obs.y);
-        ctx.lineTo(targetFlankX, this.smoothMechaY);
+        ctx.quadraticCurveTo((obs.x + targetFlankX) / 2, obs.y - 30, targetFlankX, this.smoothMechaY);
         ctx.stroke();
         ctx.restore();
 
-        // Hypersonic Cruise Missile Body oriented along velocity vector
+        // Spinning branch with leaves, blown in by the storm
         ctx.save();
         ctx.translate(obs.x, obs.y);
-        ctx.rotate(angle);
-
-        // Missile thruster plume
-        ctx.fillStyle = '#ff7b00';
+        ctx.rotate((now * 0.006 * (isLeft ? 1 : -1)) % (Math.PI * 2));
+        ctx.strokeStyle = '#6b4426';
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
         ctx.beginPath();
-        ctx.moveTo(-24, 0);
-        ctx.lineTo(-10, -5);
-        ctx.lineTo(-10, 5);
-        ctx.closePath();
-        ctx.fill();
-
-        // Missile fuselage
-        ctx.fillStyle = '#d8e2ec';
-        ctx.strokeStyle = '#ff2a54';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(16, 0);
-        ctx.lineTo(-10, -7);
-        ctx.lineTo(-7, 0);
-        ctx.lineTo(-10, 7);
-        ctx.closePath();
-        ctx.fill();
+        ctx.moveTo(-18, 0);
+        ctx.lineTo(18, 0);
+        ctx.moveTo(4, 0);
+        ctx.lineTo(12, -9);
+        ctx.moveTo(-6, 0);
+        ctx.lineTo(-12, 8);
         ctx.stroke();
+        ctx.fillStyle = '#4f9a5a';
+        const leaves: Array<[number, number]> = [[18, 0], [12, -10], [-12, 9], [-18, 0], [0, -4]];
+        for (const [lx, ly] of leaves) {
+          ctx.beginPath();
+          ctx.ellipse(lx, ly, 6, 3.5, lx * 0.05, 0, Math.PI * 2);
+          ctx.fill();
+        }
         ctx.restore();
-      } else if (obs.type === 'overdrive_cell' || obs.type === 'repair_cell') {
-        const isOverdrive = obs.type === 'overdrive_cell';
-        const coreColor = isOverdrive ? '#00f0ff' : '#00ff9d';
-
+      } else if (obs.type === 'overdrive_cell') {
+        // Golden bone: "turbo croqueta"
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         const aura = ctx.createRadialGradient(obs.x, obs.y, 2, obs.x, obs.y, 34);
-        aura.addColorStop(0, '#ffffff');
-        aura.addColorStop(0.4, coreColor);
+        aura.addColorStop(0, 'rgba(255, 236, 160, 0.9)');
+        aura.addColorStop(0.45, 'rgba(255, 201, 77, 0.45)');
         aura.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = aura;
         ctx.beginPath();
@@ -649,19 +672,47 @@ export class GameRenderer {
         ctx.fill();
         ctx.restore();
 
-        // Rotating Octagonal Containment Ring
-        ctx.strokeStyle = coreColor;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(obs.x - 14, obs.y - 14, 28, 28);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 10px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText(isOverdrive ? 'MACH 2X' : 'REPAIR', obs.x, obs.y + 3);
+        ctx.save();
+        ctx.translate(obs.x, obs.y);
+        ctx.rotate(Math.sin(now * 0.004) * 0.35);
+        ctx.fillStyle = '#ffd56b';
+        ctx.strokeStyle = '#b8860b';
+        ctx.lineWidth = 1.5;
+        ctx.fillRect(-11, -4, 22, 8);
+        for (const [bx, by] of [[-12, -5], [-12, 5], [12, -5], [12, 5]] as Array<[number, number]>) {
+          ctx.beginPath();
+          ctx.arc(bx, by, 5.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.restore();
+      } else if (obs.type === 'repair_cell') {
+        // Vet first-aid kit
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const aura = ctx.createRadialGradient(obs.x, obs.y, 2, obs.x, obs.y, 32);
+        aura.addColorStop(0, 'rgba(180, 255, 200, 0.7)');
+        aura.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = aura;
+        ctx.beginPath();
+        ctx.arc(obs.x, obs.y, 32, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.fillStyle = '#f8f8f4';
+        this.roundedRect(obs.x - 14, obs.y - 11, 28, 22, 5);
+        ctx.fill();
+        ctx.fillStyle = '#5c4033';
+        ctx.fillRect(obs.x - 5, obs.y - 15, 10, 4);
+        ctx.fillStyle = '#3fbf6a';
+        ctx.fillRect(obs.x - 2.5, obs.y - 8, 5, 16);
+        ctx.fillRect(obs.x - 8, obs.y - 2.5, 16, 5);
       }
 
-      // Stealth Fighter [TGT-LOCK] Reticle Box (Always clear in Navigator Radar, nearby in Driver)
-      const distMeters = Math.max(0, Math.round((this.smoothMechaY - obs.y) * 0.5));
-      if (role === 'navigator' || distMeters < 105) {
+      // Labels: always on the navigator radar, only when close (~210 px, as before) for the driver
+      const distMeters = Math.max(0, Math.round((this.smoothMechaY - obs.y) / 23.5));
+      const ahead = obs.y < this.smoothMechaY + 20;
+      if (ahead && (role === 'navigator' || this.smoothMechaY - obs.y < 210)) {
         this.drawTargetLockBox(obs.x, obs.y, obs.width + 14, obs.height + 14, obs.type, distMeters);
       }
 
@@ -683,42 +734,41 @@ export class GameRenderer {
     const corner = 7;
 
     const isFriendly = type === 'overdrive_cell' || type === 'repair_cell';
-    const color = isFriendly ? '#00ff9d' : type === 'barrier' ? '#ff2a54' : '#ffb703';
+    const color = isFriendly ? '#7bd88f' : type === 'barrier' ? '#ff8c5a' : '#ffc45a';
 
     ctx.save();
     ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
 
-    // 4 Corner Brackets
+    // Corner brackets
     ctx.beginPath();
     ctx.moveTo(x, y + corner);
     ctx.lineTo(x, y);
     ctx.lineTo(x + corner, y);
-
     ctx.moveTo(x + w - corner, y);
     ctx.lineTo(x + w, y);
     ctx.lineTo(x + w, y + corner);
-
     ctx.moveTo(x, y + h - corner);
     ctx.lineTo(x, y + h);
     ctx.lineTo(x + corner, y + h);
-
     ctx.moveTo(x + w - corner, y + h);
     ctx.lineTo(x + w, y + h);
     ctx.lineTo(x + w, y + h - corner);
     ctx.stroke();
 
     ctx.fillStyle = color;
-    ctx.font = 'bold 9px monospace';
+    ctx.font = 'bold 10px system-ui, sans-serif';
     ctx.textAlign = 'left';
     const tag =
       type === 'flank_left'
-        ? 'BOGEY-L [J]'
+        ? 'RAMA ← escudo [J]'
         : type === 'flank_right'
-        ? 'BOGEY-R [L]'
+        ? 'RAMA → escudo [L]'
         : type === 'barrier'
-        ? `WALL ${distMeters}M`
-        : 'CORE';
+        ? `TRONCO · ${distMeters} m`
+        : type === 'overdrive_cell'
+        ? 'TURBO'
+        : 'BOTIQUÍN';
     ctx.fillText(tag, x, y - 4);
     ctx.restore();
   }
@@ -736,7 +786,7 @@ export class GameRenderer {
 
     ctx.save();
 
-    // Active Left & Right Hexagonal Plasma Flank Shields
+    // Paw-shaped protective bubbles on the active flanks
     if (state.world_state.active_shields.left) {
       this.drawFlankEnergyShield(x - TRACK_CONFIG.SHIELD_OFFSET_X, y, -1);
     }
@@ -744,42 +794,106 @@ export class GameRenderer {
       this.drawFlankEnergyShield(x + TRACK_CONFIG.SHIELD_OFFSET_X, y, 1);
     }
 
-    // Draw Stealth Mecha-Interceptor with aerodynamic banking rotation
+    // Rescue van seen from above, banking with the steering
     ctx.translate(x, y);
     ctx.rotate(this.smoothBankAngle);
 
-    if (this.mechaCutoutCanvas) {
-      const drawW = w * 1.48;
-      const drawH = h * 1.38;
-      ctx.shadowColor = tint.primary;
-      ctx.shadowBlur = state.world_state.is_overdrive ? 24 : 12;
-      ctx.drawImage(this.mechaCutoutCanvas, -drawW * 0.5, -drawH * 0.5, drawW, drawH);
+    const bw = w * 0.92;
+    const bh = h;
 
-      // Subtle cosmetic armor rim light
-      ctx.strokeStyle = tint.primary;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(0, -h * 0.52);
-      ctx.lineTo(w * 0.48, h * 0.38);
-      ctx.moveTo(0, -h * 0.52);
-      ctx.lineTo(-w * 0.48, h * 0.38);
-      ctx.stroke();
-    } else {
-      // Fallback high-detail stealth fighter silhouette while image loads
-      ctx.fillStyle = '#121a24';
-      ctx.strokeStyle = tint.primary;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, -h * 0.55);
-      ctx.lineTo(w * 0.55, h * 0.25);
-      ctx.lineTo(w * 0.25, h * 0.5);
-      ctx.lineTo(-w * 0.25, h * 0.5);
-      ctx.lineTo(-w * 0.55, h * 0.25);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
+    // Wheels
+    ctx.fillStyle = '#111111';
+    const wheels: Array<[number, number]> = [
+      [-bw / 2 - 3, -bh * 0.32],
+      [bw / 2 - 4, -bh * 0.32],
+      [-bw / 2 - 3, bh * 0.2],
+      [bw / 2 - 4, bh * 0.2]
+    ];
+    for (const [wx, wy] of wheels) {
+      ctx.fillRect(wx, wy, 7, 16);
     }
 
+    // Body in the chosen paint, glowing golden during turbo
+    ctx.shadowColor = state.world_state.is_overdrive ? '#ffc94d' : tint.glow;
+    ctx.shadowBlur = state.world_state.is_overdrive ? 26 : 14;
+    const body = ctx.createLinearGradient(-bw / 2, 0, bw / 2, 0);
+    body.addColorStop(0, tint.primary);
+    body.addColorStop(0.5, '#ffffff');
+    body.addColorStop(1, tint.primary);
+    ctx.fillStyle = body;
+    this.roundedRect(-bw / 2, -bh / 2, bw, bh, 12);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Windshield
+    ctx.fillStyle = '#1d2a36';
+    this.roundedRect(-bw / 2 + 6, -bh / 2 + 9, bw - 12, bh * 0.2, 5);
+    ctx.fill();
+
+    // Light bar: amber and teal blinking (rescue, not police)
+    const blink = Math.floor(Date.now() / 220) % 2 === 0;
+    ctx.fillStyle = blink ? '#ffb347' : '#2ec4b6';
+    ctx.fillRect(-bw / 2 + 8, -bh * 0.2, (bw - 16) / 2, 5);
+    ctx.fillStyle = blink ? '#2ec4b6' : '#ffb347';
+    ctx.fillRect(0, -bh * 0.2, (bw - 16) / 2, 5);
+
+    // White roof with a paw print
+    ctx.fillStyle = '#f4f1ea';
+    this.roundedRect(-bw / 2 + 6, -bh * 0.12, bw - 12, bh * 0.52, 7);
+    ctx.fill();
+    this.drawPaw(0, bh * 0.15, 11, tint.primary);
+
+    // Headlights and taillights
+    ctx.fillStyle = '#fff6d6';
+    ctx.fillRect(-bw / 2 + 4, -bh / 2 + 2, 9, 4);
+    ctx.fillRect(bw / 2 - 13, -bh / 2 + 2, 9, 4);
+    ctx.fillStyle = '#ff5a5f';
+    ctx.fillRect(-bw / 2 + 4, bh / 2 - 5, 9, 4);
+    ctx.fillRect(bw / 2 - 13, bh / 2 - 5, 9, 4);
+
+    // Side mirrors
+    ctx.fillStyle = tint.primary;
+    ctx.fillRect(-bw / 2 - 6, -bh * 0.27, 6, 5);
+    ctx.fillRect(bw / 2, -bh * 0.27, 6, 5);
+
+    ctx.restore();
+  }
+
+  /** Rounded rectangle path (no fill/stroke). */
+  private roundedRect(x: number, y: number, w: number, h: number, r: number): void {
+    const { ctx } = this;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  /** Paw print: one pad and four toes. */
+  private drawPaw(cx: number, cy: number, size: number, color: string): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + size * 0.25, size * 0.5, size * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const toes: Array<[number, number]> = [
+      [-0.55, -0.3],
+      [-0.2, -0.62],
+      [0.2, -0.62],
+      [0.55, -0.3]
+    ];
+    for (const [tx, ty] of toes) {
+      ctx.beginPath();
+      ctx.ellipse(cx + tx * size, cy + ty * size, size * 0.18, size * 0.22, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -790,25 +904,31 @@ export class GameRenderer {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
 
-    // Outer plasma glow
-    const grad = ctx.createLinearGradient(sx - 12 * dir, sy, sx + 16 * dir, sy);
-    grad.addColorStop(0, 'rgba(0, 240, 255, 0)');
-    grad.addColorStop(0.5, 'rgba(0, 240, 255, 0.65)');
-    grad.addColorStop(1, 'rgba(0, 255, 157, 0)');
-
+    // Soft protective bubble
+    const grad = ctx.createLinearGradient(sx - 12 * dir, sy, sx + 18 * dir, sy);
+    grad.addColorStop(0, 'rgba(46, 196, 182, 0)');
+    grad.addColorStop(0.55, 'rgba(46, 196, 182, 0.45)');
+    grad.addColorStop(1, 'rgba(126, 232, 216, 0)');
     ctx.fillStyle = grad;
-    ctx.fillRect(sx - 14, sy - halfH, 28, halfH * 2);
+    ctx.beginPath();
+    ctx.ellipse(sx + 4 * dir, sy, 16, halfH, 0, 0, Math.PI * 2);
+    ctx.fill();
 
-    // Core energy arc matching Circle-to-Line geometry
-    ctx.strokeStyle = '#00f0ff';
-    ctx.lineWidth = 4;
-    ctx.shadowColor = '#00f0ff';
-    ctx.shadowBlur = 16;
+    // Curved edge matching the collision line
+    ctx.strokeStyle = '#7ee8d8';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#2ec4b6';
+    ctx.shadowBlur = 14;
     ctx.beginPath();
     ctx.moveTo(sx, sy - halfH);
-    ctx.lineTo(sx + 7 * dir, sy);
-    ctx.lineTo(sx, sy + halfH);
+    ctx.quadraticCurveTo(sx + 14 * dir, sy, sx, sy + halfH);
     ctx.stroke();
+    ctx.restore();
+
+    // Paw emblem on the bubble
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    this.drawPaw(sx + 9 * dir, sy, 9, '#e9fffb');
     ctx.restore();
   }
 
@@ -835,16 +955,24 @@ export class GameRenderer {
     }
   }
 
-  private updateAndDrawRain(speed: number, dt: number): void {
+  private drawWeather(weather: WeatherLook, speed: number, dt: number): void {
     const { ctx } = this;
     const { WORLD_WIDTH, WORLD_HEIGHT } = TRACK_CONFIG;
 
+    // Color grade of the current phase (sunset, storm, night, dawn...)
     ctx.save();
-    ctx.strokeStyle = 'rgba(185, 225, 255, 0.25)';
+    ctx.fillStyle = weather.tint;
+    ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    ctx.restore();
+
+    // Rain: density depends on the weather
+    const drops = Math.round(this.rainDrops.length * weather.rain);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(200, 225, 255, 0.28)';
     ctx.lineWidth = 1.2;
     ctx.beginPath();
-
-    for (const drop of this.rainDrops) {
+    for (let i = 0; i < this.rainDrops.length; i++) {
+      const drop = this.rainDrops[i];
       drop.y += (drop.speed + speed * 2.2) * dt;
       drop.x -= 45 * dt;
       if (drop.y > WORLD_HEIGHT) {
@@ -854,16 +982,192 @@ export class GameRenderer {
       if (drop.x < 0) {
         drop.x = WORLD_WIDTH;
       }
-
-      ctx.moveTo(drop.x, drop.y);
-      ctx.lineTo(drop.x - 2, drop.y + drop.length);
+      if (i < drops) {
+        ctx.moveTo(drop.x, drop.y);
+        ctx.lineTo(drop.x - 2, drop.y + drop.length);
+      }
     }
     ctx.stroke();
+    ctx.restore();
+
+    // Lightning flashes during the storm phases
+    if (weather.lightning && Math.random() < dt * 0.22) {
+      this.lightningFlash = 1;
+      this.shakeIntensity = Math.max(this.shakeIntensity, 3);
+    }
+    if (this.lightningFlash > 0) {
+      ctx.save();
+      ctx.fillStyle = `rgba(230, 240, 255, ${this.lightningFlash * 0.32})`;
+      ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+      ctx.restore();
+      this.lightningFlash = Math.max(0, this.lightningFlash - 3 * dt);
+    }
+
+    // Dawn rainbow: reward for crews that reach the last phase
+    if (weather.rainbow) {
+      const colors = ['#ff6b6b', '#ffa94d', '#ffd43b', '#69db7c', '#4dabf7', '#9775fa'];
+      ctx.save();
+      ctx.globalAlpha = 0.22;
+      ctx.lineWidth = 9;
+      colors.forEach((color, i) => {
+        ctx.strokeStyle = color;
+        ctx.beginPath();
+        ctx.arc(WORLD_WIDTH / 2, 520, 470 - i * 9, Math.PI * 1.08, Math.PI * 1.92);
+        ctx.stroke();
+      });
+      ctx.restore();
+    }
+  }
+
+  /**
+   * Animals waiting on the roadside. One appears every RESCUE_EVERY_METERS meters, always
+   * the same for both players; when the patrol passes it, it hops on board.
+   */
+  private drawRoadsideAnimals(state: ServerWorldStatePayload, weather: WeatherLook, dt: number): void {
+    const { ctx } = this;
+    const distance = state.world_state.distance_traveled;
+
+    // Count rescues (a new match resets the counter)
+    const rescued = rescuedCount(distance);
+    if (rescued < this.lastRescued) {
+      this.lastRescued = rescued;
+    }
+    if (rescued > this.lastRescued && state.world_state.status === 'running') {
+      const newest = animalsBetween(this.lastRescued * RESCUE_EVERY_METERS + 1, rescued * RESCUE_EVERY_METERS).pop();
+      const x = newest?.side === 'left' ? TRACK_CONFIG.ROAD_LEFT - 45 : TRACK_CONFIG.ROAD_RIGHT + 45;
+      for (let i = 0; i < 6; i++) {
+        this.hearts.push({ x: x + (Math.random() - 0.5) * 30, y: this.smoothMechaY, vy: -60 - Math.random() * 60, alpha: 1 });
+      }
+      this.callouts.push({
+        text: '+1 ¡A SALVO! 🐾',
+        subtext: `Un ${newest?.kind ?? 'peludito'} subió a bordo · ${rescued} rescatados`,
+        x: this.smoothMechaX,
+        y: this.smoothMechaY - 95,
+        alpha: 1.4,
+        color: '#ffc94d'
+      });
+    }
+    this.lastRescued = rescued;
+
+    // Animals still waiting ahead (23.5 px per meter, like the obstacles)
+    for (const animal of animalsBetween(distance + 0.01, distance + 36)) {
+      const y = this.smoothMechaY - (animal.meter - distance) * 23.5;
+      if (y < -40 || y > TRACK_CONFIG.WORLD_HEIGHT + 40) continue;
+      const x = animal.side === 'left' ? TRACK_CONFIG.ROAD_LEFT - 45 : TRACK_CONFIG.ROAD_RIGHT + 45;
+
+      // Their own lamp keeps them visible in the storm
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const halo = ctx.createRadialGradient(x, y, 2, x, y, 46);
+      halo.addColorStop(0, 'rgba(255, 220, 160, 0.45)');
+      halo.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = halo;
+      ctx.fillRect(x - 46, y - 46, 92, 92);
+      ctx.restore();
+
+      this.drawAnimal(x, y, animal.kind, weather.rain > 0.15);
+    }
+
+    // Hearts floating up after each rescue
+    for (let i = this.hearts.length - 1; i >= 0; i--) {
+      const h = this.hearts[i];
+      h.y += h.vy * dt;
+      h.alpha -= 0.9 * dt;
+      if (h.alpha <= 0) {
+        this.hearts.splice(i, 1);
+        continue;
+      }
+      ctx.save();
+      ctx.globalAlpha = h.alpha;
+      ctx.fillStyle = '#ff6b8a';
+      ctx.font = '16px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('♥', h.x, h.y);
+      ctx.restore();
+    }
+  }
+
+  /** A small sitting animal seen from above-front, with an umbrella when it rains. */
+  private drawAnimal(x: number, y: number, kind: AnimalKind, umbrella: boolean): void {
+    const { ctx } = this;
+    const fur: Record<AnimalKind, string> = {
+      perrito: '#c98b4f',
+      cachorro: '#f2d2a2',
+      gatito: '#9aa0a8',
+      conejito: '#f4f1ea'
+    };
+    ctx.save();
+    ctx.translate(x, y);
+
+    // Tail wagging
+    const wag = Math.sin(Date.now() * 0.012) * 0.5;
+    ctx.strokeStyle = fur[kind];
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(8, 8);
+    ctx.quadraticCurveTo(16, 4 + wag * 6, 15, -4 + wag * 8);
+    ctx.stroke();
+
+    // Body and head
+    ctx.fillStyle = fur[kind];
+    ctx.beginPath();
+    ctx.ellipse(0, 8, 10, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, -6, 8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ears by species
+    ctx.fillStyle = kind === 'conejito' ? '#f7c6d0' : fur[kind];
+    if (kind === 'gatito') {
+      ctx.beginPath();
+      ctx.moveTo(-7, -9); ctx.lineTo(-5, -17); ctx.lineTo(-1, -12);
+      ctx.moveTo(7, -9); ctx.lineTo(5, -17); ctx.lineTo(1, -12);
+      ctx.fill();
+    } else if (kind === 'conejito') {
+      ctx.beginPath();
+      ctx.ellipse(-3, -18, 2.5, 7, -0.15, 0, Math.PI * 2);
+      ctx.ellipse(3, -18, 2.5, 7, 0.15, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = kind === 'perrito' ? '#8a5a34' : '#d9a86c';
+      ctx.beginPath();
+      ctx.ellipse(-8, -5, 3.5, 6, 0.3, 0, Math.PI * 2);
+      ctx.ellipse(8, -5, 3.5, 6, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Eyes and nose
+    ctx.fillStyle = '#1b1b1b';
+    ctx.beginPath();
+    ctx.arc(-3, -7, 1.4, 0, Math.PI * 2);
+    ctx.arc(3, -7, 1.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#3a2a2a';
+    ctx.beginPath();
+    ctx.arc(0, -3.5, 1.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Little umbrella
+    if (umbrella) {
+      ctx.strokeStyle = '#d7d7d7';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(10, -4);
+      ctx.lineTo(10, -26);
+      ctx.stroke();
+      ctx.fillStyle = '#2ec4b6';
+      ctx.beginPath();
+      ctx.arc(10, -26, 13, Math.PI, 0);
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.restore();
   }
 
   /**
-   * Pilot A (Driver) Realistic Volumetric Headlight Cones & Fog of War.
+   * Driver view: headlights and the storm fog that limits what the driver sees.
    */
   private drawDriverVolumetricLighting(state: ServerWorldStatePayload): void {
     const { ctx } = this;
@@ -882,8 +1186,8 @@ export class GameRenderer {
       this.smoothMechaX,
       this.smoothMechaY - coneLen
     );
-    headGrad.addColorStop(0, 'rgba(200, 245, 255, 0.26)');
-    headGrad.addColorStop(0.6, 'rgba(0, 210, 255, 0.08)');
+    headGrad.addColorStop(0, 'rgba(255, 244, 214, 0.28)');
+    headGrad.addColorStop(0.6, 'rgba(255, 210, 150, 0.08)');
     headGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
     ctx.fillStyle = headGrad;
@@ -917,22 +1221,23 @@ export class GameRenderer {
 
     // If Navigator triggered Radar Pulse, overlay FLIR Thermal Green Night-Vision scan
     if (isRadarRevealed) {
-      ctx.fillStyle = 'rgba(0, 255, 120, 0.07)';
+      ctx.fillStyle = 'rgba(46, 196, 182, 0.07)';
       ctx.fillRect(0, 0, width, height);
     }
     ctx.restore();
   }
 
   /**
-   * Pilot B (Navigator) Overhead AWACS / F-35 Tactical Radar Scan.
+   * Navigator view: overhead radar with tappable lanes to warn the driver.
    */
   private drawNavigatorStealthRadar(state: ServerWorldStatePayload): void {
+    void state;
     const { ctx } = this;
     const { ROAD_LEFT, ROAD_WIDTH, LANE_WIDTH, WORLD_HEIGHT } = TRACK_CONFIG;
 
     ctx.save();
-    // Phosphor green tactical grid lines
-    ctx.strokeStyle = 'rgba(0, 255, 128, 0.08)';
+    // Soft map grid
+    ctx.strokeStyle = 'rgba(46, 196, 182, 0.08)';
     ctx.lineWidth = 1;
     for (let y = 0; y < WORLD_HEIGHT; y += 60) {
       ctx.beginPath();
@@ -941,26 +1246,26 @@ export class GameRenderer {
       ctx.stroke();
     }
 
-    // Sweeping AWACS Radar Scanline
+    // Radar sweep
     const scanGrad = ctx.createLinearGradient(0, this.radarSweepY - 48, 0, this.radarSweepY);
-    scanGrad.addColorStop(0, 'rgba(0, 255, 157, 0)');
-    scanGrad.addColorStop(1, 'rgba(0, 255, 157, 0.22)');
+    scanGrad.addColorStop(0, 'rgba(46, 196, 182, 0)');
+    scanGrad.addColorStop(1, 'rgba(46, 196, 182, 0.2)');
     ctx.fillStyle = scanGrad;
     ctx.fillRect(ROAD_LEFT, this.radarSweepY - 48, ROAD_WIDTH, 48);
 
-    // Clickable Tactical Sector Headers
-    ctx.fillStyle = 'rgba(0, 255, 157, 0.85)';
-    ctx.font = 'bold 11px monospace';
+    // Tappable lane headers
+    ctx.fillStyle = 'rgba(126, 232, 216, 0.9)';
+    ctx.font = 'bold 12px system-ui, sans-serif';
     ctx.textAlign = 'center';
     for (let lane = 0; lane < 3; lane++) {
       const cx = ROAD_LEFT + lane * LANE_WIDTH + LANE_WIDTH * 0.5;
-      ctx.fillText(`[SECTOR 0${lane + 1} // TAP TO PING]`, cx, 108);
+      ctx.fillText(`CARRIL ${lane + 1}`, cx, 108);
     }
     ctx.restore();
   }
 
   /**
-   * Renders Stealth Fighter HUD instrumentation (Compass Tape, Pitch Ladder, Mach & G-Force).
+   * In-canvas HUD: speed, phase and weather, rescued animals and shield state.
    */
   private drawStealthFighterCockpitHUD(
     state: ServerWorldStatePayload,
@@ -968,69 +1273,24 @@ export class GameRenderer {
   ): void {
     const { ctx } = this;
     const width = TRACK_CONFIG.WORLD_WIDTH;
-    const speed = state.speed_multiplier.current_speed;
-    const mach = (speed / 100).toFixed(2);
-    const gForce = (1.0 + (speed / 250) * 3.8 + Math.abs(this.smoothBankAngle) * 4).toFixed(1);
-    const hudColor = role === 'navigator' ? '#00ff9d' : '#ffb703';
+    const ws = state.world_state;
+    const weather = weatherForPhase(ws.difficulty_phase);
+    const hudColor = role === 'navigator' ? '#7ee8d8' : '#ffd29a';
 
     ctx.save();
-    ctx.strokeStyle = hudColor;
     ctx.fillStyle = hudColor;
-    ctx.globalAlpha = 0.65;
-    ctx.lineWidth = 1.2;
+    ctx.globalAlpha = 0.8;
+    ctx.font = 'bold 12px system-ui, sans-serif';
 
-    // Top Compass Tape (HDG)
-    const tapeY = 76;
-    ctx.beginPath();
-    ctx.moveTo(150, tapeY);
-    ctx.lineTo(width - 150, tapeY);
-    ctx.stroke();
-
-    const headingOffset = Math.floor(this.smoothMechaX * 0.25) % 30;
-    for (let x = 165; x <= width - 165; x += 30) {
-      ctx.beginPath();
-      ctx.moveTo(x - headingOffset, tapeY);
-      ctx.lineTo(x - headingOffset, tapeY + 5);
-      ctx.stroke();
-    }
-
-    // Left & Right Flight Telemetry Readouts
-    ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(`AIRSPEED: MACH ${mach}`, 22, 460);
-    ctx.fillText(`LOAD: ${gForce} G`, 22, 476);
-    ctx.fillText(`ALT: 00420 FT AGL`, 22, 492);
+    ctx.fillText(`VELOCIDAD ${Math.round(state.speed_multiplier.current_speed)}`, 18, 460);
+    ctx.fillText(`${ws.difficulty_phase ?? 'Calentamiento'} · ${weather.label}`, 18, 477);
+    ctx.fillText(`🐾 A SALVO: ${rescuedCount(ws.distance_traveled)}`, 18, 494);
 
     ctx.textAlign = 'right';
-    ctx.fillText(
-      `SHIELD L: ${state.world_state.active_shields.left ? 'ENGAGED' : 'STBY'}`,
-      width - 22,
-      460
-    );
-    ctx.fillText(
-      `SHIELD R: ${state.world_state.active_shields.right ? 'ENGAGED' : 'STBY'}`,
-      width - 22,
-      476
-    );
-    ctx.fillText(
-      `VIS-MODE: ${role === 'driver' ? 'LOW-VIS CONE' : 'AWACS OVERHEAD'}`,
-      width - 22,
-      492
-    );
-
-    // Subtle Pitch Ladder bars around Mecha
-    const px = this.smoothMechaX;
-    const py = this.smoothMechaY;
-    ctx.globalAlpha = 0.32;
-    ctx.beginPath();
-    ctx.moveTo(px - 68, py - 20);
-    ctx.lineTo(px - 50, py - 20);
-    ctx.lineTo(px - 50, py - 14);
-    ctx.moveTo(px + 68, py - 20);
-    ctx.lineTo(px + 50, py - 20);
-    ctx.lineTo(px + 50, py - 14);
-    ctx.stroke();
-
+    ctx.fillText(`ESCUDO IZQ: ${ws.active_shields.left ? 'ACTIVO' : 'LISTO'}`, width - 18, 460);
+    ctx.fillText(`ESCUDO DER: ${ws.active_shields.right ? 'ACTIVO' : 'LISTO'}`, width - 18, 477);
+    ctx.fillText(role === 'driver' ? 'VISTA: FAROS' : 'VISTA: RADAR', width - 18, 494);
     ctx.restore();
   }
 
@@ -1044,8 +1304,8 @@ export class GameRenderer {
 
       ctx.save();
       ctx.globalAlpha = alpha;
-      ctx.strokeStyle = '#00ff9d';
-      ctx.fillStyle = 'rgba(0, 255, 157, 0.13)';
+      ctx.strokeStyle = '#2ec4b6';
+      ctx.fillStyle = 'rgba(46, 196, 182, 0.13)';
       ctx.lineWidth = 2;
 
       const boxW = TRACK_CONFIG.LANE_WIDTH * 0.82;
@@ -1060,10 +1320,10 @@ export class GameRenderer {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      ctx.fillStyle = '#00ff9d';
-      ctx.font = 'bold 12px monospace';
+      ctx.fillStyle = '#7ee8d8';
+      ctx.font = 'bold 13px system-ui, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`VECTOR SAFE // SECTOR 0${ping.lane + 1}`, laneX, targetY - 22);
+      ctx.fillText(`CARRIL SEGURO ${ping.lane + 1}`, laneX, targetY - 22);
       ctx.restore();
     }
   }
@@ -1081,19 +1341,20 @@ export class GameRenderer {
 
       ctx.save();
       ctx.globalAlpha = Math.min(1, c.alpha);
-      ctx.fillStyle = 'rgba(4, 9, 18, 0.85)';
+      ctx.fillStyle = 'rgba(20, 16, 22, 0.88)';
       ctx.strokeStyle = c.color;
       ctx.lineWidth = 1.5;
-      ctx.fillRect(c.x - 115, c.y - 22, 230, 36);
-      ctx.strokeRect(c.x - 115, c.y - 22, 230, 36);
+      this.roundedRect(c.x - 125, c.y - 22, 250, 38, 10);
+      ctx.fill();
+      ctx.stroke();
 
       ctx.fillStyle = c.color;
-      ctx.font = 'bold 12px monospace';
+      ctx.font = 'bold 13px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(c.text, c.x, c.y - 5);
 
-      ctx.fillStyle = '#d8e9ff';
-      ctx.font = '10px monospace';
+      ctx.fillStyle = '#f3ece2';
+      ctx.font = '11px system-ui, sans-serif';
       ctx.fillText(c.subtext, c.x, c.y + 9);
       ctx.restore();
     }
@@ -1122,7 +1383,7 @@ export class GameRenderer {
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.fillStyle = 'rgba(4, 12, 22, 0.92)';
-    ctx.strokeStyle = event.preset === 'mayday_panic' ? '#ff2a54' : '#00ff9d';
+    ctx.strokeStyle = event.preset === 'mayday_panic' ? '#ff5a5f' : '#2ec4b6';
     ctx.lineWidth = 2;
     ctx.fillRect(boxX, boxY, boxW, boxH);
     ctx.strokeRect(boxX, boxY, boxW, boxH);
@@ -1135,15 +1396,15 @@ export class GameRenderer {
     }
 
     ctx.textAlign = 'left';
-    ctx.font = 'bold 10px monospace';
+    ctx.font = 'bold 11px system-ui, sans-serif';
     ctx.fillText(
-      `COMMS // ${event.sender_name} (${event.sender_role.toUpperCase()}) — ${event.code}`,
+      `RADIO · ${event.sender_name} (${event.sender_role === 'driver' ? 'PILOTO' : 'NAVEGANTE'})`,
       boxX + 72,
       boxY + 20
     );
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 13px monospace';
+    ctx.font = 'bold 14px system-ui, sans-serif';
     ctx.fillText(event.label, boxX + 72, boxY + 40);
     ctx.restore();
   }
@@ -1153,31 +1414,29 @@ export class GameRenderer {
     const pulse = 0.35 + Math.abs(Math.sin(Date.now() * 0.014)) * 0.55;
 
     ctx.save();
-    ctx.strokeStyle = `rgba(255, 30, 60, ${pulse})`;
+    ctx.strokeStyle = `rgba(255, 90, 95, ${pulse})`;
     ctx.lineWidth = 12;
     ctx.strokeRect(0, 0, TRACK_CONFIG.WORLD_WIDTH, TRACK_CONFIG.WORLD_HEIGHT);
 
-    ctx.fillStyle = 'rgba(18, 3, 8, 0.9)';
-    ctx.strokeStyle = '#ff2a54';
+    ctx.fillStyle = 'rgba(30, 10, 12, 0.9)';
+    ctx.strokeStyle = '#ff5a5f';
     ctx.lineWidth = 2;
-    ctx.fillRect(95, 190, TRACK_CONFIG.WORLD_WIDTH - 190, 56);
-    ctx.strokeRect(95, 190, TRACK_CONFIG.WORLD_WIDTH - 190, 56);
+    this.roundedRect(95, 190, TRACK_CONFIG.WORLD_WIDTH - 190, 58, 10);
+    ctx.fill();
+    ctx.stroke();
 
-    ctx.fillStyle = '#ff2a54';
-    ctx.font = 'bold 18px monospace';
+    ctx.fillStyle = '#ff8a8e';
+    ctx.font = 'bold 18px system-ui, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(
-      `MASTER CAUTION // STALL SPEED (<50)`,
-      TRACK_CONFIG.WORLD_WIDTH * 0.5,
-      214
-    );
+    ctx.fillText('¡VELOCIDAD MUY BAJA!', TRACK_CONFIG.WORLD_WIDTH * 0.5, 214);
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 14px monospace';
+    ctx.font = 'bold 14px system-ui, sans-serif';
     ctx.fillText(
-      `AUTODESTRUCT SEQUENCE: ${countdown.toFixed(2)}S`,
+      `Acelera: el motor se apaga en ${countdown.toFixed(1)} s`,
       TRACK_CONFIG.WORLD_WIDTH * 0.5,
-      236
+      237
     );
     ctx.restore();
   }
+
 }
