@@ -1,6 +1,7 @@
 import { escapeHtml, safeHttpUrl } from '../shared/escapeHtml.js';
 import { calculateTransactionSplits, round2 } from '../shared/financialConfig.js';
 import { foodKgFromUsd, rescuedCount, weatherForPhase } from './rescueTheme.js';
+import { DriverPredictor, extrapolateWorld, ServerClock, TICK_MS } from './netSmoothing.js';
 import { GameSimulation } from '../shared/simulation.js';
 import { normalizeRoomCode } from '../shared/types.js';
 import type {
@@ -70,6 +71,12 @@ class PacificSpeedClientApp {
 
   private lastFrameTime = performance.now();
   private adCountdownInterval: number | null = null;
+
+  // Smooth online play (see netSmoothing.ts) and fixed-step local play
+  private serverClock = new ServerClock();
+  private driverPredictor = new DriverPredictor();
+  private lastInputSentAt = 0;
+  private localAccumulator = 0;
 
   // Hype & Near-Miss tracking for Narrator
   private evaluatedNearMissIds = new Set<string>();
@@ -1058,10 +1065,18 @@ class PacificSpeedClientApp {
 
       case 'world_state':
         if (this.mode === 'online') {
+          const prevStatus = this.currentWorldState.world_state.status;
           this.currentWorldState = msg.payload;
+          this.serverClock.observe(msg.payload.tick, performance.now());
           this.audio.processServerEvents(msg.payload.world_state.events);
           this.evaluateHypeMoments(msg.payload);
-          this.updateOverlayVisibility();
+          // Rebuilding the lobby DOM 30-60 times per second caused stutter: only on status change
+          if (msg.payload.world_state.status !== prevStatus) {
+            if (msg.payload.world_state.status === 'running' && prevStatus !== 'ad_revive_prompt') {
+              this.driverPredictor.reset();
+            }
+            this.updateOverlayVisibility();
+          }
         }
         break;
 
@@ -1115,46 +1130,87 @@ class PacificSpeedClientApp {
     this.lastFrameTime = now;
 
     let driverPredictedInputX = 0;
+    // What gets drawn: the authoritative state advanced to "now" (never changes the rules)
+    let renderState = this.currentWorldState;
 
     if (this.mode === 'online') {
-      if (this.currentWorldState.world_state.status === 'running') {
-        const inputPayload: ClientInputPayload = this.input.sampleInputPayload(
-          this.playerId,
-          this.activeRole
-        );
-        driverPredictedInputX = inputPayload.input_vector.x;
-        this.sendWsMessage({
-          type: 'player_input',
-          payload: inputPayload
-        });
+      const latest = this.currentWorldState;
+      if (latest.world_state.status === 'running') {
+        // Inputs: at most ~60 per second whatever the monitor refresh rate
+        this.driverPredictor.advance(dt);
+        if (now - this.lastInputSentAt >= TICK_MS - 1) {
+          this.lastInputSentAt = now;
+          const inputPayload: ClientInputPayload = this.input.sampleInputPayload(
+            this.playerId,
+            this.activeRole
+          );
+          this.sendWsMessage({ type: 'player_input', payload: inputPayload });
+          if (this.activeRole === 'driver') {
+            this.driverPredictor.recordSent(inputPayload.seq, inputPayload.input_vector.x, inputPayload.input_vector.y);
+          }
+        }
+
+        // Advance the last server state to the estimated server time of this frame
+        const estTick = this.serverClock.estimateTick(now);
+        if (estTick !== null) {
+          renderState = extrapolateWorld(latest, ((estTick - latest.tick) * TICK_MS) / 1000);
+        }
+
+        // The driver sees their own vehicle respond instantly (prediction, corrected by the server)
+        if (this.activeRole === 'driver') {
+          const ack = latest.input_acks?.[this.playerId];
+          const predicted = this.driverPredictor.predict(
+            latest.entity_positions.mecha.x,
+            latest.entity_positions.mecha.y,
+            ack
+          );
+          renderState = {
+            ...renderState,
+            entity_positions: {
+              ...renderState.entity_positions,
+              mecha: { ...renderState.entity_positions.mecha, x: predicted.x, y: predicted.y }
+            }
+          };
+        }
       }
     } else {
       if (this.localSim.getStatus() === 'running') {
-        if (this.mode === 'local_coop') {
-          const driverInput = this.input.sampleInputPayload(this.playerId, 'driver');
-          const navInput = this.input.sampleInputPayload(this.playerId, 'navigator');
-          driverPredictedInputX = driverInput.input_vector.x;
-          this.localSim.applyPlayerInput(driverInput);
-          this.localSim.applyPlayerInput(navInput);
-        } else {
-          const humanInput = this.input.sampleInputPayload(this.playerId, this.activeRole);
-          driverPredictedInputX = humanInput.input_vector.x;
-          this.localSim.applyPlayerInput(humanInput);
-          const botRole: PlayerRole = this.activeRole === 'driver' ? 'navigator' : 'driver';
-          this.localSim.updateBotCoPilot(botRole);
-        }
-
-        const prevStatus = this.localSim.getStatus();
-        this.currentWorldState = this.localSim.step(1 / 60);
-        this.audio.processServerEvents(this.currentWorldState.world_state.events);
-        this.evaluateHypeMoments(this.currentWorldState);
-
-        if (this.currentWorldState.world_state.status !== prevStatus) {
-          if (this.currentWorldState.world_state.status === 'gameover') {
-            this.recordLocalScoreIfNeeded();
+        // Fixed timestep: 60 simulation steps per real second on any monitor (60/120/144 Hz)
+        this.localAccumulator = Math.min(this.localAccumulator + dt, 0.25);
+        let steps = 0;
+        while (this.localAccumulator >= 1 / 60 && steps < 6 && this.localSim.getStatus() === 'running') {
+          this.localAccumulator -= 1 / 60;
+          steps++;
+          if (this.mode === 'local_coop') {
+            const driverInput = this.input.sampleInputPayload(this.playerId, 'driver');
+            const navInput = this.input.sampleInputPayload(this.playerId, 'navigator');
+            driverPredictedInputX = driverInput.input_vector.x;
+            this.localSim.applyPlayerInput(driverInput);
+            this.localSim.applyPlayerInput(navInput);
+          } else {
+            const humanInput = this.input.sampleInputPayload(this.playerId, this.activeRole);
+            driverPredictedInputX = humanInput.input_vector.x;
+            this.localSim.applyPlayerInput(humanInput);
+            const botRole: PlayerRole = this.activeRole === 'driver' ? 'navigator' : 'driver';
+            this.localSim.updateBotCoPilot(botRole);
           }
-          this.updateOverlayVisibility();
+
+          const prevStatus = this.localSim.getStatus();
+          this.currentWorldState = this.localSim.step(1 / 60);
+          this.audio.processServerEvents(this.currentWorldState.world_state.events);
+          this.evaluateHypeMoments(this.currentWorldState);
+
+          if (this.currentWorldState.world_state.status !== prevStatus) {
+            if (this.currentWorldState.world_state.status === 'gameover') {
+              this.recordLocalScoreIfNeeded();
+            }
+            this.updateOverlayVisibility();
+          }
         }
+        // Frames between steps (high refresh monitors) are drawn advanced, not repeated
+        renderState = extrapolateWorld(this.currentWorldState, this.localAccumulator);
+      } else {
+        this.localAccumulator = 0;
       }
     }
 
@@ -1167,7 +1223,7 @@ class PacificSpeedClientApp {
     this.audio.updateTelemetryAudio(isRunning, currentSpeed, isCritical, ws.integrity / ws.max_integrity);
 
     this.renderer.render(
-      this.currentWorldState,
+      renderState,
       this.activeRole,
       this.cosmetics,
       driverPredictedInputX,

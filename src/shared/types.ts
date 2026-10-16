@@ -143,6 +143,11 @@ export interface ServerWorldStatePayload {
     /** Seed of the track: tournament matches share it, practice matches get a new one. */
     track_seed?: number;
   };
+  /**
+   * Last input `seq` the server applied for each player (player_id → seq). Lets the driver's
+   * client re-apply only the inputs the server has not seen yet (client-side prediction).
+   */
+  input_acks?: Record<string, number>;
   entity_positions: {
     mecha: {
       x: number;
