@@ -1037,6 +1037,161 @@
         font-size: 13px;
         font-weight: 700;
       }
+
+      /* "¿Cómo se juega?" — deliberately plain: white card, black text, big type, few words */
+      .howto-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        background: rgba(0, 0, 0, 0.62);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        overflow-y: auto;
+      }
+      .howto-card {
+        width: 100%;
+        max-width: 860px;
+        max-height: calc(100vh - 32px);
+        overflow-y: auto;
+        background: #ffffff;
+        color: #111111;
+        border-radius: 18px;
+        padding: 32px 32px 28px;
+        display: flex;
+        flex-direction: column;
+        gap: 22px;
+        font-family: var(--font-ui);
+        user-select: text;
+      }
+      .howto-card h2 {
+        font-family: var(--font-display);
+        font-size: 40px;
+        line-height: 1.1;
+        margin: 0;
+        color: #111111;
+      }
+      .howto-goal {
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.35;
+        margin: 0;
+        color: #111111;
+      }
+      .howto-roles {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+      .howto-role {
+        border: 3px solid #111111;
+        border-radius: 14px;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        min-width: 0;
+      }
+      .howto-role h3 {
+        font-family: var(--font-display);
+        font-size: 30px;
+        margin: 0;
+        color: #111111;
+      }
+      .howto-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        font-size: 20px;
+        font-weight: 700;
+        line-height: 1.25;
+        color: #111111;
+      }
+      .howto-keys {
+        display: flex;
+        gap: 6px;
+        flex-shrink: 0;
+        min-width: 104px;
+      }
+      .howto-key {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 44px;
+        height: 44px;
+        padding: 0 10px;
+        border: 2.5px solid #111111;
+        border-bottom-width: 5px;
+        border-radius: 8px;
+        font-family: var(--font-display);
+        font-size: 20px;
+        font-weight: 700;
+        color: #111111;
+        background: #ffffff;
+      }
+      .howto-note {
+        font-size: 17px;
+        font-weight: 600;
+        color: #111111;
+        margin: 0;
+      }
+      .howto-ok {
+        align-self: center;
+        background: #111111;
+        color: #ffffff;
+        border: none;
+        border-radius: 12px;
+        font-family: var(--font-display);
+        font-size: 24px;
+        font-weight: 700;
+        padding: 16px 48px;
+        cursor: pointer;
+      }
+      .howto-ok:focus-visible,
+      .howto-close:focus-visible {
+        outline: 3px solid #111111;
+        outline-offset: 3px;
+      }
+      .howto-close {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 2.5px solid #111111;
+        background: #ffffff;
+        color: #111111;
+        font-size: 22px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .howto-card {
+        position: relative;
+      }
+      @media (max-width: 640px) {
+        .howto-card {
+          padding: 24px 18px 20px;
+          gap: 16px;
+        }
+        .howto-card h2 {
+          font-size: 32px;
+          padding-right: 48px;
+        }
+        .howto-goal {
+          font-size: 19px;
+        }
+        .howto-roles {
+          grid-template-columns: 1fr;
+        }
+        .howto-role h3 {
+          font-size: 26px;
+        }
+        .howto-row {
+          font-size: 18px;
+        }
+      }
     </style>
   </head>
   <body data-hud-theme="tactical_amber">
@@ -1141,7 +1296,10 @@
               <h1 class="game-title" style="font-size: 24px;">🐾 Patrulla Huellitas</h1>
               <p class="subtitle" style="font-size: 13px;">Pacific Speed &bull; maneja en pareja y rescata animalitos en la tormenta</p>
             </div>
-            <span id="ws-status-badge" class="status-badge status-offline">CONECTANDO...</span>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end;">
+              <button id="btn-how-to-play" class="btn" style="padding: 7px 12px; font-size: 13px;">¿CÓMO SE JUEGA?</button>
+              <span id="ws-status-badge" class="status-badge status-offline">CONECTANDO...</span>
+            </div>
           </div>
 
           <!-- Navigation Tabs -->
@@ -1601,6 +1759,37 @@
               VOLVER
             </button>
           </div>
+        </div>
+      </section>
+
+      <!-- How to play: white, black, big, few words -->
+      <section id="modal-how-to" class="howto-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="howto-title">
+        <div class="howto-card">
+          <button id="btn-howto-close" class="howto-close" aria-label="Cerrar">✕</button>
+          <h2 id="howto-title">¿Cómo se juega?</h2>
+          <p class="howto-goal">Manejen juntos lo más lejos que puedan. Cada 120 m un animalito sube a bordo.</p>
+
+          <div class="howto-roles">
+            <div class="howto-role">
+              <h3>Piloto</h3>
+              <div class="howto-row"><span class="howto-keys"><span class="howto-key">←</span><span class="howto-key">→</span></span>Esquiva los troncos</div>
+              <div class="howto-row"><span class="howto-keys"><span class="howto-key">↑</span></span>Acelera. No bajes de 50</div>
+              <div class="howto-row"><span class="howto-keys"><span class="howto-key">↓</span></span>Frena</div>
+              <p class="howto-note">Pasa por los huesos dorados (turbo) y los botiquines.</p>
+            </div>
+
+            <div class="howto-role">
+              <h3>Navegante</h3>
+              <div class="howto-row"><span class="howto-keys"><span class="howto-key">J</span></span>Escudo izquierdo</div>
+              <div class="howto-row"><span class="howto-keys"><span class="howto-key">L</span></span>Escudo derecho</div>
+              <div class="howto-row"><span class="howto-keys"><span class="howto-key">K</span></span>Marca un carril seguro</div>
+              <div class="howto-row"><span class="howto-keys"><span class="howto-key">ESPACIO</span></span>Radar: ver más lejos</div>
+              <p class="howto-note">Sube el escudo del lado de donde vienen las ramas y las señales.</p>
+            </div>
+          </div>
+
+          <p class="howto-note">En celular: joystick y botones en pantalla. También sirven W A S D.</p>
+          <button id="btn-howto-ok" class="howto-ok">¡Entendido!</button>
         </div>
       </section>
 

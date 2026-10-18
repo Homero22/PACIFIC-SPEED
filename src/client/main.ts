@@ -386,6 +386,9 @@ class PacificSpeedClientApp {
       voiceBtn.textContent = voiceLabels[this.audio.cycleVoiceMode()];
     });
 
+    // How to play: opens from the hangar, and once by itself on a player's first visit
+    this.bindHowToPlay();
+
     // Background (storm ambience) volume: alto → medio → bajo → apagado, remembered per browser
     const ambienceLabels: Record<AmbienceLevel, string> = {
       alto: 'FONDO: ALTO',
@@ -1400,6 +1403,39 @@ class PacificSpeedClientApp {
     document.getElementById('btn-lb-filter-tourney')?.classList.toggle('active', filter === 'tourney');
     document.getElementById('btn-lb-filter-practice')?.classList.toggle('active', filter === 'practice');
     this.renderLeaderboard();
+  }
+
+  private bindHowToPlay(): void {
+    const modal = document.getElementById('modal-how-to');
+    if (!modal) return;
+    const close = () => {
+      modal.classList.add('hidden');
+      try {
+        localStorage.setItem('ps_howto_seen', '1');
+      } catch {
+        // Storage blocked: it may show again next visit
+      }
+    };
+    document.getElementById('btn-how-to-play')?.addEventListener('click', () => {
+      modal.classList.remove('hidden');
+      document.getElementById('btn-howto-ok')?.focus();
+    });
+    document.getElementById('btn-howto-ok')?.addEventListener('click', close);
+    document.getElementById('btn-howto-close')?.addEventListener('click', close);
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) close();
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !modal.classList.contains('hidden')) close();
+    });
+
+    let seen = false;
+    try {
+      seen = localStorage.getItem('ps_howto_seen') === '1';
+    } catch {
+      seen = false;
+    }
+    if (!seen) modal.classList.remove('hidden');
   }
 
   public openModal(modalId: string): void {

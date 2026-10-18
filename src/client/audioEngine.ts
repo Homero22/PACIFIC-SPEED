@@ -717,8 +717,10 @@ export class AudioEngine {
 
     this.setLoopLevel('amb_tension_low', level(0.9 * (1 - tension * 0.45)));
     this.setLoopLevel('amb_tension_high', level(0.9 * tension));
-    this.setLoopLevel('dmg_sparks', level(damage >= 0.7 ? 0.35 : damage >= 0.35 ? 0.6 : 0));
-    this.setLoopLevel('dmg_critical', level(damage >= 0.7 ? 0.8 : 0));
+    // Damage layers share the ambience bus (FONDO, up to x1.9), so they are kept low: a warning,
+    // not a wall of noise (they were too loud once the background level was raised).
+    this.setLoopLevel('dmg_sparks', level(damage >= 0.7 ? 0.12 : damage >= 0.35 ? 0.22 : 0));
+    this.setLoopLevel('dmg_critical', level(damage >= 0.7 ? 0.3 : 0));
   }
 
   private setLoopLevel(id: SfxId, target: number): void {
