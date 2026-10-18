@@ -153,6 +153,15 @@ export class InputManager {
     this.pendingPingLane = lane;
   }
 
+  /**
+   * Drops navigator one-shot actions (radar, lane ping) pressed by a player who is driving,
+   * so they do not fire later when that player switches to navigator.
+   */
+  public discardNavigatorActions(): void {
+    this.pendingRadarPulse = false;
+    this.pendingPingLane = null;
+  }
+
   public sampleInputPayload(playerId: string, role: PlayerRole): ClientInputPayload {
     // Driver steering & throttle
     let x = this.touchVector.x;

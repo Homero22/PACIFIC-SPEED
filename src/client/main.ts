@@ -77,6 +77,7 @@ class PacificSpeedClientApp {
   private driverPredictor = new DriverPredictor();
   private lastInputSentAt = 0;
   private localAccumulator = 0;
+  private lastHudRadarTimer = 0;
 
   // Hype & Near-Miss tracking for Narrator
   private evaluatedNearMissIds = new Set<string>();
@@ -1161,6 +1162,8 @@ class PacificSpeedClientApp {
             this.playerId,
             this.activeRole
           );
+          if (this.activeRole === 'driver') this.input.discardNavigatorActions();
+          this.warnIfRadarWithoutEnergy(inputPayload);
           this.sendWsMessage({ type: 'player_input', payload: inputPayload });
           if (this.activeRole === 'driver') {
             this.driverPredictor.recordSent(inputPayload.seq, inputPayload.input_vector.x, inputPayload.input_vector.y);
@@ -1201,11 +1204,14 @@ class PacificSpeedClientApp {
           if (this.mode === 'local_coop') {
             const driverInput = this.input.sampleInputPayload(this.playerId, 'driver');
             const navInput = this.input.sampleInputPayload(this.playerId, 'navigator');
+            this.warnIfRadarWithoutEnergy(navInput);
             driverPredictedInputX = driverInput.input_vector.x;
             this.localSim.applyPlayerInput(driverInput);
             this.localSim.applyPlayerInput(navInput);
           } else {
             const humanInput = this.input.sampleInputPayload(this.playerId, this.activeRole);
+            if (this.activeRole === 'driver') this.input.discardNavigatorActions();
+            this.warnIfRadarWithoutEnergy(humanInput);
             driverPredictedInputX = humanInput.input_vector.x;
             this.localSim.applyPlayerInput(humanInput);
             const botRole: PlayerRole = this.activeRole === 'driver' ? 'navigator' : 'driver';
@@ -1282,6 +1288,14 @@ class PacificSpeedClientApp {
     const shieldBar = document.getElementById('hud-shield-bar');
     if (shieldBar) {
       shieldBar.style.width = `${(ws.active_shields.energy / ws.active_shields.max_energy) * 100}%`;
+      // Radar just fired: flash the energy bar so its 25% cost is visible
+      const radarTimer = this.currentWorldState.fog_matrix.radar_reveal_timer;
+      if (radarTimer > this.lastHudRadarTimer + 0.5) {
+        shieldBar.classList.remove('radar-flash');
+        void shieldBar.offsetWidth; // restart the animation
+        shieldBar.classList.add('radar-flash');
+      }
+      this.lastHudRadarTimer = radarTimer;
     }
 
     const overdriveBadge = document.getElementById('hud-overdrive-badge');
@@ -1745,6 +1759,15 @@ class PacificSpeedClientApp {
       this.updateModeBanner();
     } catch {
       // Offline fallback
+    }
+  }
+
+  /** The radar costs 25% shield energy; with less it does nothing, so say why. */
+  private warnIfRadarWithoutEnergy(input: ClientInputPayload): void {
+    if (input.role !== 'navigator' || !input.action_flags.radar_pulse) return;
+    const ws = this.currentWorldState.world_state;
+    if (ws.status === 'running' && ws.active_shields.energy < 25) {
+      this.renderer.triggerCustomCallout('SIN ENERGÍA PARA EL RADAR', 'Necesita 25% · espera a que se recargue', '#ffc45a');
     }
   }
 

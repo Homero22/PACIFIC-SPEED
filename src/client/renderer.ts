@@ -82,6 +82,10 @@ export class GameRenderer {
   private sparks: SparkParticle[] = [];
   private shockwaves: ShockwaveRing[] = [];
   private callouts: FloatingCallout[] = [];
+  /** Radar: expanding waves (age in s), last reveal timer seen and the eased driver visibility. */
+  private radarWaves: number[] = [];
+  private lastRadarTimer = 0;
+  private smoothVisRadius = 0;
   private rainDrops: RainDrop[] = [];
 
   private smoothMechaX: number = getLaneCenterX(1);
@@ -230,10 +234,13 @@ export class GameRenderer {
     // Driver gets Volumetric Headlight Cones + Night-Vision FLIR on Radar Pulse;
     // Navigator gets Full Overhead Stealth Fighter Radar HUD
     if (activeRole === 'driver') {
-      this.drawDriverVolumetricLighting(state);
+      this.drawDriverVolumetricLighting(state, dt);
     } else {
       this.drawNavigatorStealthRadar(state);
     }
+
+    // 7a. Radar pulse: wave from the vehicle and a countdown both roles can see
+    this.updateAndDrawRadarPulse(state, dt);
 
     // 7b. Animals waiting on the roadside (drawn over the fog: their lamps light them up)
     this.drawRoadsideAnimals(state, weather, dt);
@@ -1239,11 +1246,15 @@ export class GameRenderer {
   /**
    * Driver view: headlights and the storm fog that limits what the driver sees.
    */
-  private drawDriverVolumetricLighting(state: ServerWorldStatePayload): void {
+  private drawDriverVolumetricLighting(state: ServerWorldStatePayload, dt: number): void {
     const { ctx } = this;
     const width = TRACK_CONFIG.WORLD_WIDTH;
     const height = TRACK_CONFIG.WORLD_HEIGHT;
-    const visRadius = state.fog_matrix.visibility_radius;
+    // Ease the light open/closed instead of snapping 185 → 420 px
+    const targetVis = state.fog_matrix.visibility_radius;
+    if (this.smoothVisRadius <= 0) this.smoothVisRadius = targetVis;
+    this.smoothVisRadius += (targetVis - this.smoothVisRadius) * Math.min(1, dt * 6);
+    const visRadius = this.smoothVisRadius;
     const isRadarRevealed = state.fog_matrix.radar_reveal_timer > 0;
 
     // 1. Add Dual Volumetric Headlight Beams in front of Mecha
@@ -1291,9 +1302,64 @@ export class GameRenderer {
 
     // If Navigator triggered Radar Pulse, overlay FLIR Thermal Green Night-Vision scan
     if (isRadarRevealed) {
-      ctx.fillStyle = 'rgba(46, 196, 182, 0.07)';
+      ctx.fillStyle = 'rgba(46, 196, 182, 0.12)';
       ctx.fillRect(0, 0, width, height);
+      // Dashed ring marking how far the radar lets the driver see
+      ctx.save();
+      ctx.setLineDash([10, 8]);
+      ctx.lineDashOffset = -performance.now() * 0.02;
+      ctx.strokeStyle = 'rgba(126, 232, 216, 0.55)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(this.smoothMechaX, centerFocusY, visRadius * 0.9, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
     }
+    ctx.restore();
+  }
+
+  /** Radar pulse feedback: a teal wave when it fires and a "RADAR ACTIVO · X s" pill while it lasts. */
+  private updateAndDrawRadarPulse(state: ServerWorldStatePayload, dt: number): void {
+    const { ctx } = this;
+    const timer = state.fog_matrix.radar_reveal_timer;
+    if (timer > this.lastRadarTimer + 0.5) this.radarWaves.push(0);
+    this.lastRadarTimer = timer;
+
+    const WAVE_LIFE = 0.9;
+    this.radarWaves = this.radarWaves.map((age) => age + dt).filter((age) => age < WAVE_LIFE);
+    for (const age of this.radarWaves) {
+      const t = age / WAVE_LIFE;
+      const radius = 30 + (1 - (1 - t) * (1 - t)) * 490;
+      ctx.save();
+      ctx.globalAlpha = 1 - t;
+      ctx.strokeStyle = '#7ee8d8';
+      ctx.lineWidth = 5 * (1 - t) + 1;
+      ctx.shadowColor = '#2ec4b6';
+      ctx.shadowBlur = 16;
+      ctx.beginPath();
+      ctx.arc(this.smoothMechaX, this.smoothMechaY, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    if (timer <= 0 || state.world_state.status !== 'running') return;
+    const label = `RADAR ACTIVO · ${Math.ceil(timer)} s`;
+    ctx.save();
+    ctx.font = '700 15px "Segoe UI", system-ui, sans-serif';
+    const w = ctx.measureText(label).width + 30;
+    const h = 30;
+    const x = TRACK_CONFIG.WORLD_WIDTH / 2 - w / 2;
+    const y = 250;
+    ctx.fillStyle = 'rgba(4, 22, 26, 0.82)';
+    this.roundedRect(x, y, w, h, 15);
+    ctx.fill();
+    ctx.strokeStyle = '#2ec4b6';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = '#7ee8d8';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, TRACK_CONFIG.WORLD_WIDTH / 2, y + h / 2 + 1);
     ctx.restore();
   }
 

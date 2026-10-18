@@ -1038,6 +1038,18 @@
         font-weight: 700;
       }
 
+      /* Radar fired: the energy bar flashes to show its 25% cost */
+      @keyframes radar-flash {
+        0%, 100% { filter: none; }
+        25%, 75% { filter: brightness(2.2) saturate(1.6); box-shadow: 0 0 12px var(--cyan); }
+      }
+      .radar-flash {
+        animation: radar-flash 0.7s ease-in-out;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .radar-flash { animation: none; }
+      }
+
       /* "¿Cómo se juega?" — deliberately plain: white card, black text, big type, few words */
       .howto-overlay {
         position: fixed;
