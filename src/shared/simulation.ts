@@ -31,6 +31,10 @@ import type {
   TacticalPing
 } from './types.js';
 
+/** AI navigator radar: only with this much shield energy, and at most once every 6 s. */
+const BOT_RADAR_MIN_ENERGY = 70;
+const BOT_RADAR_COOLDOWN_TICKS = 360;
+
 /** Obstacles scroll at speed*2.35 px/s while distance grows speed/10 m/s: 23.5 px per meter. */
 const PX_PER_METER = 23.5;
 
@@ -99,6 +103,8 @@ export class GameSimulation {
   private lastBarrierWave: { distance: number; freeLanes: LaneIndex[] } | null = null;
   /** Meter of the last flank pair or crossing branch (they need spacing for shield energy). */
   private lastHeavyFlankAt = -Infinity;
+  /** Tick of the AI navigator's last radar pulse (it uses the radar now and then). */
+  private lastBotRadarTick = -Infinity;
   private breatherFlip = false;
   /** Exact (fractional) score; totalScore is its floor. */
   private scoreAccumulator = 0;
@@ -155,6 +161,7 @@ export class GameSimulation {
     this.nextWaveDistance = TRACK_RULES.FIRST_WAVE_DISTANCE;
     this.lastBarrierWave = null;
     this.lastHeavyFlankAt = -Infinity;
+    this.lastBotRadarTick = -Infinity;
     this.breatherFlip = false;
     this.scoreAccumulator = 0;
     this.tickCount = 0;
@@ -243,6 +250,23 @@ export class GameSimulation {
         if (safeLanes.length > 0) {
           this.navigatorFlags.ping_lane = safeLanes[0];
         }
+      }
+
+      // Radar now and then: several hazards coming, no shield needed right now, plenty of
+      // energy left (it costs 25%) and at least BOT_RADAR_COOLDOWN_TICKS since the last one
+      const hazardsAhead = this.obstacles.filter(
+        (o) => o.type !== 'overdrive_cell' && o.type !== 'repair_cell' && this.mechaY - o.y > 0 && this.mechaY - o.y < 600
+      ).length;
+      if (
+        this.radarRevealTimer <= 0 &&
+        !needLeft &&
+        !needRight &&
+        hazardsAhead >= 3 &&
+        this.shieldEnergy >= BOT_RADAR_MIN_ENERGY &&
+        this.tickCount - this.lastBotRadarTick >= BOT_RADAR_COOLDOWN_TICKS
+      ) {
+        this.navigatorFlags.radar_pulse = true;
+        this.lastBotRadarTick = this.tickCount;
       }
     } else if (botRole === 'driver') {
       // Bot Driver follows Navigator pings or dodges nearby barriers
