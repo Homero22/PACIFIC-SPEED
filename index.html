@@ -6,6 +6,15 @@
     <title>Patrulla Huellitas · Pacific Speed</title>
     <!-- Google AdSense (cuenta ca-pub-3713280221541385); ads.txt vive en public/ -->
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3713280221541385" crossorigin="anonymous"></script>
+    <script>
+      // H5 Games Ads testing mode (fake ads) on localhost or with ?adtest=1 — same rule as src/client/adPlacement.ts
+      (function () {
+        var h = location.hostname;
+        if (h === 'localhost' || h === '127.0.0.1' || new URLSearchParams(location.search).get('adtest') === '1') {
+          document.currentScript.previousElementSibling.setAttribute('data-adbreak-test', 'on');
+        }
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -1812,14 +1821,14 @@
         <div class="modal-card" style="border-color: var(--danger)">
           <h2 class="game-title" style="color: var(--danger)">¡El vehículo necesita reparación!</h2>
           <p id="ad-timer-text" class="subtitle" style="font-size: 13px; color: var(--text-primary)">
-            Mira un video de 5 segundos y el equipo veterinario deja tu vehículo al 100% para seguir rescatando.
+            Preparando la reparación…
           </p>
           <div class="ad-progress-outer">
             <div id="ad-progress-bar" class="ad-progress-inner"></div>
           </div>
           <div class="input-row">
             <button id="btn-watch-ad" class="btn btn-primary" style="flex: 2">
-              VER VIDEO Y REPARAR (5 S)
+              REPARAR (5 S)
             </button>
             <button id="btn-decline-ad" class="btn" style="flex: 1; border-color: var(--danger)">
               TERMINAR MISIÓN

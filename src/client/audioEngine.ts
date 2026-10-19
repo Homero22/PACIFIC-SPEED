@@ -361,6 +361,10 @@ export class AudioEngine {
     }
   }
 
+  public getMuted(): boolean {
+    return this.isMuted;
+  }
+
   public toggleMute(): boolean {
     this.setMuted(!this.isMuted);
     return this.isMuted;

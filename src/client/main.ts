@@ -23,6 +23,7 @@ import type {
 import { AudioEngine, type AmbienceLevel, type VoiceMode } from './audioEngine.js';
 import { InputManager } from './inputManager.js';
 import { GameRenderer } from './renderer.js';
+import { AdPlacement, resolveAdMode } from './adPlacement.js';
 
 const LOCAL_COMMS_MAP: Record<TacticalCommsPreset, { code: string; label: string }> = {
   bogey_alert: { code: 'AVISO', label: '¡Cuidado, viene una rama! Sube el escudo' },
@@ -71,6 +72,12 @@ class PacificSpeedClientApp {
 
   private lastFrameTime = performance.now();
   private adCountdownInterval: number | null = null;
+  /** H5 Games Ads: rewarded repair + ad between missions ('off' until Google approves). */
+  private ads = new AdPlacement(resolveAdMode(window.location));
+  /** Set while Google has a rewarded ad ready for the repair modal. */
+  private repairAdShow: (() => void) | null = null;
+  private mutedBeforeAd: boolean | null = null;
+  private lastOverlayStatus: string | null = null;
 
   // Smooth online play (see netSmoothing.ts) and fixed-step local play
   private serverClock = new ServerClock();
@@ -499,8 +506,16 @@ class PacificSpeedClientApp {
     // Instant Rematch & Back to Lobby
     document.getElementById('btn-instant-rematch')?.addEventListener('click', () => {
       this.audio.init();
-      this.audio.playNarratorCue('athena_online', true, true);
-      this.triggerStartOrRematch();
+      const go = () => {
+        this.audio.playNarratorCue('athena_online', true, true);
+        this.triggerStartOrRematch();
+      };
+      // Tournament pairs paid for their pass: no ads for them
+      if (this.isTournamentVerified) {
+        go();
+      } else {
+        this.ads.showBetweenMissions(() => this.muteForAd(), () => this.unmuteAfterAd(), go);
+      }
     });
 
     document.getElementById('btn-back-lobby')?.addEventListener('click', () => {
@@ -519,7 +534,15 @@ class PacificSpeedClientApp {
     // Rewarded Ad 5s Emergency Field Repair Hook
     document.getElementById('btn-watch-ad')?.addEventListener('click', () => {
       this.audio.init();
-      this.startRewardedAdCountdown();
+      if (this.repairAdShow) {
+        // Rewarded ad: the repair only happens if Google reports it was watched to the end
+        const show = this.repairAdShow;
+        this.repairAdShow = null;
+        this.setRepairModal('playing');
+        show();
+      } else {
+        this.startRewardedAdCountdown();
+      }
     });
 
     document.getElementById('btn-decline-ad')?.addEventListener('click', () => {
@@ -817,20 +840,83 @@ class PacificSpeedClientApp {
         if (btnWatch) btnWatch.disabled = false;
         if (btnDecline) btnDecline.disabled = false;
         if (progressEl) progressEl.style.width = '0%';
-        if (statusText) {
-          statusText.textContent =
-            'Mira un video de 5 segundos y el equipo veterinario deja tu vehículo al 100% para seguir rescatando.';
-        }
-
-        if (this.mode === 'online' && this.wsConnected) {
-          this.sendWsMessage({ type: 'watch_rewarded_ad' });
-        } else {
-          this.localSim.reviveWithRewardedAd();
-          this.currentWorldState = this.localSim.getWorldStatePayload();
-          this.updateOverlayVisibility();
-        }
+        this.applyRepair();
       }
     }, 100);
+  }
+
+  /** Puts the vehicle back to 100% (server in online mode, local simulation otherwise). */
+  private applyRepair(): void {
+    if (this.mode === 'online' && this.wsConnected) {
+      this.sendWsMessage({ type: 'watch_rewarded_ad' });
+    } else {
+      this.localSim.reviveWithRewardedAd();
+      this.currentWorldState = this.localSim.getWorldStatePayload();
+      this.updateOverlayVisibility();
+    }
+  }
+
+  /**
+   * Repair modal opened: ask Google for a rewarded ad. With one ready the button says
+   * "VER VIDEO Y REPARAR"; without one (no fill, ads off, tournament) the vet team repairs it in 5 s.
+   */
+  private prepareRepairOffer(): void {
+    this.repairAdShow = null;
+    if (!this.ads.enabled || this.isTournamentVerified) {
+      this.setRepairModal('free');
+      return;
+    }
+    this.setRepairModal('checking');
+    this.ads.requestReward({
+      onAvailable: (show) => {
+        if (this.currentWorldState.world_state.status !== 'ad_revive_prompt') return;
+        this.repairAdShow = show;
+        this.setRepairModal('ad');
+      },
+      onUnavailable: () => {
+        if (this.currentWorldState.world_state.status === 'ad_revive_prompt') this.setRepairModal('free');
+      },
+      onRewarded: () => this.applyRepair(),
+      onDismissed: () => {
+        // Closed early: no repair; offer the video again
+        if (this.currentWorldState.world_state.status !== 'ad_revive_prompt') return;
+        this.setRepairModal('dismissed');
+        window.setTimeout(() => {
+          if (this.currentWorldState.world_state.status === 'ad_revive_prompt') this.prepareRepairOffer();
+        }, 1500);
+      },
+      onAdStart: () => this.muteForAd(),
+      onAdEnd: () => this.unmuteAfterAd()
+    });
+  }
+
+  private setRepairModal(state: 'checking' | 'ad' | 'free' | 'playing' | 'dismissed'): void {
+    const btnWatch = document.getElementById('btn-watch-ad') as HTMLButtonElement | null;
+    const statusText = document.getElementById('ad-timer-text');
+    const copy: Record<typeof state, [string, string, boolean]> = {
+      checking: ['PREPARANDO...', 'Preparando la reparación…', true],
+      ad: ['VER VIDEO Y REPARAR', 'Mira un video corto y el equipo veterinario deja tu vehículo al 100% para seguir rescatando.', false],
+      free: ['REPARAR (5 S)', 'El equipo veterinario puede dejar tu vehículo al 100% en 5 segundos.', false],
+      playing: ['VIENDO VIDEO...', 'Mira el video completo para reparar el vehículo.', true],
+      dismissed: ['VER VIDEO Y REPARAR', 'El video se cerró antes de terminar. Hay que verlo completo para reparar.', true]
+    };
+    const [label, text, disabled] = copy[state];
+    if (btnWatch) {
+      btnWatch.textContent = label;
+      btnWatch.disabled = disabled;
+    }
+    if (statusText) statusText.textContent = text;
+  }
+
+  private muteForAd(): void {
+    if (this.mutedBeforeAd === null) this.mutedBeforeAd = this.audio.getMuted();
+    this.audio.setMuted(true);
+  }
+
+  private unmuteAfterAd(): void {
+    if (this.mutedBeforeAd === null) return;
+    this.audio.setMuted(this.mutedBeforeAd);
+    this.mutedBeforeAd = null;
   }
 
   private connectWebSocket(): void {
@@ -1706,6 +1792,11 @@ class PacificSpeedClientApp {
 
     lobbyModal?.classList.toggle('hidden', status !== 'lobby');
     adModal?.classList.toggle('hidden', status !== 'ad_revive_prompt');
+    if (status !== this.lastOverlayStatus) {
+      if (status === 'ad_revive_prompt') this.prepareRepairOffer();
+      else this.repairAdShow = null;
+      this.lastOverlayStatus = status;
+    }
     gameoverModal?.classList.toggle('hidden', status !== 'gameover');
 
     if (status === 'gameover') {
