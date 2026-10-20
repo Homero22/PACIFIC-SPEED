@@ -121,6 +121,14 @@ const passLimiter = createIpLimiter(30, 15 * 60 * 1000);
 // Initialize Database, Tournament Service & Leaderboard Persistence
 void tournamentService.init().then(async () => {
   await roomManager.init();
+  // Privacy policy: erase contact data 30 days after a tournament closes (checked daily)
+  const purge = () =>
+    tournamentService
+      .purgeExpiredContactData()
+      .then((n) => n > 0 && console.log(`[PRIVACY] Datos de contacto borrados: ${n} registro(s).`))
+      .catch((err) => console.error('[PRIVACY] No se pudo borrar datos vencidos:', err));
+  void purge();
+  setInterval(purge, 24 * 60 * 60 * 1000).unref();
 });
 
 // Healthcheck endpoint for Railway deployment (strictly sanitized, no secret keys/tokens)
@@ -598,6 +606,15 @@ if (fs.existsSync(publicPath)) {
 }
 
 app.use(express.static(clientDistPath));
+
+// Public legal pages (static files in public/, copied into the client build)
+for (const page of ['bases', 'privacidad']) {
+  app.get(`/${page}`, (_req, res) => {
+    res.sendFile(path.join(clientDistPath, `${page}.html`), (err) => {
+      if (err) res.sendFile(path.join(publicPath, `${page}.html`), (err2) => err2 && res.status(404).end());
+    });
+  });
+}
 
 app.get('/admin', (_req, res) => {
   res.sendFile(path.join(clientDistPath, 'admin.html'), (err) => {
