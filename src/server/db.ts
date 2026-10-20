@@ -13,6 +13,7 @@ import type {
   LeaderboardEntry,
   PaymentAuditRecord,
   PendingRegistrationRecord,
+  PrizePayoutRecord,
   ReferralRecord,
   SecurityAuditLog,
   TournamentRecord
@@ -28,6 +29,7 @@ interface LocalDatabaseSchema {
   pending_registrations?: PendingRegistrationRecord[];
   config_changes?: ConfigChangeRecord[];
   match_scores?: LeaderboardEntry[];
+  prize_payouts?: PrizePayoutRecord[];
 }
 
 
@@ -302,6 +304,8 @@ function mapPendingRow(row: any): PendingRegistrationRecord {
     navigator_name: row.navigator_name,
     referral_code: row.referral_code || undefined,
     phone: row.phone || undefined,
+    email: row.email || undefined,
+    terms_accepted_at: row.terms_accepted_at ? new Date(row.terms_accepted_at).toISOString() : undefined,
     amount_usd: parseFloat(row.amount_usd),
     status: row.status,
     tournament_id: row.tournament_id || undefined,
@@ -334,7 +338,23 @@ function mapMatchScoreRow(r: any): LeaderboardEntry {
     survival_time: parseFloat(r.survival_time),
     region: r.region || 'LATAM-PACIFIC',
     created_at: typeof r.created_at === 'string' ? r.created_at : new Date(r.created_at).toISOString(),
-    is_tournament: Boolean(r.is_tournament)
+    is_tournament: Boolean(r.is_tournament),
+    payment_audit_id: r.payment_audit_id || undefined,
+    tournament_id: r.tournament_id || undefined
+  };
+}
+
+function mapPayoutRow(r: any): PrizePayoutRecord {
+  return {
+    id: r.id,
+    tournament_id: r.tournament_id,
+    place: parseInt(r.place, 10) as 1 | 2 | 3,
+    payment_audit_id: r.payment_audit_id,
+    amount_usd: parseFloat(r.amount_usd),
+    reference: r.reference,
+    notes: r.notes || undefined,
+    paid_at: new Date(r.paid_at).toISOString(),
+    admin_ip: r.admin_ip
   };
 }
 
@@ -760,6 +780,28 @@ export class DatabaseProvider {
 
         CREATE INDEX IF NOT EXISTS idx_match_scores_score ON match_scores (total_score DESC);
         CREATE INDEX IF NOT EXISTS idx_match_scores_tourney ON match_scores (is_tournament);
+
+        -- Tournament scores are linked to the paid registration (pass) that played them
+        ALTER TABLE match_scores ADD COLUMN IF NOT EXISTS payment_audit_id VARCHAR(100);
+        ALTER TABLE match_scores ADD COLUMN IF NOT EXISTS tournament_id VARCHAR(100);
+        CREATE INDEX IF NOT EXISTS idx_match_scores_payment ON match_scores (tournament_id, payment_audit_id);
+
+        -- Contact data and rules acceptance, needed to verify and pay winners
+        ALTER TABLE pending_registrations ADD COLUMN IF NOT EXISTS email VARCHAR(254);
+        ALTER TABLE pending_registrations ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMP WITH TIME ZONE;
+
+        CREATE TABLE IF NOT EXISTS prize_payouts (
+          id VARCHAR(100) PRIMARY KEY,
+          tournament_id VARCHAR(100) NOT NULL,
+          place INT NOT NULL,
+          payment_audit_id VARCHAR(100) NOT NULL,
+          amount_usd DECIMAL(10,2) NOT NULL,
+          reference VARCHAR(200) NOT NULL,
+          notes TEXT,
+          paid_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          admin_ip VARCHAR(64) NOT NULL,
+          UNIQUE (tournament_id, place)
+        );
       `);
 
       // Backfill pass tokens for payments approved before tokens existed (admin can hand them out)
@@ -1346,8 +1388,8 @@ export class DatabaseProvider {
       await pool.query(
         `INSERT INTO pending_registrations (
           client_transaction_id, driver_name, navigator_name, referral_code, phone, amount_usd, status, tournament_id, created_at, room_code,
-          config_snapshot_json
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          config_snapshot_json, email, terms_accepted_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
           record.client_transaction_id,
           record.driver_name,
@@ -1359,7 +1401,9 @@ export class DatabaseProvider {
           record.tournament_id || null,
           record.created_at,
           record.room_code || null,
-          record.config_snapshot ? JSON.stringify(record.config_snapshot) : null
+          record.config_snapshot ? JSON.stringify(record.config_snapshot) : null,
+          record.email || null,
+          record.terms_accepted_at || null
         ]
       );
       return;
@@ -1421,6 +1465,7 @@ export class DatabaseProvider {
     driver_name?: string;
     navigator_name?: string;
     tournament_id?: string;
+    payment_audit_id?: string;
     status?: string;
     message?: string;
   }> {
@@ -1450,6 +1495,7 @@ export class DatabaseProvider {
       driver_name: found.pair_driver_name,
       navigator_name: found.pair_navigator_name,
       tournament_id: found.tournament_id,
+      payment_audit_id: found.id,
       status: 'ACTIVE'
     };
   }
@@ -1461,8 +1507,8 @@ export class DatabaseProvider {
         `INSERT INTO match_scores (
           id, room_code, driver_name, navigator_name,
           total_score, distance_traveled, survival_time,
-          region, is_tournament, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          region, is_tournament, created_at, payment_audit_id, tournament_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         ON CONFLICT (id) DO UPDATE SET
           total_score = EXCLUDED.total_score,
           distance_traveled = EXCLUDED.distance_traveled,
@@ -1477,7 +1523,9 @@ export class DatabaseProvider {
           entry.survival_time,
           entry.region || 'LATAM-PACIFIC',
           Boolean(entry.is_tournament),
-          entry.created_at || new Date().toISOString()
+          entry.created_at || new Date().toISOString(),
+          entry.payment_audit_id || null,
+          entry.tournament_id || null
         ]
       );
     } else {
@@ -1510,6 +1558,121 @@ export class DatabaseProvider {
       const list = this.local().match_scores || [];
       return [...list].sort((a, b) => b.total_score - a.total_score).slice(0, limit);
     }
+  }
+
+  /**
+   * Best score of each paid registration in a tournament (one row per payment;
+   * ties go to whoever reached the score first).
+   */
+  public async getBestTournamentScoresByPayment(
+    tournamentId: string,
+    until?: string
+  ): Promise<Array<LeaderboardEntry & { matches_played: number }>> {
+    const pool = this.backend();
+    let rows: LeaderboardEntry[];
+    if (pool) {
+      const res = await pool.query(
+        `SELECT * FROM match_scores
+         WHERE is_tournament = TRUE AND tournament_id = $1 AND payment_audit_id IS NOT NULL
+           AND ($2::timestamptz IS NULL OR created_at <= $2::timestamptz)`,
+        [tournamentId, until || null]
+      );
+      rows = res.rows.map(mapMatchScoreRow);
+    } else {
+      const limit = until ? Date.parse(until) : Infinity;
+      rows = (this.local().match_scores || []).filter(
+        (s) =>
+          s.is_tournament &&
+          s.tournament_id === tournamentId &&
+          s.payment_audit_id &&
+          Date.parse(s.created_at) <= limit
+      );
+    }
+    const best = new Map<string, LeaderboardEntry & { matches_played: number }>();
+    for (const row of rows) {
+      const key = row.payment_audit_id!;
+      const prev = best.get(key);
+      const played = (prev?.matches_played || 0) + 1;
+      const better =
+        !prev ||
+        row.total_score > prev.total_score ||
+        (row.total_score === prev.total_score && Date.parse(row.created_at) < Date.parse(prev.created_at));
+      best.set(key, { ...(better ? row : prev!), matches_played: played });
+    }
+    return Array.from(best.values());
+  }
+
+  /** Tournament scores saved before the payment link existed (cannot be attributed to a pair). */
+  public async countUnlinkedTournamentScores(): Promise<number> {
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query(
+        'SELECT COUNT(*)::int AS n FROM match_scores WHERE is_tournament = TRUE AND payment_audit_id IS NULL'
+      );
+      return res.rows[0]?.n || 0;
+    }
+    return (this.local().match_scores || []).filter((s) => s.is_tournament && !s.payment_audit_id).length;
+  }
+
+  public async getPaymentAuditById(id: string): Promise<PaymentAuditRecord | null> {
+    if (!id) return null;
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query('SELECT * FROM payments_audit WHERE id = $1 LIMIT 1', [id]);
+      return res.rows.length > 0 ? mapAuditRow(res.rows[0]) : null;
+    }
+    const found = this.local().payments.find((p) => p.id === id);
+    return found ? { ...found } : null;
+  }
+
+  public async listPrizePayouts(tournamentId: string): Promise<PrizePayoutRecord[]> {
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query('SELECT * FROM prize_payouts WHERE tournament_id = $1 ORDER BY place', [
+        tournamentId
+      ]);
+      return res.rows.map(mapPayoutRow);
+    }
+    return (this.local().prize_payouts || [])
+      .filter((p) => p.tournament_id === tournamentId)
+      .map((p) => ({ ...p }))
+      .sort((a, b) => a.place - b.place);
+  }
+
+  /** Records a prize payout; each podium place can be paid only once per tournament. */
+  public async savePrizePayout(record: PrizePayoutRecord): Promise<void> {
+    const pool = this.backend();
+    if (pool) {
+      try {
+        await pool.query(
+          `INSERT INTO prize_payouts (
+            id, tournament_id, place, payment_audit_id, amount_usd, reference, notes, paid_at, admin_ip
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            record.id,
+            record.tournament_id,
+            record.place,
+            record.payment_audit_id,
+            record.amount_usd,
+            record.reference,
+            record.notes || null,
+            record.paid_at,
+            record.admin_ip
+          ]
+        );
+      } catch (err: any) {
+        if (err?.code === '23505') throw new Error(`El ${record.place}.º lugar ya fue marcado como pagado.`);
+        throw err;
+      }
+      return;
+    }
+    const data = this.local();
+    if (!data.prize_payouts) data.prize_payouts = [];
+    if (data.prize_payouts.some((p) => p.tournament_id === record.tournament_id && p.place === record.place)) {
+      throw new Error(`El ${record.place}.º lugar ya fue marcado como pagado.`);
+    }
+    data.prize_payouts.push({ ...record });
+    this.persistLocalData();
   }
 
   public async seedInitialScoresIfEmpty(seeds: LeaderboardEntry[]): Promise<void> {

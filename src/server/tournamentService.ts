@@ -18,12 +18,16 @@ import type {
   PaymentAuditRecord,
   PayphoneWebhookPayload,
   PendingRegistrationRecord,
+  PrizePayoutRecord,
   ReferralRecord,
   TournamentRecord,
+  TournamentWinner,
+  TournamentWinnersReport,
   TournamentStatus,
   TournamentTelemetryStatus,
   UpdateConfigDto
 } from '../shared/types.js';
+import { randomUUID } from 'crypto';
 import { antiCheatEngine } from './antiCheat.js';
 import { ConfigLockConflictError, DatabaseProvider, DatabaseUnavailableError, dbProvider } from './db.js';
 import {
@@ -290,7 +294,8 @@ export class TournamentService {
     driverName: string,
     navigatorName: string,
     referralCode?: string,
-    clientIp = '127.0.0.1'
+    clientIp = '127.0.0.1',
+    contact: { phone?: string; email?: string } = {}
   ): Promise<PaymentResult> {
     const gate = await this.checkRegistrationOpen();
     if (!gate.open) return { success: false, message: gate.message };
@@ -301,6 +306,9 @@ export class TournamentService {
       driver_name: sanitizePairName(driverName, 'PILOT_A'),
       navigator_name: sanitizePairName(navigatorName, 'PILOT_B'),
       referral_code: referralCode ? String(referralCode).trim().toUpperCase().slice(0, 50) : undefined,
+      phone: contact.phone ? String(contact.phone).slice(0, 20) : undefined,
+      email: contact.email ? String(contact.email).trim().toLowerCase().slice(0, 254) : undefined,
+      terms_accepted_at: new Date().toISOString(),
       amount_usd: gate.tournament.entry_fee_usd,
       status: 'PENDING',
       tournament_id: gate.tournament.id,
@@ -572,6 +580,115 @@ export class TournamentService {
   public clearSecurityLogs(): void {
     antiCheatEngine.clearLogs();
   }
+
+  /**
+   * Podium of the active tournament, each place tied to the exact paid registration
+   * that played the score, with the contact data and payout status needed to pay it.
+   */
+  public async getWinnersReport(): Promise<TournamentWinnersReport> {
+    const config = await this.db.getTournamentConfig();
+    const tournament = await this.db.getActiveTournament();
+    const completed = tournament.status === 'completed';
+    // Once closed, later scores never change the podium
+    const best = await this.db.getBestTournamentScoresByPayment(
+      tournament.id,
+      completed ? tournament.completed_at : undefined
+    );
+    const podium = calculatePodiumPrizes(tournament.accumulated_prize_pool, config.prize_podium_breakdown);
+    const prizes = [podium.first_place, podium.second_place, podium.third_place];
+    const payouts = await this.db.listPrizePayouts(tournament.id);
+
+    const ranked = rankPodium(best);
+    const winners: TournamentWinner[] = [];
+    for (let i = 0; i < ranked.length; i++) {
+      const score = ranked[i];
+      const place = (i + 1) as 1 | 2 | 3;
+      const payment = await this.db.getPaymentAuditById(score.payment_audit_id!);
+      if (!payment) continue;
+      const pending = payment.client_transaction_id
+        ? await this.db.getPendingRegistration(payment.client_transaction_id)
+        : null;
+      winners.push({
+        place,
+        prize_usd: prizes[i],
+        payment_audit_id: payment.id,
+        driver_name: payment.pair_driver_name,
+        navigator_name: payment.pair_navigator_name,
+        best_score: score.total_score,
+        distance_traveled: score.distance_traveled,
+        achieved_at: score.created_at,
+        matches_played: score.matches_played,
+        payphone_transaction_id: payment.payphone_transaction_id,
+        paid_entry_at: typeof payment.created_at === 'string' ? payment.created_at : new Date(payment.created_at).toISOString(),
+        pass_hint: passHint(payment.pass_token),
+        contact_phone: pending?.phone || null,
+        contact_email: pending?.email || null,
+        terms_accepted_at: pending?.terms_accepted_at || null,
+        payout: payouts.find((p) => p.place === place) || null
+      });
+    }
+
+    return {
+      tournament_id: tournament.id,
+      tournament_name: tournament.name,
+      tournament_status: tournament.status,
+      completed_at: tournament.completed_at || null,
+      can_record_payouts: completed,
+      winners,
+      unlinked_tournament_scores: await this.db.countUnlinkedTournamentScores()
+    };
+  }
+
+  /** Marks a podium prize as paid, with the transfer reference (once per place). */
+  public async recordPrizePayout(
+    placeRaw: unknown,
+    referenceRaw: unknown,
+    notesRaw: unknown,
+    adminIp: string
+  ): Promise<PrizePayoutRecord> {
+    const place = Number(placeRaw);
+    if (place !== 1 && place !== 2 && place !== 3) throw new ConfigValidationError('Lugar inválido (1, 2 o 3).');
+    const reference = String(referenceRaw ?? '').trim().slice(0, 200);
+    if (reference.length < 4) {
+      throw new ConfigValidationError('Escribe la referencia de la transferencia o comprobante (mínimo 4 caracteres).');
+    }
+    const notes = String(notesRaw ?? '').trim().slice(0, 500) || undefined;
+
+    const report = await this.getWinnersReport();
+    if (!report.can_record_payouts) {
+      throw new ConfigValidationError('Cierra el torneo antes de registrar pagos: el podio todavía puede cambiar.');
+    }
+    const winner = report.winners.find((w) => w.place === place);
+    if (!winner) throw new ConfigValidationError(`No hay pareja en el ${place}.º lugar.`);
+    if (winner.payout) throw new ConfigValidationError(`El ${place}.º lugar ya fue marcado como pagado.`);
+
+    const record: PrizePayoutRecord = {
+      id: randomUUID(),
+      tournament_id: report.tournament_id,
+      place: place as 1 | 2 | 3,
+      payment_audit_id: winner.payment_audit_id,
+      amount_usd: winner.prize_usd,
+      reference,
+      notes,
+      paid_at: new Date().toISOString(),
+      admin_ip: adminIp
+    };
+    await this.db.savePrizePayout(record);
+    return record;
+  }
+}
+
+/** Top 3 by score; ties go to the pair that reached the score first. */
+export function rankPodium<T extends { total_score: number; created_at: string }>(best: T[]): T[] {
+  return [...best]
+    .sort((a, b) => b.total_score - a.total_score || Date.parse(a.created_at) - Date.parse(b.created_at))
+    .slice(0, 3);
+}
+
+/** Last two groups of the pass ("…-1A2B-3C4D"), enough to compare with the one the winner shows. */
+function passHint(pass?: string): string {
+  if (!pass) return '—';
+  return `…-${pass.split('-').slice(-2).join('-')}`;
 }
 
 export function sanitizePairName(raw: unknown, fallback: string): string {

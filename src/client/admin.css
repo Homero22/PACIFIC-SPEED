@@ -814,3 +814,24 @@ textarea.input {
     display: none;
   }
 }
+
+/* Winners: verification checklist and payout button */
+.checklist {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+  line-height: 1.45;
+}
+
+#table-winners-body a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.btn-winner-paid {
+  display: block;
+  margin-top: 6px;
+}
