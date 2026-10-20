@@ -1675,6 +1675,52 @@ export class DatabaseProvider {
     this.persistLocalData();
   }
 
+  /**
+   * Privacy policy: once a tournament has been closed for `days`, forget the contact data of
+   * its pairs (phone, e-mail) and the raw Payphone payload (may hold payer data). Transaction
+   * ids, amounts and prize records stay for accounting. Returns how many records were cleared.
+   */
+  public async purgeContactDataAfterClose(days: number, now = new Date()): Promise<number> {
+    const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
+    const pool = this.backend();
+    if (pool) {
+      const pend = await pool.query(
+        `UPDATE pending_registrations p SET phone = NULL, email = NULL
+         FROM tournaments t
+         WHERE p.tournament_id = t.id AND t.status = 'completed' AND t.completed_at < $1::timestamptz
+           AND (p.phone IS NOT NULL OR p.email IS NOT NULL)`,
+        [cutoff]
+      );
+      const pay = await pool.query(
+        `UPDATE payments_audit a SET raw_payload_json = NULL
+         FROM tournaments t
+         WHERE a.tournament_id = t.id AND t.status = 'completed' AND t.completed_at < $1::timestamptz
+           AND a.raw_payload_json IS NOT NULL`,
+        [cutoff]
+      );
+      return (pend.rowCount || 0) + (pay.rowCount || 0);
+    }
+    const data = this.local();
+    const t = data.tournament;
+    if (t.status !== 'completed' || !t.completed_at || Date.parse(t.completed_at) >= Date.parse(cutoff)) return 0;
+    let cleared = 0;
+    for (const p of data.pending_registrations || []) {
+      if (p.tournament_id === t.id && (p.phone || p.email)) {
+        delete p.phone;
+        delete p.email;
+        cleared++;
+      }
+    }
+    for (const a of data.payments) {
+      if (a.tournament_id === t.id && a.raw_payload_json) {
+        delete a.raw_payload_json;
+        cleared++;
+      }
+    }
+    if (cleared > 0) this.persistLocalData();
+    return cleared;
+  }
+
   public async seedInitialScoresIfEmpty(seeds: LeaderboardEntry[]): Promise<void> {
     const existing = await this.getTopMatchScores(1);
     if (existing.length === 0) {

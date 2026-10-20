@@ -1072,6 +1072,11 @@
         text-decoration: underline;
         cursor: pointer;
       }
+      .howto-card a {
+        color: #111111;
+        font-weight: 800;
+        text-underline-offset: 3px;
+      }
       .bases-list {
         margin: 0;
         padding-left: 26px;
@@ -1541,7 +1546,7 @@
                   </div>
                   <label class="bases-accept">
                     <input id="tourney-terms-input" type="checkbox" />
-                    <span>Soy mayor de 18 años y acepto las <button type="button" id="btn-open-bases" class="link-btn">bases del torneo</button>. Si ganamos, el premio se paga a quien paga la inscripción.</span>
+                    <span>Soy mayor de 18 años y acepto las <button type="button" id="btn-open-bases" class="link-btn">bases del torneo</button> y la <a href="/privacidad" target="_blank" rel="noopener" class="link-btn">política de privacidad</a>. Si ganamos, el premio se paga a quien paga la inscripción.</span>
                   </label>
 
                   <button id="btn-tourney-pay" class="btn btn-primary" style="margin-top: 10px; width: 100%; font-size: 15px; padding: 14px;">
@@ -1663,8 +1668,8 @@
           </div>
 
           <!-- Clean User Footer -->
-          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1.5px solid rgba(255, 255, 255, 0.12); padding-top: 12px; margin-top: 6px;">
-            <span style="font-size: 13px; color: var(--text-muted);">Patrulla Huellitas · Pacific Speed 2026</span>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px 12px; justify-content: space-between; align-items: center; border-top: 1.5px solid rgba(255, 255, 255, 0.12); padding-top: 12px; margin-top: 6px;">
+            <span style="font-size: 13px; color: var(--text-muted);">Patrulla Huellitas · Pacific Speed 2026 · <a href="/bases" target="_blank" rel="noopener" style="color: inherit;">Bases</a> · <a href="/privacidad" target="_blank" rel="noopener" style="color: inherit;">Privacidad</a></span>
             <span style="font-size: 13px; color: var(--cyan); font-weight: 700;"><span data-bind="pct-charity">15%</span> Donado a Rescate y Alimento Animal</span>
           </div>
         </div>
@@ -1879,8 +1884,9 @@
             <li>El premio se paga a <strong>la persona que pagó la inscripción</strong>, a su cuenta Payphone o bancaria a su nombre. Ella lo reparte con su pareja.</li>
             <li>Para cobrar: <strong>código de pase, comprobante de Payphone y cédula</strong> de quien pagó. Te contactamos al teléfono y correo que registraste; tienes <strong>15 días</strong> para responder.</li>
             <li>Hacer trampa o usar programas para jugar es motivo de <strong>descalificación sin reembolso</strong>.</li>
-            <li>Tu teléfono y correo se usan solo para el torneo y el pago del premio.</li>
+            <li>Tu teléfono y correo se usan solo para el torneo y el pago del premio, y se borran 30 días después del cierre.</li>
           </ol>
+          <p class="howto-note">Lee la <a href="/bases" target="_blank" rel="noopener">versión completa de las bases</a> y la <a href="/privacidad" target="_blank" rel="noopener">política de privacidad</a>.</p>
           <button id="btn-bases-ok" class="howto-ok">Entendido</button>
         </div>
       </section>

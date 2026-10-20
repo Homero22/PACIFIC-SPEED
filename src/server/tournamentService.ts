@@ -47,6 +47,8 @@ export class ConfigValidationError extends Error {}
 export class ConfigLockedError extends Error {}
 
 const VALID_TOURNAMENT_STATUSES: TournamentStatus[] = ['draft', 'active', 'in_progress', 'completed'];
+/** Promised in the privacy policy: phone and e-mail are deleted this many days after closing. */
+export const CONTACT_RETENTION_DAYS_AFTER_CLOSE = 30;
 
 export class TournamentService {
   constructor(private readonly db: DatabaseProvider = dbProvider) {}
@@ -637,6 +639,11 @@ export class TournamentService {
       winners,
       unlinked_tournament_scores: await this.db.countUnlinkedTournamentScores()
     };
+  }
+
+  /** Privacy policy (/privacidad): contact data is erased 30 days after the tournament closes. */
+  public async purgeExpiredContactData(now = new Date()): Promise<number> {
+    return this.db.purgeContactDataAfterClose(CONTACT_RETENTION_DAYS_AFTER_CLOSE, now);
   }
 
   /** Marks a podium prize as paid, with the transfer reference (once per place). */

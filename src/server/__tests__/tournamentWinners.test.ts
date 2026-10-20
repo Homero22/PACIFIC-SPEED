@@ -119,6 +119,37 @@ describe('Winners report', () => {
   });
 });
 
+describe('Privacy: contact data retention', () => {
+  it('erases phone, e-mail and the raw Payphone payload 30 days after closing, keeping the payment', async () => {
+    const { db, service, byName } = await setup();
+    const alfa = byName('ALFA');
+
+    // Open tournament: nothing is erased
+    expect(await service.purgeExpiredContactData()).toBe(0);
+
+    const closed = await service.closeTournamentAndDistributePodium();
+    const closedAt = Date.parse(closed.tournament.completed_at!);
+    const day = 24 * 60 * 60 * 1000;
+
+    // Day 29 after closing: still kept (winners may still be contacted)
+    expect(await service.purgeExpiredContactData(new Date(closedAt + 29 * day))).toBe(0);
+    expect((await db.getPendingRegistration(alfa.client_transaction_id!))?.email).toBe('alfa@example.com');
+
+    // Day 31: gone, but the payment record (transaction id, amounts) stays
+    expect(await service.purgeExpiredContactData(new Date(closedAt + 31 * day))).toBeGreaterThan(0);
+    const pending = await db.getPendingRegistration(alfa.client_transaction_id!);
+    expect(pending?.phone).toBeUndefined();
+    expect(pending?.email).toBeUndefined();
+    const payment = await db.getPaymentAuditById(alfa.id);
+    expect(payment?.raw_payload_json).toBeUndefined();
+    expect(payment?.payphone_transaction_id).toBe(alfa.payphone_transaction_id);
+    expect(payment?.gross_amount).toBe(alfa.gross_amount);
+
+    const report = await service.getWinnersReport();
+    expect(report.winners.every((w) => w.contact_email === null)).toBe(true);
+  });
+});
+
 describe('Registration contact', () => {
   it('requires a phone, an e-mail and accepting the rules', () => {
     expect(validateRegistrationContact({ phone: '+593 99-123 4567', email: ' Ana@Mail.com ', accept_terms: true })).toEqual({
