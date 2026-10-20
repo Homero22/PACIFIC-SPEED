@@ -233,6 +233,16 @@ export interface LeaderboardEntry {
   region: string;
   created_at: string;
   is_tournament?: boolean;
+  /** Server-only: the paid registration that played this tournament score. Never sent to clients. */
+  payment_audit_id?: string;
+  /** Server-only: tournament the score counts for. */
+  tournament_id?: string;
+}
+
+/** Leaderboard rows as sent to players: without the payment link. */
+export function publicLeaderboardEntry(entry: LeaderboardEntry): LeaderboardEntry {
+  const { payment_audit_id: _payment, tournament_id: _tournament, ...pub } = entry;
+  return pub;
 }
 
 // -------------------------------------------------------------
@@ -334,6 +344,10 @@ export interface PendingRegistrationRecord {
   navigator_name: string;
   referral_code?: string;
   phone?: string;
+  /** Contact e-mail (required for new registrations: winners are contacted with it). */
+  email?: string;
+  /** When the payer accepted the tournament rules (bases). */
+  terms_accepted_at?: string;
   amount_usd: number;
   status: 'PENDING' | 'COMPLETED' | 'CANCELLED' | 'REFUND_REQUIRED';
   tournament_id?: string;
@@ -342,6 +356,51 @@ export interface PendingRegistrationRecord {
   room_code?: string;
   /** Financial config in force when the payment link was created; the split uses it. */
   config_snapshot?: TournamentFinancialConfig;
+}
+
+/** A prize handed out to a podium pair, recorded by the admin with its transfer reference. */
+export interface PrizePayoutRecord {
+  id: string;
+  tournament_id: string;
+  place: 1 | 2 | 3;
+  payment_audit_id: string;
+  amount_usd: number;
+  reference: string;
+  notes?: string;
+  paid_at: string;
+  admin_ip: string;
+}
+
+/** One podium place with everything the admin needs to verify and pay the winner. */
+export interface TournamentWinner {
+  place: 1 | 2 | 3;
+  prize_usd: number;
+  payment_audit_id: string;
+  driver_name: string;
+  navigator_name: string;
+  best_score: number;
+  distance_traveled: number;
+  achieved_at: string;
+  matches_played: number;
+  payphone_transaction_id: string;
+  paid_entry_at: string;
+  pass_hint: string;
+  contact_phone: string | null;
+  contact_email: string | null;
+  terms_accepted_at: string | null;
+  payout: PrizePayoutRecord | null;
+}
+
+export interface TournamentWinnersReport {
+  tournament_id: string;
+  tournament_name: string;
+  tournament_status: TournamentStatus;
+  completed_at: string | null;
+  /** Payouts can be recorded only once the tournament is completed (ranking frozen). */
+  can_record_payouts: boolean;
+  winners: TournamentWinner[];
+  /** Tournament scores saved before scores were linked to payments (cannot be attributed). */
+  unlinked_tournament_scores: number;
 }
 
 export interface TournamentTelemetryStatus {

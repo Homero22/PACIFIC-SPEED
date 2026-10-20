@@ -23,6 +23,7 @@ import type {
 import { AudioEngine, type AmbienceLevel, type VoiceMode } from './audioEngine.js';
 import { InputManager } from './inputManager.js';
 import { GameRenderer } from './renderer.js';
+import { validateRegistrationContact } from '../shared/registrationContact.js';
 
 const LOCAL_COMMS_MAP: Record<TacticalCommsPreset, { code: string; label: string }> = {
   bogey_alert: { code: 'AVISO', label: '¡Cuidado, viene una rama! Sube el escudo' },
@@ -566,8 +567,19 @@ class PacificSpeedClientApp {
     // STEP 02: Tournament Payment Confirmation Modal Trigger
     document.getElementById('btn-tourney-pay')?.addEventListener('click', () => {
       this.audio.init();
-      this.openTourneyConfirmationModal();
+      if (this.checkRegistrationContact()) this.openTourneyConfirmationModal();
     });
+
+    // Tournament rules (bases)
+    document.getElementById('btn-open-bases')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('modal-bases')?.classList.remove('hidden');
+    });
+    for (const id of ['btn-bases-close', 'btn-bases-ok']) {
+      document.getElementById(id)?.addEventListener('click', () => {
+        document.getElementById('modal-bases')?.classList.add('hidden');
+      });
+    }
 
     // Step 02 Modal Buttons
     document.getElementById('btn-execute-tourney-pay')?.addEventListener('click', async () => {
@@ -1534,9 +1546,40 @@ class PacificSpeedClientApp {
     if (pilotEl) pilotEl.textContent = this.pilotName;
     if (copilotEl) copilotEl.textContent = copilot ? copilot.name : 'POR ASIGNAR EN SALA';
     if (refEl) refEl.textContent = refInput?.value.trim().toUpperCase() || 'NINGUNO';
-    if (phoneEl) phoneEl.textContent = phoneInput?.value.trim() || 'POR DEFECTO';
+    if (phoneEl) phoneEl.textContent = phoneInput?.value.trim() || '—';
+    const emailEl = document.getElementById('confirm-tourney-email');
+    const emailInput = document.getElementById('tourney-email-input') as HTMLInputElement | null;
+    if (emailEl) emailEl.textContent = emailInput?.value.trim().toLowerCase() || '—';
 
     this.openModal('modal-confirm-tourney');
+  }
+
+  /** Reads phone, e-mail and rules acceptance from the form; shows what is missing. */
+  private readRegistrationContact() {
+    const phoneInput = document.getElementById('tourney-phone-input') as HTMLInputElement | null;
+    const emailInput = document.getElementById('tourney-email-input') as HTMLInputElement | null;
+    const termsInput = document.getElementById('tourney-terms-input') as HTMLInputElement | null;
+    return validateRegistrationContact({
+      phone: phoneInput?.value,
+      email: emailInput?.value,
+      accept_terms: Boolean(termsInput?.checked)
+    });
+  }
+
+  private checkRegistrationContact(): boolean {
+    const result = this.readRegistrationContact();
+    const feedback = document.getElementById('tourney-feedback');
+    if (result.ok) {
+      if (feedback) feedback.textContent = '';
+      return true;
+    }
+    if (feedback) {
+      feedback.textContent = result.message;
+      feedback.style.color = 'var(--danger)';
+    }
+    const focusId = { phone: 'tourney-phone-input', email: 'tourney-email-input', terms: 'tourney-terms-input' }[result.field];
+    (document.getElementById(focusId) as HTMLInputElement | null)?.focus();
+    return false;
   }
 
   private openLoadoutConfirmationModal(): void {
@@ -1654,7 +1697,11 @@ class PacificSpeedClientApp {
   private async executePayphoneLinkCreation(): Promise<void> {
     const feedback = document.getElementById('tourney-feedback');
     const refInput = document.getElementById('tourney-referral-input') as HTMLInputElement | null;
-    const phoneInput = document.getElementById('tourney-phone-input') as HTMLInputElement | null;
+    const contact = this.readRegistrationContact();
+    if (!contact.ok) {
+      this.checkRegistrationContact();
+      return;
+    }
 
     if (feedback) {
       feedback.textContent = 'GENERANDO ENLACE SEGURO DE PAGO PAYPHONE...';
@@ -1671,7 +1718,9 @@ class PacificSpeedClientApp {
             this.lobbyState?.players.find((p) => p.role === 'navigator')?.name ||
             `CO_PILOT_${Math.floor(10 + Math.random() * 89)}`,
           referral_code: refInput?.value.trim().toUpperCase() || undefined,
-          phone: phoneInput?.value.trim() || undefined,
+          phone: contact.phone,
+          email: contact.email,
+          accept_terms: true,
           room_code: this.roomCode || undefined
         })
       });

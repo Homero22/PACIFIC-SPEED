@@ -13,7 +13,9 @@ import type {
   ConfigChangeRecord,
   PaymentAuditRecord,
   ReferralRecord,
-  SecurityAuditLog
+  SecurityAuditLog,
+  TournamentWinner,
+  TournamentWinnersReport
 } from '../shared/types.js';
 
 const usd = (v: unknown) =>
@@ -46,6 +48,8 @@ interface ConfirmOptions {
   danger?: boolean;
   /** The admin must type this text to enable the confirm button. */
   requireText?: string;
+  /** Free-text field the admin must fill (read back with confirmInputValue()). */
+  textInput?: { label: string; minLength: number; placeholder?: string };
 }
 
 class PacificSpeedAdminApp {
@@ -53,6 +57,7 @@ class PacificSpeedAdminApp {
   private data: AdminDashboardData | null = null;
   private currentPayments: PaymentAuditRecord[] = [];
   private toastTimer: number | null = null;
+  private winners: TournamentWinnersReport | null = null;
 
   constructor() {
     this.token = sessionStorage.getItem('ps_admin_token') || localStorage.getItem('ps_admin_token');
@@ -101,12 +106,20 @@ class PacificSpeedAdminApp {
     okBtn.className = `btn ${opts.danger ? 'btn-danger' : 'btn-primary'}`;
 
     typedInput.value = '';
-    typedWrap.classList.toggle('hidden', !opts.requireText);
-    okBtn.disabled = Boolean(opts.requireText);
+    typedInput.placeholder = opts.textInput?.placeholder || '';
+    typedWrap.classList.toggle('hidden', !opts.requireText && !opts.textInput);
+    okBtn.disabled = Boolean(opts.requireText || opts.textInput);
+    typedInput.oninput = null;
     if (opts.requireText) {
       el('confirm-typed-label')!.textContent = `Escribe ${opts.requireText} para confirmar`;
       typedInput.oninput = () => {
         okBtn.disabled = typedInput.value.trim().toUpperCase() !== opts.requireText;
+      };
+    } else if (opts.textInput) {
+      const { label, minLength } = opts.textInput;
+      el('confirm-typed-label')!.textContent = label;
+      typedInput.oninput = () => {
+        okBtn.disabled = typedInput.value.trim().length < minLength;
       };
     }
 
@@ -131,7 +144,7 @@ class PacificSpeedAdminApp {
       form.addEventListener('submit', onSubmit);
       dialog.addEventListener('close', onClose);
       dialog.showModal();
-      (opts.requireText ? typedInput : okBtn).focus();
+      (opts.requireText || opts.textInput ? typedInput : okBtn).focus();
     });
   }
 
@@ -197,6 +210,8 @@ class PacificSpeedAdminApp {
     });
 
     el('btn-close-tournament-action')?.addEventListener('click', () => void this.handleCloseTournament());
+    el('btn-refresh-winners')?.addEventListener('click', () => void this.loadWinners());
+    document.querySelector('.nav-link[data-tab="tab-winners"]')?.addEventListener('click', () => void this.loadWinners());
     el('btn-clear-security-logs')?.addEventListener('click', () => void this.handleClearSecurityLogs());
   }
 
@@ -800,6 +815,113 @@ class PacificSpeedAdminApp {
       }
       this.toast('Torneo cerrado y podio liquidado.');
       await this.loadDashboard();
+    } catch (err) {
+      this.toast(`Error de conexión: ${(err as Error).message}`, 'error');
+    }
+  }
+
+  // -------------------------------------------------------------
+  // Winners: verify the podium pairs and record each prize payout
+  // -------------------------------------------------------------
+
+  private async loadWinners(): Promise<void> {
+    try {
+      const { ok, status, data } = await this.api<TournamentWinnersReport>('/api/admin/tournament/winners');
+      if (status === 401) return;
+      if (!ok) throw new Error((data as any)?.error || `Error ${status}`);
+      this.winners = data;
+      this.renderWinners(data);
+    } catch (err) {
+      this.toast(`No se pudieron cargar los ganadores: ${(err as Error).message}`, 'error');
+    }
+  }
+
+  private renderWinners(report: TournamentWinnersReport): void {
+    const statusBox = el('winners-status');
+    if (statusBox) {
+      const parts = [
+        report.can_record_payouts
+          ? `<strong>Torneo cerrado</strong> el ${escapeHtml(new Date(report.completed_at || '').toLocaleString())}. El podio ya no cambia: puedes registrar los pagos.`
+          : '<strong>Torneo en curso.</strong> El podio todavía puede cambiar. Cierra el torneo (pestaña Torneo) para registrar pagos.'
+      ];
+      if (report.unlinked_tournament_scores > 0) {
+        parts.push(
+          `${report.unlinked_tournament_scores} puntaje(s) de torneo se guardaron antes de ligar puntajes con pagos y no cuentan para el podio.`
+        );
+      }
+      statusBox.innerHTML = parts.map((p) => `<p>${p}</p>`).join('');
+    }
+
+    const body = el('table-winners-body');
+    if (!body) return;
+    if (report.winners.length === 0) {
+      body.innerHTML = '<tr><td colspan="6" class="muted">Aún no hay puntajes de torneo ligados a un pago.</td></tr>';
+      return;
+    }
+    body.innerHTML = report.winners
+      .map((w) => {
+        const phone = w.contact_phone
+          ? `<a href="https://wa.me/${escapeHtml(w.contact_phone.replace('+', ''))}" target="_blank" rel="noopener noreferrer">${escapeHtml(w.contact_phone)}</a>`
+          : '<span class="status status-warn">Sin teléfono</span>';
+        const email = w.contact_email
+          ? `<a href="mailto:${escapeHtml(w.contact_email)}">${escapeHtml(w.contact_email)}</a>`
+          : '<span class="status status-warn">Sin correo</span>';
+        const terms = w.terms_accepted_at
+          ? `<span class="cell-sub">Aceptó bases ${escapeHtml(new Date(w.terms_accepted_at).toLocaleDateString())}</span>`
+          : '<span class="cell-sub">Inscripción anterior a las bases</span>';
+        const prize = w.payout
+          ? `<span class="status status-ok">Pagado</span> ${usd(w.payout.amount_usd)}
+             <span class="cell-sub">${escapeHtml(new Date(w.payout.paid_at).toLocaleString())}</span>
+             <span class="cell-sub mono">Ref: ${escapeHtml(w.payout.reference)}</span>`
+          : `<strong>${usd(w.prize_usd)}</strong>
+             ${
+               report.can_record_payouts
+                 ? `<button class="btn btn-ghost btn-winner-paid" data-place="${w.place}">Marcar pagado…</button>`
+                 : '<span class="cell-sub">Pendiente de cierre</span>'
+             }`;
+        return `
+          <tr>
+            <td><strong>${w.place}.º</strong></td>
+            <td>${escapeHtml(w.driver_name)} / ${escapeHtml(w.navigator_name)}
+              <span class="cell-sub">${w.matches_played} partida(s) jugadas</span></td>
+            <td class="num">${w.best_score.toLocaleString('en-US')}
+              <span class="cell-sub">${Math.round(w.distance_traveled)} m · ${escapeHtml(new Date(w.achieved_at).toLocaleString())}</span></td>
+            <td>${phone}<span class="cell-sub">${email}</span>${terms}</td>
+            <td><span class="mono" title="ID Payphone">${escapeHtml(w.payphone_transaction_id)}</span>
+              <span class="cell-sub">${escapeHtml(new Date(w.paid_entry_at).toLocaleString())}</span>
+              <span class="cell-sub mono" title="Final del código de pase">Pase ${escapeHtml(w.pass_hint)}</span></td>
+            <td>${prize}</td>
+          </tr>`;
+      })
+      .join('');
+
+    body.querySelectorAll<HTMLButtonElement>('.btn-winner-paid').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const winner = report.winners.find((w) => w.place === Number(btn.dataset.place));
+        if (winner) void this.handleWinnerPaid(winner);
+      });
+    });
+  }
+
+  private async handleWinnerPaid(w: TournamentWinner): Promise<void> {
+    const confirmed = await this.confirmAction({
+      title: `Registrar premio del ${w.place}.º lugar`,
+      bodyHtml: `<p>Registra que ya pagaste <strong>${usd(w.prize_usd)}</strong> a <strong>${escapeHtml(w.driver_name)} / ${escapeHtml(w.navigator_name)}</strong>.</p>
+        <p class="muted">Confirma antes: código de pase, comprobante de Payphone <span class="mono">${escapeHtml(w.payphone_transaction_id)}</span> y cédula de quien pagó. Esto no envía dinero y no se puede deshacer.</p>`,
+      confirmLabel: 'Registrar pago',
+      textInput: { label: 'Referencia de la transferencia o comprobante', minLength: 4, placeholder: 'Ej: Transferencia Pichincha #123456' }
+    });
+    if (!confirmed) return;
+    const reference = el<HTMLInputElement>('confirm-typed')?.value.trim() || '';
+    try {
+      const { ok, status, data } = await this.api(`/api/admin/tournament/winners/${w.place}/paid`, { reference });
+      if (status === 401) return;
+      if (!ok || !data.success) {
+        this.toast(data.error || data.message || 'No se pudo registrar el pago.', 'error');
+        return;
+      }
+      this.toast(`Premio del ${w.place}.º lugar registrado como pagado.`);
+      await this.loadWinners();
     } catch (err) {
       this.toast(`Error de conexión: ${(err as Error).message}`, 'error');
     }

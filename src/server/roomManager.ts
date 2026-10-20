@@ -5,6 +5,7 @@ import { GameSimulation } from '../shared/simulation.js';
 import { antiCheatEngine } from './antiCheat.js';
 import {
   normalizeRoomCode,
+  publicLeaderboardEntry,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
   ROOM_CODE_PATTERN
@@ -62,7 +63,7 @@ interface GameRoom {
   pendingSwap: PendingRoleSwap | null;
   isTournamentVerified?: boolean;
   tournamentPass?: string;
-  tournamentPair?: { driver_name: string; navigator_name: string };
+  tournamentPair?: { driver_name: string; navigator_name: string; payment_audit_id?: string };
   /** Tournament of the verified pass: its matches run on the tournament's official track. */
   tournamentId?: string;
 }
@@ -72,6 +73,7 @@ export type TournamentPassVerifier = (passCode: string) => Promise<{
   driver_name?: string;
   navigator_name?: string;
   tournament_id?: string;
+  payment_audit_id?: string;
 }>;
 
 export interface MatchScoreStorage {
@@ -219,7 +221,8 @@ export class RoomManager {
   }
 
   public getLeaderboard(): LeaderboardEntry[] {
-    return this.leaderboard.slice(0, 15);
+    // Players never see which payment a score belongs to
+    return this.leaderboard.slice(0, 15).map(publicLeaderboardEntry);
   }
 
   public addLeaderboardEntry(
@@ -809,7 +812,8 @@ export class RoomManager {
     room.tournamentPass = passCode;
     room.tournamentPair = {
       driver_name: check.driver_name || 'PILOT_A',
-      navigator_name: check.navigator_name || 'PILOT_B'
+      navigator_name: check.navigator_name || 'PILOT_B',
+      payment_audit_id: check.payment_audit_id
     };
     room.tournamentId = check.tournament_id;
     this.touch(room);
@@ -836,7 +840,10 @@ export class RoomManager {
       distance_traveled: state.world_state.distance_traveled,
       survival_time: state.world_state.survival_time,
       region: 'PACIFIC-NET',
-      is_tournament: Boolean(room.isTournamentVerified)
+      is_tournament: Boolean(room.isTournamentVerified),
+      // Ties the score to the exact paid registration, so the winner can be verified and paid
+      payment_audit_id: room.isTournamentVerified ? room.tournamentPair?.payment_audit_id : undefined,
+      tournament_id: room.isTournamentVerified ? room.tournamentId : undefined
     });
 
     this.broadcastToRoom(room, {

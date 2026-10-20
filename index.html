@@ -502,6 +502,8 @@
       }
 
       input[type='text'],
+      input[type='tel'],
+      input[type='email'],
       select {
         background: rgba(2, 6, 14, 0.95);
         border: 1.5px solid rgba(0, 240, 255, 0.4);
@@ -517,6 +519,8 @@
       }
 
       input[type='text']:focus,
+      input[type='tel']:focus,
+      input[type='email']:focus,
       select:focus {
         border-color: var(--accent);
         box-shadow: 0 0 10px var(--accent-glow);
@@ -1040,6 +1044,50 @@
         font-weight: 700;
       }
 
+      /* Tournament registration: rules acceptance */
+      .bases-accept {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        margin-top: 10px;
+        font-size: 13px;
+        line-height: 1.45;
+        color: var(--text-muted);
+        cursor: pointer;
+      }
+      .bases-accept input {
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+        margin-top: 1px;
+        accent-color: var(--accent);
+      }
+      .link-btn {
+        background: none;
+        border: none;
+        padding: 0;
+        color: var(--accent);
+        font: inherit;
+        font-weight: 800;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+      .bases-list {
+        margin: 0;
+        padding-left: 26px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        font-size: 19px;
+        line-height: 1.4;
+        color: #111111;
+      }
+      @media (max-width: 640px) {
+        .bases-list {
+          font-size: 16px;
+        }
+      }
+
       /* Radar fired: the energy bar flashes to show its 25% cost */
       @keyframes radar-flash {
         0%, 100% { filter: none; }
@@ -1485,9 +1533,16 @@
                     Ingresa tus datos para generar el enlace de pago seguro en Payphone:
                   </p>
                   <div class="input-row" style="margin-top: 8px;">
-                    <input id="tourney-referral-input" type="text" placeholder="CODIGO DE REFERIDO (OPCIONAL)" maxlength="30" />
-                    <input id="tourney-phone-input" type="text" placeholder="TELEFONO O CUENTA PAYPHONE" maxlength="40" />
+                    <input id="tourney-phone-input" type="tel" inputmode="tel" autocomplete="tel" placeholder="TELEFONO / WHATSAPP *" maxlength="20" />
+                    <input id="tourney-email-input" type="email" inputmode="email" autocomplete="email" placeholder="CORREO ELECTRONICO *" maxlength="254" />
                   </div>
+                  <div class="input-row" style="margin-top: 8px;">
+                    <input id="tourney-referral-input" type="text" placeholder="CODIGO DE REFERIDO (OPCIONAL)" maxlength="30" />
+                  </div>
+                  <label class="bases-accept">
+                    <input id="tourney-terms-input" type="checkbox" />
+                    <span>Soy mayor de 18 años y acepto las <button type="button" id="btn-open-bases" class="link-btn">bases del torneo</button>. Si ganamos, el premio se paga a quien paga la inscripción.</span>
+                  </label>
 
                   <button id="btn-tourney-pay" class="btn btn-primary" style="margin-top: 10px; width: 100%; font-size: 15px; padding: 14px;">
                     INSCRIBIR PAREJA (<span data-bind="fee2">$10.00</span> USD PAYPHONE)
@@ -1686,8 +1741,12 @@
               <strong id="confirm-tourney-ref" style="color: var(--text-primary);">NINGUNO</strong>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 14px;">
-              <span style="color: var(--text-muted);">TELEFONO PAYPHONE:</span>
-              <strong id="confirm-tourney-phone" style="color: var(--text-primary);">POR DEFECTO</strong>
+              <span style="color: var(--text-muted);">TELEFONO / WHATSAPP:</span>
+              <strong id="confirm-tourney-phone" style="color: var(--text-primary);">—</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; gap: 10px; font-size: 14px;">
+              <span style="color: var(--text-muted);">CORREO:</span>
+              <strong id="confirm-tourney-email" style="color: var(--text-primary); overflow-wrap: anywhere; text-align: right;">—</strong>
             </div>
             <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px;">
               <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 800; color: #ffb703;">
@@ -1804,6 +1863,25 @@
 
           <p class="howto-note">En celular: joystick y botones en pantalla. También sirven W A S D.</p>
           <button id="btn-howto-ok" class="howto-ok">¡Entendido!</button>
+        </div>
+      </section>
+
+      <!-- Bases del torneo: same plain style as "¿Cómo se juega?" (draft — review with a lawyer) -->
+      <section id="modal-bases" class="howto-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="bases-title">
+        <div class="howto-card">
+          <button id="btn-bases-close" class="howto-close" aria-label="Cerrar">✕</button>
+          <h2 id="bases-title">Bases del torneo</h2>
+          <ol class="bases-list">
+            <li>Participan personas <strong>mayores de 18 años</strong>.</li>
+            <li>Cada pareja paga una inscripción y recibe un <strong>pase personal</strong>. Si lo compartes, quien lo use juega por tu pareja.</li>
+            <li>Gana el <strong>puntaje más alto</strong> jugado con el pase durante el torneo. Si hay empate, gana quien lo logró primero.</li>
+            <li>Premios para el <strong>1.º, 2.º y 3.º lugar</strong>, según los porcentajes del pozo publicados en la pestaña Torneo.</li>
+            <li>El premio se paga a <strong>la persona que pagó la inscripción</strong>, a su cuenta Payphone o bancaria a su nombre. Ella lo reparte con su pareja.</li>
+            <li>Para cobrar: <strong>código de pase, comprobante de Payphone y cédula</strong> de quien pagó. Te contactamos al teléfono y correo que registraste; tienes <strong>15 días</strong> para responder.</li>
+            <li>Hacer trampa o usar programas para jugar es motivo de <strong>descalificación sin reembolso</strong>.</li>
+            <li>Tu teléfono y correo se usan solo para el torneo y el pago del premio.</li>
+          </ol>
+          <button id="btn-bases-ok" class="howto-ok">Entendido</button>
         </div>
       </section>
 

@@ -58,6 +58,7 @@
         <nav class="sidebar">
           <a class="nav-link active" data-tab="tab-overview">Resumen</a>
           <a class="nav-link" data-tab="tab-tournament">Torneo</a>
+          <a class="nav-link" data-tab="tab-winners">Ganadores</a>
           <a class="nav-link" data-tab="tab-payments">Pagos</a>
           <a class="nav-link" data-tab="tab-referrals">Afiliados</a>
           <a class="nav-link" data-tab="tab-config">Configuración financiera</a>
@@ -133,6 +134,48 @@
               <p class="muted small">Congela el pozo y calcula el reparto final del podio y del refugio. No se puede deshacer.</p>
               <div id="tournament-closure-report" class="report muted small"></div>
               <button id="btn-close-tournament-action" class="btn btn-danger">Cerrar torneo y liquidar podio…</button>
+            </div>
+          </section>
+
+          <!-- GANADORES -->
+          <section id="tab-winners" class="tab-panel hidden">
+            <header class="page-header page-header-row">
+              <div>
+                <h2 class="page-title">Ganadores</h2>
+                <p class="muted">Cada lugar ligado al pago exacto que jugó el puntaje.</p>
+              </div>
+              <button id="btn-refresh-winners" class="btn btn-ghost">Actualizar</button>
+            </header>
+
+            <div id="winners-status" class="panel muted small"></div>
+
+            <div class="panel">
+              <div class="table-wrap">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Lugar</th>
+                      <th>Pareja</th>
+                      <th class="num">Puntaje</th>
+                      <th>Contacto</th>
+                      <th>Inscripción</th>
+                      <th>Premio</th>
+                    </tr>
+                  </thead>
+                  <tbody id="table-winners-body"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="panel">
+              <h3 class="panel-title">Antes de pagar</h3>
+              <ol class="small checklist">
+                <li>Contacta a la pareja al teléfono o correo registrado.</li>
+                <li>Pide el <strong>código de pase</strong> completo: debe terminar igual que el que ves aquí.</li>
+                <li>Pide el <strong>comprobante de Payphone</strong>: el número de transacción debe coincidir.</li>
+                <li>Pide la <strong>cédula de quien pagó</strong> la inscripción.</li>
+                <li>Paga solo a esa persona (su cuenta Payphone o bancaria a su nombre) y registra aquí la referencia.</li>
+              </ol>
             </div>
           </section>
 

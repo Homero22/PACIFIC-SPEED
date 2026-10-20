@@ -353,7 +353,7 @@ describe('RoomManager — room lifecycle', () => {
   describe('tournament pass', () => {
     const verifier = vi.fn(async (code: string) =>
       code === 'PASS-OK'
-        ? { valid: true, driver_name: 'PAID_DRIVER', navigator_name: 'PAID_NAV', tournament_id: 'T-OFFICIAL' }
+        ? { valid: true, driver_name: 'PAID_DRIVER', navigator_name: 'PAID_NAV', tournament_id: 'T-OFFICIAL', payment_audit_id: 'PAY-1' }
         : { valid: false }
     );
 
@@ -449,6 +449,11 @@ describe('RoomManager — room lifecycle', () => {
       expect(recorded()?.driver_name).toBe('PAID_DRIVER');
       expect(recorded()?.navigator_name).toBe('PAID_NAV');
       expect(recorded()?.is_tournament).toBe(true);
+      // The score is tied to the paid registration, but players never see that link
+      expect(recorded()).not.toHaveProperty('payment_audit_id');
+      const internal = (rm as any).leaderboard.find((e: any) => e.room_code === a.code);
+      expect(internal.payment_audit_id).toBe('PAY-1');
+      expect(internal.tournament_id).toBe('T-OFFICIAL');
     });
   });
 

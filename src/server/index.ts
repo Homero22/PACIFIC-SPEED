@@ -24,6 +24,7 @@ import {
 } from './payphoneSecurity.js';
 import { DatabaseUnavailableError, dbProvider } from './db.js';
 import { RoomManager } from './roomManager.js';
+import { validateRegistrationContact } from '../shared/registrationContact.js';
 import { roomFromQuery, withRoomParam } from './roomUrls.js';
 import { ConfigLockedError, sanitizePairName, tournamentService } from './tournamentService.js';
 import {
@@ -211,12 +212,13 @@ app.post('/api/tournament/verify-pass', passLimiter, async (req, res) => {
 if (!isProductionEnv()) {
   app.post('/api/tournament/simulate-payment', requireAdminAuth, async (req, res) => {
     try {
-      const { driver_name, navigator_name, referral_code } = req.body || {};
+      const { driver_name, navigator_name, referral_code, phone, email } = req.body || {};
       const result = await tournamentService.simulateSandboxPayment(
         driver_name,
         navigator_name,
         referral_code,
-        clientIp(req)
+        clientIp(req),
+        { phone, email }
       );
       res.status(result.success ? 200 : 400).json(result);
     } catch (err) {
@@ -227,9 +229,15 @@ if (!isProductionEnv()) {
 
 app.post('/api/payphone/create-link', paymentLinkLimiter, async (req, res) => {
   try {
-    const { driver_name, navigator_name, referral_code, phone } = req.body || {};
+    const { driver_name, navigator_name, referral_code } = req.body || {};
     if (!getPayphoneConfig().isConfigured) {
       res.status(503).json({ success: false, message: 'Pasarela de pago no configurada.' });
+      return;
+    }
+    // Phone, e-mail and rules acceptance are mandatory: they identify and reach the winners
+    const contact = validateRegistrationContact(req.body || {});
+    if (!contact.ok) {
+      res.status(400).json({ success: false, field: contact.field, message: contact.message });
       return;
     }
     const roomCode = roomFromQuery(req.body?.room_code);
@@ -249,8 +257,6 @@ app.post('/api/payphone/create-link', paymentLinkLimiter, async (req, res) => {
       typeof referral_code === 'string' && referral_code.trim()
         ? referral_code.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 50)
         : undefined;
-    const cleanPhone =
-      typeof phone === 'string' && phone.trim() ? phone.trim().replace(/[^0-9+]/g, '').slice(0, 20) : undefined;
 
     const publicBase = process.env.PUBLIC_BASE_URL?.trim().replace(/\/$/, '');
     const baseUrl = publicBase || `${req.protocol}://${req.get('host') || 'localhost:3000'}`;
@@ -261,7 +267,9 @@ app.post('/api/payphone/create-link', paymentLinkLimiter, async (req, res) => {
       driver_name: driver,
       navigator_name: navigator,
       referral_code: referral,
-      phone: cleanPhone,
+      phone: contact.phone,
+      email: contact.email,
+      terms_accepted_at: new Date().toISOString(),
       amount_usd: tournament.entry_fee_usd,
       status: 'PENDING',
       tournament_id: tournament.id,
@@ -453,6 +461,24 @@ app.post('/api/admin/tournament/close-podium', requireAdminAuth, async (_req, re
     res.json({ success: true, ...result });
   } catch (err) {
     sendError(res, err);
+  }
+});
+
+app.get('/api/admin/tournament/winners', requireAdminAuth, async (_req, res) => {
+  try {
+    res.json(await tournamentService.getWinnersReport());
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+app.post('/api/admin/tournament/winners/:place/paid', requireAdminAuth, async (req, res) => {
+  try {
+    const { reference, notes } = req.body || {};
+    const payout = await tournamentService.recordPrizePayout(req.params.place, reference, notes, clientIp(req));
+    res.json({ success: true, payout });
+  } catch (err) {
+    sendError(res, err, 400);
   }
 });
 
