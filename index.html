@@ -7,6 +7,14 @@
     <!-- Sin AdSense en la pantalla del juego (política: "pantallas sin contenido del editor").
          Los anuncios van solo en las páginas de contenido (site/). -->
     <meta name="robots" content="noindex" />
+    <!-- Google Analytics 4 (G-HE8FHC8ZTP). Events: src/client/analytics.ts (never personal data) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-HE8FHC8ZTP"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-HE8FHC8ZTP');
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
