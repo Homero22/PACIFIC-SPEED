@@ -23,6 +23,7 @@ import type {
 import { AudioEngine, type AmbienceLevel, type VoiceMode } from './audioEngine.js';
 import { InputManager } from './inputManager.js';
 import { GameRenderer } from './renderer.js';
+import { track } from './analytics.js';
 import { validateRegistrationContact } from '../shared/registrationContact.js';
 
 const LOCAL_COMMS_MAP: Record<TacticalCommsPreset, { code: string; label: string }> = {
@@ -72,6 +73,7 @@ class PacificSpeedClientApp {
 
   private lastFrameTime = performance.now();
   private adCountdownInterval: number | null = null;
+  private analyticsStatus: string | null = null;
 
   // Smooth online play (see netSmoothing.ts) and fixed-step local play
   private serverClock = new ServerClock();
@@ -144,6 +146,7 @@ class PacificSpeedClientApp {
       window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
     }
     if (paymentStatus === 'success') {
+      track('pago_aprobado');
       const feedback = document.getElementById('tourney-feedback');
       if (feedback) {
         feedback.innerHTML = `<strong>[INSCRIPCION CONFIRMADA EN PAYPHONE]</strong><br>Tu pase de torneo: <code>${escapeHtml(urlPass || 'consulta con la organizacion')}</code>.<br>Guardalo: es personal para tu tripulacion.`;
@@ -312,6 +315,7 @@ class PacificSpeedClientApp {
       const shareUrl = this.getShareUrl();
       try {
         await navigator.clipboard.writeText(shareUrl);
+        track('invitacion_copiada');
         const btn = document.getElementById('btn-copy-link');
         if (btn) {
           const prev = btn.textContent;
@@ -744,6 +748,26 @@ class PacificSpeedClientApp {
       }
     } catch {
       alert('Tu navegador no soporta grabación directa de Canvas.');
+    }
+  }
+
+  /** Analytics: one event when a match starts and one when it ends (no personal data). */
+  private trackStatusChange(status: string): void {
+    const prev = this.analyticsStatus;
+    this.analyticsStatus = status;
+    if (status === prev) return;
+    const torneo = this.isTournamentVerified;
+    if (status === 'running' && (prev === 'lobby' || prev === 'gameover' || prev === null)) {
+      track('partida_iniciada', { modo: this.mode, rol: this.activeRole, torneo });
+    } else if (status === 'gameover') {
+      const ws = this.currentWorldState.world_state;
+      track('partida_terminada', {
+        modo: this.mode,
+        torneo,
+        metros: Math.round(ws.distance_traveled),
+        rescatados: rescuedCount(ws.distance_traveled),
+        fase: ws.difficulty_phase ?? 'Calentamiento'
+      });
     }
   }
 
@@ -1645,6 +1669,7 @@ class PacificSpeedClientApp {
       if (res.ok && data.valid) {
         this.tournamentPass = cleanCode;
         this.isTournamentVerified = true;
+        track('pase_activado');
         localStorage.setItem('ps_tournament_pass', cleanCode);
         this.updateModeBanner();
         this.sendWsMessage({ type: 'set_tournament_pass', pass_code: cleanCode });
@@ -1728,6 +1753,7 @@ class PacificSpeedClientApp {
       const data = await res.json();
       const checkoutUrl = safeHttpUrl(data.payWithCard || data.payUrl || data.payWithPayPhone);
       if (data.success && checkoutUrl) {
+        track('pago_iniciado', { value: Number(data.entry_fee_usd) || undefined, currency: 'USD' });
         if (feedback) {
           feedback.innerHTML = `[ENLACE GENERADO] <a href="${escapeHtml(checkoutUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--phosphor);font-weight:700;text-decoration:underline;">ABRIR PASARELA PAYPHONE ($${Number(data.entry_fee_usd).toFixed(2)} USD)</a>`;
         }
@@ -1756,6 +1782,7 @@ class PacificSpeedClientApp {
     lobbyModal?.classList.toggle('hidden', status !== 'lobby');
     adModal?.classList.toggle('hidden', status !== 'ad_revive_prompt');
     gameoverModal?.classList.toggle('hidden', status !== 'gameover');
+    this.trackStatusChange(status);
 
     if (status === 'gameover') {
       const ws = this.currentWorldState.world_state;

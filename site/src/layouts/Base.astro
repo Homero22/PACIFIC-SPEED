@@ -41,6 +41,16 @@ const path = Astro.url.pathname;
       href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Nunito:wght@600;700;800&display=swap"
       rel="stylesheet"
     />
+    <!-- Google Analytics 4 -->
+    <script is:inline async src="https://www.googletagmanager.com/gtag/js?id=G-HE8FHC8ZTP"></script>
+    <script is:inline>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      gtag('config', 'G-HE8FHC8ZTP');
+    </script>
     {
       ads && (
         <script
