@@ -180,7 +180,8 @@ export function parseClientMessage(raw: string): WsClientMessage | null {
     }
     case 'set_tournament_pass': {
       const pass = shortString(msg.pass_code, 64);
-      return pass ? { type: 'set_tournament_pass', pass_code: pass } : null;
+      const idToken = shortString(msg.id_token, 4096);
+      return pass ? { type: 'set_tournament_pass', pass_code: pass, ...(idToken ? { id_token: idToken } : {}) } : null;
     }
     default:
       return null;

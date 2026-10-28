@@ -306,6 +306,8 @@ function mapPendingRow(row: any): PendingRegistrationRecord {
     phone: row.phone || undefined,
     email: row.email || undefined,
     terms_accepted_at: row.terms_accepted_at ? new Date(row.terms_accepted_at).toISOString() : undefined,
+    owner_uid: row.owner_uid || undefined,
+    owner_email: row.owner_email || undefined,
     amount_usd: parseFloat(row.amount_usd),
     status: row.status,
     tournament_id: row.tournament_id || undefined,
@@ -789,6 +791,11 @@ export class DatabaseProvider {
         -- Contact data and rules acceptance, needed to verify and pay winners
         ALTER TABLE pending_registrations ADD COLUMN IF NOT EXISTS email VARCHAR(254);
         ALTER TABLE pending_registrations ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMP WITH TIME ZONE;
+
+        -- Google account (Firebase Auth) that registered the pair: only it can activate the pass
+        ALTER TABLE pending_registrations ADD COLUMN IF NOT EXISTS owner_uid VARCHAR(128);
+        ALTER TABLE pending_registrations ADD COLUMN IF NOT EXISTS owner_email VARCHAR(254);
+        CREATE INDEX IF NOT EXISTS idx_pending_owner ON pending_registrations (owner_uid);
 
         CREATE TABLE IF NOT EXISTS prize_payouts (
           id VARCHAR(100) PRIMARY KEY,
@@ -1388,8 +1395,8 @@ export class DatabaseProvider {
       await pool.query(
         `INSERT INTO pending_registrations (
           client_transaction_id, driver_name, navigator_name, referral_code, phone, amount_usd, status, tournament_id, created_at, room_code,
-          config_snapshot_json, email, terms_accepted_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          config_snapshot_json, email, terms_accepted_at, owner_uid, owner_email
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
         [
           record.client_transaction_id,
           record.driver_name,
@@ -1403,7 +1410,9 @@ export class DatabaseProvider {
           record.room_code || null,
           record.config_snapshot ? JSON.stringify(record.config_snapshot) : null,
           record.email || null,
-          record.terms_accepted_at || null
+          record.terms_accepted_at || null,
+          record.owner_uid || null,
+          record.owner_email || null
         ]
       );
       return;
@@ -1685,10 +1694,10 @@ export class DatabaseProvider {
     const pool = this.backend();
     if (pool) {
       const pend = await pool.query(
-        `UPDATE pending_registrations p SET phone = NULL, email = NULL
+        `UPDATE pending_registrations p SET phone = NULL, email = NULL, owner_email = NULL
          FROM tournaments t
          WHERE p.tournament_id = t.id AND t.status = 'completed' AND t.completed_at < $1::timestamptz
-           AND (p.phone IS NOT NULL OR p.email IS NOT NULL)`,
+           AND (p.phone IS NOT NULL OR p.email IS NOT NULL OR p.owner_email IS NOT NULL)`,
         [cutoff]
       );
       const pay = await pool.query(
@@ -1705,9 +1714,10 @@ export class DatabaseProvider {
     if (t.status !== 'completed' || !t.completed_at || Date.parse(t.completed_at) >= Date.parse(cutoff)) return 0;
     let cleared = 0;
     for (const p of data.pending_registrations || []) {
-      if (p.tournament_id === t.id && (p.phone || p.email)) {
+      if (p.tournament_id === t.id && (p.phone || p.email || p.owner_email)) {
         delete p.phone;
         delete p.email;
+        delete p.owner_email;
         cleared++;
       }
     }
@@ -1719,6 +1729,34 @@ export class DatabaseProvider {
     }
     if (cleared > 0) this.persistLocalData();
     return cleared;
+  }
+
+  /** Approved passes of the active tournament paid by this Google account ("Mis pases"). */
+  public async getPassesForOwner(ownerUid: string, tournamentId: string): Promise<PaymentAuditRecord[]> {
+    if (!ownerUid) return [];
+    const pool = this.backend();
+    if (pool) {
+      const res = await pool.query(
+        `SELECT a.* FROM pending_registrations p
+         JOIN payments_audit a ON a.client_transaction_id = p.client_transaction_id
+         WHERE p.owner_uid = $1 AND a.status = 'APPROVED' AND a.tournament_id = $2 AND a.pass_token IS NOT NULL
+         ORDER BY a.created_at DESC`,
+        [ownerUid, tournamentId]
+      );
+      return res.rows.map(mapAuditRow);
+    }
+    const data = this.local();
+    const mine = new Set(
+      (data.pending_registrations || []).filter((p) => p.owner_uid === ownerUid).map((p) => p.client_transaction_id)
+    );
+    return data.payments
+      .filter(
+        (a) =>
+          a.client_transaction_id && mine.has(a.client_transaction_id) && a.status === 'APPROVED' &&
+          a.tournament_id === tournamentId && a.pass_token
+      )
+      .map((a) => ({ ...a }))
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   }
 
   public async seedInitialScoresIfEmpty(seeds: LeaderboardEntry[]): Promise<void> {

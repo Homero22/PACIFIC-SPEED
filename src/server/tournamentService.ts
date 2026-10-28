@@ -17,6 +17,7 @@ import type {
   FinancialConfigLock,
   PaymentAuditRecord,
   PayphoneWebhookPayload,
+  OwnedPass,
   PendingRegistrationRecord,
   PrizePayoutRecord,
   ReferralRecord,
@@ -119,9 +120,40 @@ export class TournamentService {
     await this.db.savePendingRegistration(record);
   }
 
-  public async verifyTournamentPass(passCode: string) {
+  /**
+   * Checks a pass for the active tournament. Passes bought with a Google account can only be
+   * activated by that same account (ownerUid from a verified sign-in); older passes without an
+   * owner keep working as before.
+   */
+  public async verifyTournamentPass(passCode: string, ownerUid?: string | null) {
     const tournament = await this.db.getActiveTournament();
-    return this.db.verifyTournamentPass(passCode, tournament.id);
+    const check = await this.db.verifyTournamentPass(passCode, tournament.id);
+    if (!check.valid || !check.payment_audit_id) return check;
+    const audit = await this.db.getPaymentAuditById(check.payment_audit_id);
+    const pending = audit?.client_transaction_id
+      ? await this.db.getPendingRegistration(audit.client_transaction_id)
+      : null;
+    if (pending?.owner_uid && pending.owner_uid !== ownerUid) {
+      return {
+        valid: false,
+        message: ownerUid
+          ? 'Este pase pertenece a otra cuenta. Inicia sesión con la cuenta de Google que pagó la inscripción.'
+          : 'Inicia sesión con la cuenta de Google que pagó la inscripción para activar este pase.'
+      };
+    }
+    return check;
+  }
+
+  /** "Mis pases": the passes of the active tournament paid by this account. */
+  public async getMyPasses(ownerUid: string): Promise<OwnedPass[]> {
+    const tournament = await this.db.getActiveTournament();
+    const passes = await this.db.getPassesForOwner(ownerUid, tournament.id);
+    return passes.map((p) => ({
+      pass_code: p.pass_token!,
+      driver_name: p.pair_driver_name,
+      navigator_name: p.pair_navigator_name,
+      paid_at: typeof p.created_at === 'string' ? p.created_at : new Date(p.created_at).toISOString()
+    }));
   }
 
   /**
@@ -297,7 +329,7 @@ export class TournamentService {
     navigatorName: string,
     referralCode?: string,
     clientIp = '127.0.0.1',
-    contact: { phone?: string; email?: string } = {}
+    contact: { phone?: string; email?: string; owner_uid?: string; owner_email?: string } = {}
   ): Promise<PaymentResult> {
     const gate = await this.checkRegistrationOpen();
     if (!gate.open) return { success: false, message: gate.message };
@@ -310,6 +342,8 @@ export class TournamentService {
       referral_code: referralCode ? String(referralCode).trim().toUpperCase().slice(0, 50) : undefined,
       phone: contact.phone ? String(contact.phone).slice(0, 20) : undefined,
       email: contact.email ? String(contact.email).trim().toLowerCase().slice(0, 254) : undefined,
+      owner_uid: contact.owner_uid ? String(contact.owner_uid).slice(0, 128) : undefined,
+      owner_email: contact.owner_email ? String(contact.owner_email).toLowerCase().slice(0, 254) : undefined,
       terms_accepted_at: new Date().toISOString(),
       amount_usd: gate.tournament.entry_fee_usd,
       status: 'PENDING',
@@ -625,6 +659,7 @@ export class TournamentService {
         pass_hint: passHint(payment.pass_token),
         contact_phone: pending?.phone || null,
         contact_email: pending?.email || null,
+        account_email: pending?.owner_email || null,
         terms_accepted_at: pending?.terms_accepted_at || null,
         payout: payouts.find((p) => p.place === place) || null
       });

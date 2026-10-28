@@ -68,8 +68,9 @@ interface GameRoom {
   tournamentId?: string;
 }
 
-export type TournamentPassVerifier = (passCode: string) => Promise<{
+export type TournamentPassVerifier = (passCode: string, idToken?: string) => Promise<{
   valid: boolean;
+  message?: string;
   driver_name?: string;
   navigator_name?: string;
   tournament_id?: string;
@@ -776,13 +777,13 @@ export class RoomManager {
     return payload;
   }
 
-  public async handleSetTournamentPass(ws: WebSocket, passCodeRaw: string): Promise<void> {
+  public async handleSetTournamentPass(ws: WebSocket, passCodeRaw: string, idToken?: string): Promise<void> {
     if (!this.context(ws) || !this.verifyPass) return;
     const passCode = passCodeRaw.trim().toUpperCase();
 
     let check: Awaited<ReturnType<TournamentPassVerifier>>;
     try {
-      check = await this.verifyPass(passCode);
+      check = await this.verifyPass(passCode, idToken);
     } catch {
       this.sendToClient(ws, { type: 'error', message: 'No se pudo verificar el pase en este momento.' });
       return;
@@ -793,7 +794,7 @@ export class RoomManager {
     if (!ctx) return;
     const { room } = ctx;
     if (!check.valid) {
-      this.sendToClient(ws, { type: 'error', message: 'Pase de torneo inválido.' });
+      this.sendToClient(ws, { type: 'error', message: check.message || 'Pase de torneo inválido.' });
       return;
     }
 
