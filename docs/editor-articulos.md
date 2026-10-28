@@ -48,8 +48,11 @@ En el servicio → **Variables**, agrega los cuatro valores de `site/.env` y ade
 | `KEYSTATIC_SECRET` | (de `site/.env`) |
 | `PUBLIC_KEYSTATIC_GITHUB_APP_SLUG` | (de `site/.env`) |
 | `SITE_URL` | `https://TU-DOMINIO` (para el sitemap y los enlaces canónicos) |
+| `SITE_EXTRA_HOSTS` | (opcional) otros dominios que también apunten al sitio, separados por coma |
 
 Sin las tres primeras, `/keystatic` responde "Editor no configurado" en producción (a propósito).
+
+`SITE_URL` también le dice al servidor en qué dominio confiar para el inicio de sesión con GitHub. Si cambias de dominio, actualízalo y vuelve a desplegar; si no, GitHub intentará volver a `localhost`.
 
 ### 4. Dar acceso a otras personas
 
