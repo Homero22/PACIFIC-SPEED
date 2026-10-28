@@ -1,0 +1,31 @@
+---
+import PostCard from '../../components/PostCard.astro';
+import Base from '../../layouts/Base.astro';
+import { publishedPosts } from '../../lib/posts';
+
+const posts = await publishedPosts();
+---
+
+<Base
+  title="Blog"
+  description="Guías para ayudar a animales rescatados, novedades del juego y el diario de cómo se construye Patrulla Huellitas."
+  ads
+>
+  <section class="section">
+    <div class="wrap">
+      <h1>Blog</h1>
+      <p class="lead">Guías, novedades del juego y el diario del proyecto.</p>
+      {
+        posts.length === 0 ? (
+          <p>Pronto publicaremos el primer artículo.</p>
+        ) : (
+          <div class="cards">
+            {posts.map((post) => (
+              <PostCard post={post} />
+            ))}
+          </div>
+        )
+      }
+    </div>
+  </section>
+</Base>

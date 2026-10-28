@@ -1,0 +1,70 @@
+---
+import PostCard from '../components/PostCard.astro';
+import Base from '../layouts/Base.astro';
+import { publishedPosts } from '../lib/posts';
+
+const latest = (await publishedPosts()).slice(0, 3);
+---
+
+<Base
+  title="Patrulla Huellitas · Juego en pareja por los animales"
+  description="Un juego de manejo en pareja: uno conduce, el otro protege. Rescata animalitos en la tormenta, compite en el torneo y apoya el rescate animal."
+  ads
+>
+  <section class="section">
+    <div class="wrap narrow">
+      <h1>Manejen juntos. Rescaten animalitos.</h1>
+      <p class="lead">
+        Patrulla Huellitas es un juego para jugar en pareja: una persona conduce el vehículo de rescate y la otra lo
+        protege de la tormenta. Cada 120 metros un animalito sube a bordo.
+      </p>
+      <p>
+        <a class="btn" href="/jugar">Jugar gratis</a>
+      </p>
+      <p class="meta">Funciona en el navegador, en computadora y celular. No hace falta instalar nada.</p>
+    </div>
+  </section>
+
+  <section class="section section-soft">
+    <div class="wrap narrow">
+      <h2>Cómo se juega</h2>
+      <p><strong>Piloto:</strong> esquiva troncos y ramas con las flechas, mantén la velocidad sobre 50 y pasa por los huesos dorados (turbo) y los botiquines.</p>
+      <p><strong>Navegante:</strong> sube el escudo izquierdo o derecho cuando algo viene de un lado, marca el carril seguro y usa el radar para ver más lejos.</p>
+      <p>Se juega en línea con un amigo (compartes un enlace) o solo, con una IA como compañera.</p>
+      <p><a href="/blog">Lee las guías y novedades →</a></p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap narrow">
+      <h2>Por qué existe</h2>
+      <p>
+        Este proyecto nace para unir dos cosas: un juego divertido para compartir y la ayuda a animales rescatados. Lo
+        estamos construyendo desde cero y vamos contando el camino en el blog.
+      </p>
+      <div class="box">
+        <p>
+          <strong>Nuestro compromiso:</strong> una parte de cada inscripción al torneo se destina a rescate y alimento
+          animal. Cada donación se publicará en el blog con su comprobante.
+        </p>
+        <p class="meta">Jugar en modo práctica es siempre gratis.</p>
+      </div>
+      <p><a href="/bases">Conoce las bases del torneo →</a></p>
+    </div>
+  </section>
+
+  {
+    latest.length > 0 && (
+      <section class="section section-soft">
+        <div class="wrap">
+          <h2>Últimos artículos</h2>
+          <div class="cards">
+            {latest.map((post) => (
+              <PostCard post={post} />
+            ))}
+          </div>
+        </div>
+      </section>
+    )
+  }
+</Base>

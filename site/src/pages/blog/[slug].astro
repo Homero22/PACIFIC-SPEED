@@ -1,0 +1,35 @@
+---
+import { Image } from 'astro:assets';
+import { render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import { CATEGORY_LABELS, formatDate, publishedPosts, type Post } from '../../lib/posts';
+
+export async function getStaticPaths() {
+  const posts = await publishedPosts();
+  return posts.map((post) => ({ params: { slug: post.id }, props: { post } }));
+}
+
+interface Props {
+  post: Post;
+}
+const { post } = Astro.props;
+const { title, description, publishedDate, category, cover, coverAlt } = post.data;
+const { Content } = await render(post);
+---
+
+<Base title={title} description={description} type="article" ogImage={cover?.src} ads>
+  <article class="section">
+    <div class="wrap narrow article">
+      <p><a href="/blog">← Blog</a></p>
+      <span class="tag">{CATEGORY_LABELS[category]}</span>
+      <h1>{title}</h1>
+      <p class="meta">{formatDate(publishedDate)}</p>
+      {cover && <Image class="cover" src={cover} alt={coverAlt || ''} width={1200} />}
+      <Content />
+      <div class="box">
+        <p><strong>¿Juegas en pareja?</strong> Patrulla Huellitas es gratis en modo práctica.</p>
+        <a class="btn btn-small" href="/jugar">Jugar ahora</a>
+      </div>
+    </div>
+  </article>
+</Base>

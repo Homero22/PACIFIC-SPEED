@@ -1,0 +1,254 @@
+/* Patrulla Huellitas — sitio de contenido: papel blanco, tinta negra, ámbar y verde azulado de la marca */
+:root {
+  --paper: #ffffff;
+  --paper-soft: #faf6ef;
+  --ink: #141414;
+  --muted: #52504c;
+  --line: #e4ded3;
+  --accent: #e8890c;
+  --accent-ink: #1d1203;
+  --teal: #12857a;
+  --radius: 16px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Nunito', system-ui, sans-serif;
+  font-size: 19px;
+  line-height: 1.6;
+}
+
+h1,
+h2,
+h3 {
+  font-family: 'Fredoka', system-ui, sans-serif;
+  line-height: 1.15;
+  margin: 0 0 12px;
+}
+h1 {
+  font-size: clamp(34px, 6vw, 52px);
+}
+h2 {
+  font-size: clamp(24px, 4vw, 30px);
+  margin-top: 36px;
+}
+h3 {
+  font-size: 22px;
+}
+
+p {
+  margin: 0 0 14px;
+}
+
+a {
+  color: var(--ink);
+  text-underline-offset: 3px;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+.wrap {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+.narrow {
+  max-width: 740px;
+}
+
+/* Header */
+.site-header {
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+.brand {
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 22px;
+  text-decoration: none;
+}
+.site-header nav {
+  display: flex;
+  align-items: center;
+  gap: 6px 18px;
+  flex-wrap: wrap;
+  font-weight: 800;
+  font-size: 17px;
+}
+.site-header nav a {
+  text-decoration: none;
+}
+.site-header nav a[aria-current='page'] {
+  text-decoration: underline;
+  text-decoration-thickness: 3px;
+  text-decoration-color: var(--accent);
+}
+
+/* Buttons */
+.btn {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 20px;
+  padding: 14px 28px;
+  border-radius: 12px;
+  text-decoration: none;
+  border: 2px solid var(--accent-ink);
+  box-shadow: 0 4px 0 var(--accent-ink);
+}
+.btn:hover {
+  transform: translateY(1px);
+  box-shadow: 0 3px 0 var(--accent-ink);
+}
+.btn:focus-visible,
+a:focus-visible {
+  outline: 3px solid var(--teal);
+  outline-offset: 3px;
+}
+.btn-small {
+  font-size: 16px;
+  padding: 7px 16px;
+  box-shadow: 0 3px 0 var(--accent-ink);
+}
+.btn-ghost {
+  background: var(--paper);
+}
+
+/* Sections */
+.section {
+  padding: 48px 0;
+}
+.section-soft {
+  background: var(--paper-soft);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.lead {
+  font-size: clamp(20px, 2.6vw, 23px);
+  color: var(--muted);
+}
+.meta {
+  color: var(--muted);
+  font-size: 16px;
+}
+.box {
+  border: 3px solid var(--ink);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin: 24px 0;
+}
+
+/* Cards */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 22px;
+}
+.card {
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--paper);
+  display: flex;
+  flex-direction: column;
+}
+.card img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+}
+.card-body {
+  padding: 16px 18px 20px;
+}
+.card h3 a {
+  text-decoration: none;
+}
+.card h3 a:hover {
+  text-decoration: underline;
+}
+.tag {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--teal);
+  margin-bottom: 6px;
+}
+
+/* Article */
+.article h2 {
+  margin-top: 40px;
+}
+.article ul,
+.article ol {
+  padding-left: 26px;
+  margin: 0 0 16px;
+}
+.article li {
+  margin-bottom: 8px;
+}
+.article img {
+  border-radius: 12px;
+  margin: 12px 0;
+}
+.article blockquote {
+  margin: 20px 0;
+  padding: 4px 0 4px 18px;
+  border-left: 5px solid var(--accent);
+  color: var(--muted);
+}
+.cover {
+  width: 100%;
+  border-radius: var(--radius);
+  margin: 20px 0 8px;
+}
+
+/* Footer */
+.site-footer {
+  border-top: 1px solid var(--line);
+  margin-top: 56px;
+  padding: 22px 0 32px;
+  color: var(--muted);
+  font-size: 16px;
+}
+.footer-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px 20px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  body {
+    font-size: 17px;
+  }
+  .section {
+    padding: 36px 0;
+  }
+}
