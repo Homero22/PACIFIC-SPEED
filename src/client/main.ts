@@ -24,6 +24,7 @@ import { AudioEngine, type AmbienceLevel, type VoiceMode } from './audioEngine.j
 import { InputManager } from './inputManager.js';
 import { GameRenderer } from './renderer.js';
 import { track } from './analytics.js';
+import { playerAuth, type PlayerAccount } from './auth.js';
 import { validateRegistrationContact } from '../shared/registrationContact.js';
 
 const LOCAL_COMMS_MAP: Record<TacticalCommsPreset, { code: string; label: string }> = {
@@ -74,6 +75,7 @@ class PacificSpeedClientApp {
   private lastFrameTime = performance.now();
   private adCountdownInterval: number | null = null;
   private analyticsStatus: string | null = null;
+  private lastPassError: string | null = null;
 
   // Smooth online play (see netSmoothing.ts) and fixed-step local play
   private serverClock = new ServerClock();
@@ -395,6 +397,9 @@ class PacificSpeedClientApp {
     // How to play: opens from the hangar, and once by itself on a player's first visit
     this.bindHowToPlay();
 
+    // Google sign-in (tournament only; practice never needs an account)
+    this.bindPlayerAuth();
+
     // Background (storm ambience) volume: alto → medio → bajo → apagado, remembered per browser
     const ambienceLabels: Record<AmbienceLevel, string> = {
       alto: 'FONDO: ALTO',
@@ -571,6 +576,15 @@ class PacificSpeedClientApp {
     // STEP 02: Tournament Payment Confirmation Modal Trigger
     document.getElementById('btn-tourney-pay')?.addEventListener('click', () => {
       this.audio.init();
+      if (!playerAuth.current) {
+        const feedback = document.getElementById('tourney-feedback');
+        if (feedback) {
+          feedback.textContent = 'Primero inicia sesión con Google: tu pase quedará ligado a tu cuenta.';
+          feedback.style.color = 'var(--danger)';
+        }
+        document.getElementById('btn-google-signin')?.focus();
+        return;
+      }
       if (this.checkRegistrationContact()) this.openTourneyConfirmationModal();
     });
 
@@ -1069,7 +1083,10 @@ class PacificSpeedClientApp {
         this.updateConnectionBadge(this.wsConnected);
         if (this.tournamentPass) {
           // Bind our own pass to this room (the server never broadcasts pass codes)
-          this.sendWsMessage({ type: 'set_tournament_pass', pass_code: this.tournamentPass });
+          const pass = this.tournamentPass;
+          void playerAuth.idToken().then((idToken) =>
+            this.sendWsMessage({ type: 'set_tournament_pass', pass_code: pass, ...(idToken ? { id_token: idToken } : {}) })
+          );
         } else if (msg.lobby.is_tournament_verified) {
           this.isTournamentVerified = true;
           this.updateModeBanner();
@@ -1455,6 +1472,117 @@ class PacificSpeedClientApp {
     this.renderLeaderboard();
   }
 
+  private bindPlayerAuth(): void {
+    // The Firebase SDK is only downloaded when the tournament matters: opening its tab, a saved
+    // pass, a Payphone return, or pressing a sign-in button. Practice players never load it.
+    const start = () =>
+      void playerAuth.init().then((enabled) => {
+        if (!enabled) {
+          const text = document.getElementById('tourney-account-text');
+          if (text) text.textContent = 'Las inscripciones con cuenta de Google aún no están disponibles.';
+          document.getElementById('btn-google-signin')?.classList.add('hidden');
+        }
+      });
+    document.querySelector('[data-hangar-tab="hangar-tab-tournament"]')?.addEventListener('click', start);
+    document.getElementById('btn-banner-action')?.addEventListener('click', start);
+    if (this.tournamentPass || new URLSearchParams(window.location.search).has('payment')) start();
+    playerAuth.onChange((account) => this.renderAccount(account));
+
+    document.getElementById('btn-google-signin')?.addEventListener('click', async () => {
+      this.audio.init();
+      try {
+        await playerAuth.signInWithGoogle();
+        track('login', { method: 'google' });
+      } catch (err) {
+        const feedback = document.getElementById('tourney-feedback');
+        if (feedback) {
+          feedback.textContent = `No se pudo iniciar sesión: ${(err as Error)?.message || 'intenta de nuevo'}`;
+          feedback.style.color = 'var(--danger)';
+        }
+      }
+    });
+    document.getElementById('btn-google-signout')?.addEventListener('click', () => void playerAuth.signOut());
+    document.getElementById('btn-my-passes')?.addEventListener('click', () => void this.showMyPasses());
+  }
+
+  private renderAccount(account: PlayerAccount | null): void {
+    const row = document.getElementById('tourney-account');
+    const text = document.getElementById('tourney-account-text');
+    const signIn = document.getElementById('btn-google-signin');
+    const signOut = document.getElementById('btn-google-signout');
+    if (!playerAuth.enabled) return;
+    row?.classList.toggle('is-signed-in', Boolean(account));
+    signIn?.classList.toggle('hidden', Boolean(account));
+    signOut?.classList.toggle('hidden', !account);
+    if (text) {
+      text.textContent = account
+        ? `Conectado como ${account.email || account.name || 'tu cuenta de Google'}. Tu pase quedará ligado a esta cuenta.`
+        : 'Para inscribirte inicia sesión con Google. Tu pase quedará ligado a tu cuenta.';
+    }
+    // Contact e-mail defaults to the account's (still editable)
+    const emailInput = document.getElementById('tourney-email-input') as HTMLInputElement | null;
+    if (account?.email && emailInput && !emailInput.value.trim()) emailInput.value = account.email;
+    if (!account) {
+      const list = document.getElementById('my-passes-list');
+      if (list) list.innerHTML = '';
+    }
+  }
+
+  /** "Mis pases": the passes paid by the signed-in account, ready to activate here. */
+  private async showMyPasses(): Promise<void> {
+    this.audio.init();
+    const list = document.getElementById('my-passes-list');
+    const feedback = document.getElementById('redeem-feedback');
+    if (!list || !feedback) return;
+    if (!playerAuth.current) {
+      try {
+        await playerAuth.signInWithGoogle();
+      } catch {
+        // handled below
+      }
+      if (!playerAuth.current) {
+        feedback.textContent = 'Inicia sesión con la cuenta de Google que pagó la inscripción.';
+        feedback.style.color = 'var(--danger)';
+        return;
+      }
+    }
+    feedback.textContent = 'Buscando tus pases...';
+    feedback.style.color = 'var(--accent)';
+    try {
+      const idToken = await playerAuth.idToken();
+      const res = await fetch('/api/tournament/my-passes', {
+        headers: idToken ? { Authorization: `Bearer ${idToken}` } : {}
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'No se pudieron cargar tus pases.');
+      const passes = (data.passes || []) as Array<{ pass_code: string; driver_name: string; navigator_name: string }>;
+      if (passes.length === 0) {
+        list.innerHTML = '';
+        feedback.textContent = 'Esta cuenta no tiene pases para el torneo actual.';
+        feedback.style.color = 'var(--text-muted)';
+        return;
+      }
+      feedback.textContent = '';
+      list.innerHTML = passes
+        .map(
+          (p, i) => `<div class="my-pass">
+            <span>${escapeHtml(p.driver_name)} / ${escapeHtml(p.navigator_name)}<br><code>${escapeHtml(p.pass_code)}</code></span>
+            <button type="button" class="btn btn-use-pass" data-i="${i}" style="border-color: var(--cyan); color: var(--cyan); font-weight: 800; padding: 6px 12px;">USAR</button>
+          </div>`
+        )
+        .join('');
+      list.querySelectorAll<HTMLButtonElement>('.btn-use-pass').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const pass = passes[Number(btn.dataset.i)];
+          if (pass) void this.handlePassRedemption(pass.pass_code, feedback);
+        });
+      });
+    } catch (err) {
+      feedback.textContent = (err as Error).message;
+      feedback.style.color = 'var(--danger)';
+    }
+  }
+
   private bindHowToPlay(): void {
     const modal = document.getElementById('modal-how-to');
     if (!modal) return;
@@ -1639,13 +1767,16 @@ class PacificSpeedClientApp {
     feedbackEl.textContent = 'Verificando pase con el servidor...';
     feedbackEl.style.color = 'var(--accent)';
 
+    this.lastPassError = null;
     const ok = await this.verifyTournamentPass(code);
     if (ok) {
       feedbackEl.innerHTML = `[PASE VALIDO] Código: <code>${escapeHtml(code)}</code> vinculado a esta sala.`;
       feedbackEl.style.color = 'var(--phosphor)';
       return true;
     } else {
-      feedbackEl.textContent = '[ERROR] Pase no encontrado o inválido. Revisa el código o realiza tu inscripción.';
+      feedbackEl.textContent = this.lastPassError
+        ? `[ERROR] ${this.lastPassError}`
+        : '[ERROR] Pase no encontrado o inválido. Revisa el código o realiza tu inscripción.';
       feedbackEl.style.color = 'var(--danger)';
       return false;
     }
@@ -1656,9 +1787,13 @@ class PacificSpeedClientApp {
     if (!cleanCode) return false;
 
     try {
+      const idToken = await playerAuth.idToken();
       const res = await fetch('/api/tournament/verify-pass', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {})
+        },
         body: JSON.stringify({
           pass_code: cleanCode,
           room_code: this.roomCode
@@ -1672,9 +1807,10 @@ class PacificSpeedClientApp {
         track('pase_activado');
         localStorage.setItem('ps_tournament_pass', cleanCode);
         this.updateModeBanner();
-        this.sendWsMessage({ type: 'set_tournament_pass', pass_code: cleanCode });
+        this.sendWsMessage({ type: 'set_tournament_pass', pass_code: cleanCode, ...(idToken ? { id_token: idToken } : {}) });
         return true;
       }
+      this.lastPassError = typeof data.message === 'string' ? data.message : null;
       if (res.ok && localStorage.getItem('ps_tournament_pass') === cleanCode) {
         // Stale pass (e.g. old transaction-id passes are no longer accepted)
         localStorage.removeItem('ps_tournament_pass');
@@ -1734,9 +1870,13 @@ class PacificSpeedClientApp {
     }
 
     try {
+      const idToken = await playerAuth.idToken();
       const res = await fetch('/api/payphone/create-link', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {})
+        },
         body: JSON.stringify({
           driver_name: this.pilotName || 'PILOT_A',
           navigator_name:

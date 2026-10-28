@@ -348,6 +348,9 @@ export interface PendingRegistrationRecord {
   email?: string;
   /** When the payer accepted the tournament rules (bases). */
   terms_accepted_at?: string;
+  /** Firebase account (Google sign-in) that paid: only it can activate the pass. */
+  owner_uid?: string;
+  owner_email?: string;
   amount_usd: number;
   status: 'PENDING' | 'COMPLETED' | 'CANCELLED' | 'REFUND_REQUIRED';
   tournament_id?: string;
@@ -387,6 +390,8 @@ export interface TournamentWinner {
   pass_hint: string;
   contact_phone: string | null;
   contact_email: string | null;
+  /** Google account that paid (sign-in), when the pair registered with an account. */
+  account_email: string | null;
   terms_accepted_at: string | null;
   payout: PrizePayoutRecord | null;
 }
@@ -401,6 +406,14 @@ export interface TournamentWinnersReport {
   winners: TournamentWinner[];
   /** Tournament scores saved before scores were linked to payments (cannot be attributed). */
   unlinked_tournament_scores: number;
+}
+
+/** A tournament pass owned by the signed-in player ("Mis pases"). */
+export interface OwnedPass {
+  pass_code: string;
+  driver_name: string;
+  navigator_name: string;
+  paid_at: string;
 }
 
 export interface TournamentTelemetryStatus {
@@ -512,7 +525,7 @@ export type WsClientMessage =
   | { type: 'update_cosmetics'; cosmetics: CosmeticLoadout }
   | { type: 'start_match' }
   | { type: 'instant_rematch' }
-  | { type: 'set_tournament_pass'; pass_code: string }
+  | { type: 'set_tournament_pass'; pass_code: string; id_token?: string }
   | { type: 'watch_rewarded_ad' }
   | { type: 'decline_rewarded_ad' }
   | { type: 'send_comms'; preset: TacticalCommsPreset }

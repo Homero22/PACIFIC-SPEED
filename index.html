@@ -1053,6 +1053,58 @@
         font-weight: 700;
       }
 
+      /* Tournament registration: Google account */
+      .account-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 12px;
+        margin-top: 8px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(0, 0, 0, 0.35);
+        font-size: 13px;
+        line-height: 1.45;
+        color: var(--text-muted);
+      }
+      .account-row span {
+        flex: 1 1 220px;
+      }
+      .account-row.is-signed-in {
+        border-color: rgba(123, 216, 143, 0.5);
+        color: var(--text-primary);
+      }
+      .btn-google {
+        background: #ffffff;
+        color: #1f1f1f;
+        border-color: #ffffff;
+        font-weight: 800;
+        padding: 8px 14px;
+        font-size: 13px;
+      }
+      .my-passes {
+        display: grid;
+        gap: 8px;
+        margin-top: 8px;
+        font-size: 13px;
+      }
+      .my-pass {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px 10px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        border: 1px solid rgba(0, 240, 255, 0.3);
+        background: rgba(0, 0, 0, 0.35);
+      }
+      .my-pass code {
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+
       /* Tournament registration: rules acceptance */
       .bases-accept {
         display: flex;
@@ -1546,6 +1598,11 @@
                   <p style="font-size: 13px; color: var(--text-muted); line-height: 1.45; margin-top: 2px;">
                     Ingresa tus datos para generar el enlace de pago seguro en Payphone:
                   </p>
+                  <div id="tourney-account" class="account-row">
+                    <span id="tourney-account-text">Para inscribirte inicia sesión con Google. Tu pase quedará ligado a tu cuenta.</span>
+                    <button type="button" id="btn-google-signin" class="btn btn-google">ENTRAR CON GOOGLE</button>
+                    <button type="button" id="btn-google-signout" class="link-btn hidden">Salir</button>
+                  </div>
                   <div class="input-row" style="margin-top: 8px;">
                     <input id="tourney-phone-input" type="tel" inputmode="tel" autocomplete="tel" placeholder="TELEFONO / WHATSAPP *" maxlength="20" />
                     <input id="tourney-email-input" type="email" inputmode="email" autocomplete="email" placeholder="CORREO ELECTRONICO *" maxlength="254" />
@@ -1567,8 +1624,12 @@
                 <div class="section-box" style="background: rgba(4, 10, 20, 0.92); border: 1.5px solid rgba(0, 240, 255, 0.35);">
                   <span class="section-title" style="color: var(--cyan);">YA PAGASTE O TIENES UN PASE</span>
                   <p style="font-size: 13px; color: var(--text-muted); line-height: 1.45;">
-                    Si pagaste desde tu movil o tu copiloto te compartio su codigo de pase, ingresalo aqui:
+                    Inicia sesión con la cuenta de Google que pagó y activa tu pase. Si lo perdiste, búscalo en «Mis pases».
                   </p>
+                  <button type="button" id="btn-my-passes" class="btn" style="margin-top: 8px; width: 100%; border-color: var(--cyan); color: var(--cyan); font-weight: 800;">
+                    MIS PASES
+                  </button>
+                  <div id="my-passes-list" class="my-passes"></div>
                   <div class="input-row" style="margin-top: 8px;">
                     <input id="tourney-pass-redeem-input" type="text" placeholder="EJ: PS-XXXX O ID DE PAGO" maxlength="60" />
                     <button id="btn-redeem-pass" class="btn" style="border-color: var(--cyan); color: var(--cyan); font-weight: 800;">
@@ -1887,7 +1948,7 @@
           <h2 id="bases-title">Bases del torneo</h2>
           <ol class="bases-list">
             <li>Participan personas <strong>mayores de 18 años</strong>.</li>
-            <li>Cada pareja paga una inscripción y recibe un <strong>pase personal</strong>. Si lo compartes, quien lo use juega por tu pareja.</li>
+            <li>Te inscribes con tu <strong>cuenta de Google</strong> y recibes un <strong>pase personal</strong>: solo esa cuenta puede activarlo.</li>
             <li>Gana el <strong>puntaje más alto</strong> jugado con el pase durante el torneo. Si hay empate, gana quien lo logró primero.</li>
             <li>Premios para el <strong>1.º, 2.º y 3.º lugar</strong>, según los porcentajes del pozo publicados en la pestaña Torneo.</li>
             <li>El premio se paga a <strong>la persona que pagó la inscripción</strong>, a su cuenta Payphone o bancaria a su nombre. Ella lo reparte con su pareja.</li>

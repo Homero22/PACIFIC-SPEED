@@ -32,6 +32,10 @@ import Base from '../layouts/Base.astro';
           el servidor ve tu dirección IP.
         </li>
         <li>
+          <strong>Al iniciar sesión con Google (solo para el torneo):</strong> un identificador de tu cuenta y tu
+          correo de Google. No recibimos tu contraseña.
+        </li>
+        <li>
           <strong>Al inscribirte al torneo:</strong> los apodos de la pareja, tu teléfono o WhatsApp, tu correo y la
           fecha en que aceptaste las bases.
         </li>
@@ -59,6 +63,7 @@ import Base from '../layouts/Base.astro';
       <h2>4. Con quién se comparten</h2>
       <ul>
         <li><strong>Payphone:</strong> procesa los pagos.</li>
+        <li><strong>Google Firebase:</strong> gestiona el inicio de sesión con Google para el torneo.</li>
         <li><strong>Railway:</strong> aloja el servidor y la base de datos.</li>
         <li><strong>GitHub:</strong> guarda los artículos del blog.</li>
         <li>
@@ -94,7 +99,7 @@ import Base from '../layouts/Base.astro';
       <h2>6. Cuánto tiempo los guardamos</h2>
       <ul>
         <li>
-          <strong>Teléfono, correo y los datos de quien pagó que envía Payphone:</strong> se borran automáticamente
+          <strong>Teléfono, correos (incluido el de tu cuenta de Google) y los datos de quien pagó que envía Payphone:</strong> se borran automáticamente
           <strong>30 días después del cierre del torneo</strong>.
         </li>
         <li>

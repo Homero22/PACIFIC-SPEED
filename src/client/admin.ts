@@ -866,6 +866,9 @@ class PacificSpeedAdminApp {
         const email = w.contact_email
           ? `<a href="mailto:${escapeHtml(w.contact_email)}">${escapeHtml(w.contact_email)}</a>`
           : '<span class="status status-warn">Sin correo</span>';
+        const account = w.account_email
+          ? `<span class="cell-sub" title="Cuenta de Google con la que pagó">Cuenta: ${escapeHtml(w.account_email)}</span>`
+          : '';
         const terms = w.terms_accepted_at
           ? `<span class="cell-sub">Aceptó bases ${escapeHtml(new Date(w.terms_accepted_at).toLocaleDateString())}</span>`
           : '<span class="cell-sub">Inscripción anterior a las bases</span>';
@@ -886,7 +889,7 @@ class PacificSpeedAdminApp {
               <span class="cell-sub">${w.matches_played} partida(s) jugadas</span></td>
             <td class="num">${w.best_score.toLocaleString('en-US')}
               <span class="cell-sub">${Math.round(w.distance_traveled)} m · ${escapeHtml(new Date(w.achieved_at).toLocaleString())}</span></td>
-            <td>${phone}<span class="cell-sub">${email}</span>${terms}</td>
+            <td>${phone}<span class="cell-sub">${email}</span>${account}${terms}</td>
             <td><span class="mono" title="ID Payphone">${escapeHtml(w.payphone_transaction_id)}</span>
               <span class="cell-sub">${escapeHtml(new Date(w.paid_entry_at).toLocaleString())}</span>
               <span class="cell-sub mono" title="Final del código de pase">Pase ${escapeHtml(w.pass_hint)}</span></td>

@@ -17,6 +17,7 @@
   "dependencies": {
     "dotenv": "^18.0.7",
     "express": "^4.21.2",
+    "jose": "^6.2.13",
     "pg": "^8.23.1",
     "ws": "^8.18.0"
   },
@@ -26,6 +27,7 @@
     "@types/pg": "^8.23.1",
     "@types/ws": "^8.5.13",
     "concurrently": "^9.1.0",
+    "firebase": "^13.1.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",

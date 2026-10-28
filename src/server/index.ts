@@ -25,6 +25,7 @@ import {
 import { DatabaseUnavailableError, dbProvider } from './db.js';
 import { RoomManager } from './roomManager.js';
 import { validateRegistrationContact } from '../shared/registrationContact.js';
+import { AuthError, bearerToken, createFirebaseVerifier, readFirebaseWebConfig, type AuthUser } from './firebaseAuth.js';
 import { roomFromQuery, withRoomParam } from './roomUrls.js';
 import { ConfigLockedError, sanitizePairName, tournamentService } from './tournamentService.js';
 import {
@@ -75,8 +76,33 @@ const wss = new WebSocketServer({
   verifyClient: (info: { origin: string; req: IncomingMessage }) =>
     isAllowedWsOrigin(info.origin || undefined, info.req.headers.host, allowedWsOrigins, isProductionEnv())
 });
+// Player sign-in (Firebase Auth, Google): required to register for the tournament
+const firebaseWebConfig = readFirebaseWebConfig();
+const verifyIdToken = firebaseWebConfig ? createFirebaseVerifier(firebaseWebConfig.projectId) : null;
+
+/** Verified player behind "Authorization: Bearer <Firebase ID token>", or null. */
+async function playerFromRequest(req: express.Request): Promise<AuthUser | null> {
+  const token = bearerToken(req.headers.authorization);
+  if (!token || !verifyIdToken) return null;
+  try {
+    return await verifyIdToken(token);
+  } catch (err) {
+    if (err instanceof AuthError) return null;
+    throw err;
+  }
+}
+
+async function uidFromIdToken(idToken?: string): Promise<string | null> {
+  if (!idToken || !verifyIdToken) return null;
+  try {
+    return (await verifyIdToken(idToken)).uid;
+  } catch {
+    return null;
+  }
+}
+
 const roomManager = new RoomManager(
-  (pass) => tournamentService.verifyTournamentPass(pass),
+  async (pass, idToken) => tournamentService.verifyTournamentPass(pass, await uidFromIdToken(idToken)),
   {
     db: dbProvider
   }
@@ -197,6 +223,25 @@ app.post('/api/webhooks/payphone', async (req, res) => {
   }
 });
 
+// Public Firebase web config for the game's "Entrar con Google" button (not secret)
+app.get('/api/auth/config', (_req, res) => {
+  res.json(firebaseWebConfig ? { enabled: true, ...firebaseWebConfig } : { enabled: false });
+});
+
+// "Mis pases": passes of the active tournament paid by the signed-in account
+app.get('/api/tournament/my-passes', passLimiter, async (req, res) => {
+  try {
+    const player = await playerFromRequest(req);
+    if (!player) {
+      res.status(401).json({ success: false, message: 'Inicia sesión con Google.' });
+      return;
+    }
+    res.json({ success: true, passes: await tournamentService.getMyPasses(player.uid) });
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
 app.post('/api/tournament/verify-pass', passLimiter, async (req, res) => {
   try {
     const { pass_code } = req.body || {};
@@ -205,7 +250,8 @@ app.post('/api/tournament/verify-pass', passLimiter, async (req, res) => {
       return;
     }
     // Only validates; the pass is bound to a room through the WebSocket of a player in that room
-    const result = await tournamentService.verifyTournamentPass(pass_code);
+    const player = await playerFromRequest(req);
+    const result = await tournamentService.verifyTournamentPass(pass_code, player?.uid);
     res.json({ valid: result.valid, message: result.message });
   } catch (err) {
     if (err instanceof DatabaseUnavailableError) {
@@ -220,13 +266,13 @@ app.post('/api/tournament/verify-pass', passLimiter, async (req, res) => {
 if (!isProductionEnv()) {
   app.post('/api/tournament/simulate-payment', requireAdminAuth, async (req, res) => {
     try {
-      const { driver_name, navigator_name, referral_code, phone, email } = req.body || {};
+      const { driver_name, navigator_name, referral_code, phone, email, owner_uid, owner_email } = req.body || {};
       const result = await tournamentService.simulateSandboxPayment(
         driver_name,
         navigator_name,
         referral_code,
         clientIp(req),
-        { phone, email }
+        { phone, email, owner_uid, owner_email }
       );
       res.status(result.success ? 200 : 400).json(result);
     } catch (err) {
@@ -240,6 +286,20 @@ app.post('/api/payphone/create-link', paymentLinkLimiter, async (req, res) => {
     const { driver_name, navigator_name, referral_code } = req.body || {};
     if (!getPayphoneConfig().isConfigured) {
       res.status(503).json({ success: false, message: 'Pasarela de pago no configurada.' });
+      return;
+    }
+    // The tournament requires a Google account: the pass is tied to it
+    if (!verifyIdToken) {
+      res.status(503).json({ success: false, message: 'El inicio de sesión todavía no está configurado.' });
+      return;
+    }
+    const player = await playerFromRequest(req);
+    if (!player) {
+      res.status(401).json({ success: false, field: 'auth', message: 'Inicia sesión con Google para inscribirte.' });
+      return;
+    }
+    if (!player.emailVerified) {
+      res.status(403).json({ success: false, field: 'auth', message: 'Tu cuenta no tiene un correo verificado.' });
       return;
     }
     // Phone, e-mail and rules acceptance are mandatory: they identify and reach the winners
@@ -277,6 +337,8 @@ app.post('/api/payphone/create-link', paymentLinkLimiter, async (req, res) => {
       referral_code: referral,
       phone: contact.phone,
       email: contact.email,
+      owner_uid: player.uid,
+      owner_email: player.email || undefined,
       terms_accepted_at: new Date().toISOString(),
       amount_usd: tournament.entry_fee_usd,
       status: 'PENDING',
@@ -579,7 +641,7 @@ wss.on('connection', (ws, req) => {
           roomManager.handlePlayerInput(ws, msg.payload);
           break;
         case 'set_tournament_pass':
-          void roomManager.handleSetTournamentPass(ws, msg.pass_code);
+          void roomManager.handleSetTournamentPass(ws, msg.pass_code, msg.id_token);
           break;
       }
     } catch (err) {
