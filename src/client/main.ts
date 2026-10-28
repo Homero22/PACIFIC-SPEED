@@ -210,7 +210,7 @@ class PacificSpeedClientApp {
   }
 
   private getShareUrl(): string {
-    return `${window.location.origin}/?room=${encodeURIComponent(this.roomCode)}`;
+    return `${window.location.origin}/jugar?room=${encodeURIComponent(this.roomCode)}`;
   }
 
   private storageGet(store: Storage, key: string): string {
@@ -452,7 +452,7 @@ class PacificSpeedClientApp {
     document.getElementById('btn-banner-action')?.addEventListener('click', async () => {
       this.audio.init();
       if (this.isTournamentVerified && this.tournamentPass) {
-        const passUrl = `${window.location.origin}/?pass=${encodeURIComponent(this.tournamentPass)}&room=${encodeURIComponent(this.roomCode)}`;
+        const passUrl = `${window.location.origin}/jugar?pass=${encodeURIComponent(this.tournamentPass)}&room=${encodeURIComponent(this.roomCode)}`;
         try {
           await navigator.clipboard.writeText(passUrl);
           const btn = document.getElementById('btn-banner-action');

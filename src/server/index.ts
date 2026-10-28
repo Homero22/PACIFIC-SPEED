@@ -6,7 +6,7 @@ import express from 'express';
 import fs from 'fs';
 import { createServer, type IncomingMessage } from 'http';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { WebSocketServer } from 'ws';
 import {
   checkAdminRateLimit,
@@ -53,15 +53,15 @@ const app = express();
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 
-// Capture rawBody for HMAC-SHA256 Payphone webhook signature validation
-app.use(
-  express.json({
-    limit: '32kb',
-    verify: (req: express.Request & { rawBody?: string }, _res, buf) => {
-      req.rawBody = buf.toString('utf8');
-    }
-  })
-);
+// Capture rawBody for HMAC-SHA256 Payphone webhook signature validation.
+// The article editor's API (/api/keystatic) reads its own request body, so it is skipped here.
+const jsonParser = express.json({
+  limit: '32kb',
+  verify: (req: express.Request & { rawBody?: string }, _res, buf) => {
+    req.rawBody = buf.toString('utf8');
+  }
+});
+app.use((req, res, next) => (req.path.startsWith('/api/keystatic') ? next() : jsonParser(req, res, next)));
 
 const server = createServer(app);
 const allowedWsOrigins = (process.env.ALLOWED_ORIGINS || '')
@@ -292,7 +292,7 @@ app.post('/api/payphone/create-link', paymentLinkLimiter, async (req, res) => {
     // responseUrl stays query-free (Payphone appends ?id=&clientTransactionId=); the callback
     // recovers the room from pending_registrations so the payer returns to the same room.
     const responseUrl = process.env.PAYPHONE_RESPONSE_URL || `${baseUrl}/payphone/callback`;
-    const cancellationUrl = withRoomParam(`${baseUrl}/?payment=cancelled`, roomCode);
+    const cancellationUrl = withRoomParam(`${baseUrl}/jugar?payment=cancelled`, roomCode);
 
     const linkResult = await preparePayphoneTransaction({
       amountUsd: tournament.entry_fee_usd,
@@ -328,7 +328,7 @@ app.get(['/payphone/callback', '/api/payphone/callback'], async (req, res) => {
     let roomCode = roomFromQuery(req.query.room);
 
     if (!id || !clientTransactionId) {
-      res.redirect(withRoomParam('/?payment=cancelled', roomCode));
+      res.redirect(withRoomParam('/jugar?payment=cancelled', roomCode));
       return;
     }
 
@@ -346,12 +346,12 @@ app.get(['/payphone/callback', '/api/payphone/callback'], async (req, res) => {
 
     if (result.success && result.auditRecord?.pass_token) {
       res.redirect(
-        withRoomParam(`/?payment=success&pass=${encodeURIComponent(result.auditRecord.pass_token)}`, roomCode)
+        withRoomParam(`/jugar?payment=success&pass=${encodeURIComponent(result.auditRecord.pass_token)}`, roomCode)
       );
     } else if (result.success) {
-      res.redirect(withRoomParam('/?payment=success', roomCode));
+      res.redirect(withRoomParam('/jugar?payment=success', roomCode));
     } else {
-      res.redirect(withRoomParam(`/?payment=error&reason=${encodeURIComponent(result.message)}`, roomCode));
+      res.redirect(withRoomParam(`/jugar?payment=error&reason=${encodeURIComponent(result.message)}`, roomCode));
     }
   } catch (err: any) {
     console.error('[PAYPHONE CALLBACK] Error:', err);
@@ -359,7 +359,7 @@ app.get(['/payphone/callback', '/api/payphone/callback'], async (req, res) => {
       err instanceof DatabaseUnavailableError
         ? 'Servicio temporalmente no disponible. Tu pago no fue confirmado y será revertido por Payphone.'
         : 'Error procesando cobro';
-    res.redirect(withRoomParam(`/?payment=error&reason=${encodeURIComponent(reason)}`, roomFromQuery(req.query.room)));
+    res.redirect(withRoomParam(`/jugar?payment=error&reason=${encodeURIComponent(reason)}`, roomFromQuery(req.query.room)));
   }
 });
 
@@ -602,19 +602,25 @@ const clientDistPath = clientDistCandidates.find((p) => fs.existsSync(p)) || cli
 
 const publicPath = path.resolve(process.cwd(), 'public');
 if (fs.existsSync(publicPath)) {
-  app.use(express.static(publicPath));
+  app.use(express.static(publicPath, { index: false }));
 }
 
-app.use(express.static(clientDistPath));
+// Game assets (Vite build). "/" is the content home now, so never serve the game's index there.
+app.use(express.static(clientDistPath, { index: false }));
 
-// Public legal pages (static files in public/, copied into the client build)
-for (const page of ['bases', 'privacidad']) {
-  app.get(`/${page}`, (_req, res) => {
-    res.sendFile(path.join(clientDistPath, `${page}.html`), (err) => {
-      if (err) res.sendFile(path.join(publicPath, `${page}.html`), (err2) => err2 && res.status(404).end());
-    });
+// The game lives at /jugar. Old links (invites, tournament passes, Payphone returns) pointed at "/".
+const GAME_QUERY_KEYS = ['room', 'pass', 'payment', 'ref', 'tx', 'reason'];
+app.get('/', (req, res, next) => {
+  if (!GAME_QUERY_KEYS.some((k) => k in req.query)) return next();
+  const qs = req.originalUrl.slice(req.originalUrl.indexOf('?'));
+  res.redirect(302, `/jugar${qs}`);
+});
+
+app.get('/jugar', (_req, res) => {
+  res.sendFile(path.join(clientDistPath, 'index.html'), (err) => {
+    if (err) res.status(200).send('PACIFIC SPEED: OVERDRIVE Server Running. Build client with npm run build.');
   });
-}
+});
 
 app.get('/admin', (_req, res) => {
   res.sendFile(path.join(clientDistPath, 'admin.html'), (err) => {
@@ -628,17 +634,66 @@ app.get('/admin/*', (_req, res) => {
   });
 });
 
+// -------------------------------------------------------------
+// Content site (Astro, built into site/dist): home, blog, rules, privacy and the article editor
+// -------------------------------------------------------------
+const siteDistPath = [path.resolve(process.cwd(), 'site/dist'), path.resolve(__dirname, '../../site/dist')].find((p) =>
+  fs.existsSync(p)
+);
+const siteClientPath = siteDistPath ? path.join(siteDistPath, 'client') : null;
+
+if (siteClientPath) {
+  app.use(express.static(siteClientPath, { index: 'index.html', redirect: false }));
+  // Pages are built as "/blog/slug.html": serve them at "/blog/slug"
+  app.get('*', (req, res, next) => {
+    if (path.extname(req.path)) return next();
+    const file = path.join(siteClientPath, `${req.path.replace(/\/+$/, '')}.html`);
+    if (!file.startsWith(siteClientPath) || !fs.existsSync(file)) return next();
+    res.sendFile(file);
+  });
+}
+
+// Article editor (Keystatic). In production it only answers once its GitHub App keys are set,
+// so a misconfigured deploy can never expose an editor that writes to the server's disk.
+const editorConfigured =
+  !isProductionEnv() ||
+  Boolean(
+    process.env.KEYSTATIC_GITHUB_CLIENT_ID && process.env.KEYSTATIC_GITHUB_CLIENT_SECRET && process.env.KEYSTATIC_SECRET
+  );
+let astroHandler: express.RequestHandler | null = null;
+const siteEntry = siteDistPath ? path.join(siteDistPath, 'server', 'entry.mjs') : null;
+if (siteEntry && fs.existsSync(siteEntry)) {
+  import(pathToFileURL(siteEntry).href)
+    .then((mod: { handler: express.RequestHandler }) => {
+      astroHandler = mod.handler;
+    })
+    .catch((err) => console.error('[SITE] No se pudo cargar el servidor del sitio (Astro):', err));
+}
+app.use((req, res, next) => {
+  const isEditor = req.path === '/keystatic' || req.path.startsWith('/keystatic/') || req.path.startsWith('/api/keystatic');
+  if (!isEditor) return next();
+  if (!editorConfigured) {
+    res.status(404).send('Editor no configurado: faltan las claves de la GitHub App (ver docs/editor-articulos.md).');
+    return;
+  }
+  if (!astroHandler) {
+    res.status(503).send('El editor se está iniciando. Intenta de nuevo en unos segundos.');
+    return;
+  }
+  astroHandler(req, res, next);
+});
+
+// Anything else: the site's 404 page (APIs, WebSocket and Payphone keep their own 404s)
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/ws') || req.path.startsWith('/payphone')) {
     return next();
   }
-  res.sendFile(path.join(clientDistPath, 'index.html'), (err) => {
-    if (err) {
-      res
-        .status(200)
-        .send('PACIFIC SPEED: OVERDRIVE Server Running. Build client with npm run build.');
-    }
-  });
+  const notFound = siteClientPath ? path.join(siteClientPath, '404.html') : null;
+  if (notFound && fs.existsSync(notFound)) {
+    res.status(404).sendFile(notFound);
+    return;
+  }
+  res.status(404).send('Página no encontrada');
 });
 
 const rawPort = process.env.PORT ? String(process.env.PORT).trim().replace(/^["']|["']$/g, '') : '';

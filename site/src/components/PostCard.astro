@@ -1,0 +1,20 @@
+---
+import { Image } from 'astro:assets';
+import { CATEGORY_LABELS, formatDate, type Post } from '../lib/posts';
+
+interface Props {
+  post: Post;
+}
+const { post } = Astro.props;
+const { title, description, publishedDate, category, cover, coverAlt } = post.data;
+---
+
+<article class="card">
+  {cover && <Image src={cover} alt={coverAlt || ''} width={640} height={360} />}
+  <div class="card-body">
+    <span class="tag">{CATEGORY_LABELS[category]}</span>
+    <h3><a href={`/blog/${post.id}`}>{title}</a></h3>
+    <p class="meta">{formatDate(publishedDate)}</p>
+    <p>{description}</p>
+  </div>
+</article>

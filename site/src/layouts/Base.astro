@@ -1,0 +1,88 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description: string;
+  /** AdSense solo en páginas de contenido (artículos, blog, inicio); nunca en el juego. */
+  ads?: boolean;
+  ogImage?: string;
+  type?: 'website' | 'article';
+}
+const { title, description, ads = false, ogImage, type = 'website' } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const fullTitle = title.includes('Patrulla Huellitas') ? title : `${title} · Patrulla Huellitas`;
+const nav = [
+  { href: '/', label: 'Inicio' },
+  { href: '/blog', label: 'Blog' },
+  { href: '/bases', label: 'Torneo' }
+];
+const path = Astro.url.pathname;
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content={type} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content="es_EC" />
+    {ogImage && <meta property="og:image" content={new URL(ogImage, Astro.site)} />}
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Nunito:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    {
+      ads && (
+        <script
+          async
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3713280221541385"
+          crossorigin="anonymous"
+        />
+      )
+    }
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="wrap header-row">
+        <a class="brand" href="/">🐾 Patrulla Huellitas</a>
+        <nav aria-label="Principal">
+          {
+            nav.map((item) => (
+              <a
+                href={item.href}
+                aria-current={(item.href === '/' ? path === '/' : path.startsWith(item.href)) ? 'page' : undefined}
+              >
+                {item.label}
+              </a>
+            ))
+          }
+          <a class="btn btn-small" href="/jugar">Jugar</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-row">
+        <span>Patrulla Huellitas · un juego en pareja por los animales</span>
+        <span>
+          <a href="/bases">Bases del torneo</a> · <a href="/privacidad">Privacidad</a> ·
+          <a href="mailto:homero6834@gmail.com">Contacto</a>
+        </span>
+      </div>
+    </footer>
+  </body>
+</html>
