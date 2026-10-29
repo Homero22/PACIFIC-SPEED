@@ -351,8 +351,10 @@ describe('RoomManager — room lifecycle', () => {
   });
 
   describe('tournament pass', () => {
-    const verifier = vi.fn(async (code: string) =>
-      code === 'PASS-OK'
+    const verifier = vi.fn(async (code: string, _idToken?: string) =>
+      code === 'OWNED'
+        ? { valid: false, message: 'Este pase pertenece a otra cuenta.' }
+        : code === 'PASS-OK'
         ? { valid: true, driver_name: 'PAID_DRIVER', navigator_name: 'PAID_NAV', tournament_id: 'T-OFFICIAL', payment_audit_id: 'PAY-1' }
         : { valid: false }
     );
@@ -384,6 +386,13 @@ describe('RoomManager — room lifecycle', () => {
       await rm.handleSetTournamentPass(a.s.ws, 'pass-ok');
       expect(b.last('lobby_update')!.lobby.is_tournament_verified).toBe(true);
       expect(JSON.stringify(b.sent)).not.toContain('PASS-OK');
+    });
+
+    it('forwards the sign-in token and shows why a pass was refused', async () => {
+      const a = create();
+      await rm.handleSetTournamentPass(a.s.ws, 'owned', 'id-token-123');
+      expect(verifier).toHaveBeenLastCalledWith('OWNED', 'id-token-123');
+      expect(a.s.last('error')?.message).toBe('Este pase pertenece a otra cuenta.');
     });
 
     it('rejects invalid passes and sockets outside a room', async () => {

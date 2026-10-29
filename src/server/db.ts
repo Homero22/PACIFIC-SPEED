@@ -275,6 +275,7 @@ function mapAuditRow(r: any): PaymentAuditRecord {
     status: r.status,
     raw_payload_json: r.raw_payload_json,
     pass_token: r.pass_token || undefined,
+    owner_uid: r.owner_uid || undefined,
     client_transaction_id: r.client_transaction_id || undefined,
     created_at: r.created_at
   };
@@ -651,6 +652,14 @@ export class DatabaseProvider {
         if (!this.localData.match_scores) {
           this.localData.match_scores = [];
         }
+        // Copy the owner onto passes approved before owner_uid lived on the pass record
+        for (const audit of this.localData.payments) {
+          if (audit.owner_uid || !audit.client_transaction_id) continue;
+          const owner = this.localData.pending_registrations.find(
+            (p) => p.client_transaction_id === audit.client_transaction_id
+          )?.owner_uid;
+          if (owner) audit.owner_uid = owner;
+        }
         return;
       } catch {
         // Fall through to default setup
@@ -751,6 +760,8 @@ export class DatabaseProvider {
         ALTER TABLE payments_audit ADD COLUMN IF NOT EXISTS pass_token VARCHAR(64);
         CREATE UNIQUE INDEX IF NOT EXISTS payments_audit_pass_token_key ON payments_audit (pass_token);
         ALTER TABLE payments_audit ADD COLUMN IF NOT EXISTS client_transaction_id VARCHAR(100);
+        -- Owner of the pass, stored on the pass itself (never derived through other tables)
+        ALTER TABLE payments_audit ADD COLUMN IF NOT EXISTS owner_uid VARCHAR(128);
         ALTER TABLE pending_registrations ADD COLUMN IF NOT EXISTS tournament_id VARCHAR(100);
         -- Room the payer was in, so the Payphone return lands in the same room
         ALTER TABLE pending_registrations ADD COLUMN IF NOT EXISTS room_code VARCHAR(20);
@@ -810,6 +821,13 @@ export class DatabaseProvider {
           UNIQUE (tournament_id, place)
         );
       `);
+
+      // Copy the owner onto passes approved before owner_uid lived on payments_audit
+      await client.query(
+        `UPDATE payments_audit a SET owner_uid = p.owner_uid
+         FROM pending_registrations p
+         WHERE a.client_transaction_id = p.client_transaction_id AND a.owner_uid IS NULL AND p.owner_uid IS NOT NULL`
+      );
 
       // Backfill pass tokens for payments approved before tokens existed (admin can hand them out)
       const missing = await client.query(
@@ -1179,6 +1197,7 @@ export class DatabaseProvider {
           raw_payload_json: input.raw_payload_json,
           pass_token: generatePassToken(),
           client_transaction_id: input.client_transaction_id,
+          owner_uid: pending.owner_uid,
           created_at: new Date().toISOString()
         };
 
@@ -1187,8 +1206,8 @@ export class DatabaseProvider {
             id, payphone_transaction_id, tournament_id, referral_id, referral_code,
             pair_driver_name, pair_navigator_name, gross_amount, payphone_fee,
             prize_pool_share, charity_share, developer_share, collaborator_share,
-            status, raw_payload_json, pass_token, client_transaction_id, created_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+            status, raw_payload_json, pass_token, client_transaction_id, created_at, owner_uid
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
           ON CONFLICT (payphone_transaction_id) DO NOTHING
           RETURNING id`,
           [
@@ -1209,7 +1228,8 @@ export class DatabaseProvider {
             audit.raw_payload_json || null,
             audit.pass_token,
             audit.client_transaction_id,
-            audit.created_at
+            audit.created_at,
+            audit.owner_uid || null
           ]
         );
         if (ins.rows.length === 0) {
@@ -1288,6 +1308,7 @@ export class DatabaseProvider {
       raw_payload_json: input.raw_payload_json,
       pass_token: generatePassToken(),
       client_transaction_id: input.client_transaction_id,
+      owner_uid: pending.owner_uid,
       created_at: new Date().toISOString()
     };
     data.payments.unshift(audit);
@@ -1475,12 +1496,14 @@ export class DatabaseProvider {
     navigator_name?: string;
     tournament_id?: string;
     payment_audit_id?: string;
+    owner_uid?: string;
     status?: string;
     message?: string;
+    reason?: 'invalid_format' | 'not_found';
   }> {
     const clean = String(passCode || '').trim().toUpperCase();
     if (!/^PS(-[0-9A-F]{4}){8}$/.test(clean)) {
-      return { valid: false, message: 'Código de pase no válido.' };
+      return { valid: false, reason: 'invalid_format', message: 'Código de pase no válido.' };
     }
 
     let found: PaymentAuditRecord | null = null;
@@ -1496,7 +1519,7 @@ export class DatabaseProvider {
     }
 
     if (!found || (tournamentId && found.tournament_id !== tournamentId)) {
-      return { valid: false, message: 'Código de pase no encontrado para el torneo activo.' };
+      return { valid: false, reason: 'not_found', message: 'Código de pase no encontrado para el torneo activo.' };
     }
 
     return {
@@ -1505,6 +1528,7 @@ export class DatabaseProvider {
       navigator_name: found.pair_navigator_name,
       tournament_id: found.tournament_id,
       payment_audit_id: found.id,
+      owner_uid: found.owner_uid,
       status: 'ACTIVE'
     };
   }
@@ -1737,23 +1761,16 @@ export class DatabaseProvider {
     const pool = this.backend();
     if (pool) {
       const res = await pool.query(
-        `SELECT a.* FROM pending_registrations p
-         JOIN payments_audit a ON a.client_transaction_id = p.client_transaction_id
-         WHERE p.owner_uid = $1 AND a.status = 'APPROVED' AND a.tournament_id = $2 AND a.pass_token IS NOT NULL
-         ORDER BY a.created_at DESC`,
+        `SELECT * FROM payments_audit
+         WHERE owner_uid = $1 AND status = 'APPROVED' AND tournament_id = $2 AND pass_token IS NOT NULL
+         ORDER BY created_at DESC`,
         [ownerUid, tournamentId]
       );
       return res.rows.map(mapAuditRow);
     }
-    const data = this.local();
-    const mine = new Set(
-      (data.pending_registrations || []).filter((p) => p.owner_uid === ownerUid).map((p) => p.client_transaction_id)
-    );
-    return data.payments
-      .filter(
-        (a) =>
-          a.client_transaction_id && mine.has(a.client_transaction_id) && a.status === 'APPROVED' &&
-          a.tournament_id === tournamentId && a.pass_token
+    return this.local()
+      .payments.filter(
+        (a) => a.owner_uid === ownerUid && a.status === 'APPROVED' && a.tournament_id === tournamentId && a.pass_token
       )
       .map((a) => ({ ...a }))
       .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
