@@ -298,6 +298,8 @@ export interface PaymentAuditRecord {
   raw_payload_json?: string;
   pass_token?: string;
   client_transaction_id?: string;
+  /** Google account that paid; only it can activate the pass (empty for pre-account passes). */
+  owner_uid?: string;
   created_at: string;
 }
 

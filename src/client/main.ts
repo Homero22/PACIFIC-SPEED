@@ -24,7 +24,7 @@ import { AudioEngine, type AmbienceLevel, type VoiceMode } from './audioEngine.j
 import { InputManager } from './inputManager.js';
 import { GameRenderer } from './renderer.js';
 import { track } from './analytics.js';
-import { playerAuth, type PlayerAccount } from './auth.js';
+import { friendlyAuthError, playerAuth, type PlayerAccount } from './auth.js';
 import { validateRegistrationContact } from '../shared/registrationContact.js';
 
 const LOCAL_COMMS_MAP: Record<TacticalCommsPreset, { code: string; label: string }> = {
@@ -457,23 +457,25 @@ class PacificSpeedClientApp {
       });
     }
 
-    // Banner Quick Action (Share pass or Switch to Tournament)
+    // Banner Quick Action (Invite copilot to this tournament room, or Switch to Tournament).
+    // Passes are tied to the paying account, so the copilot only needs the room link.
     document.getElementById('btn-banner-action')?.addEventListener('click', async () => {
       this.audio.init();
       if (this.isTournamentVerified && this.tournamentPass) {
-        const passUrl = `${window.location.origin}/jugar?pass=${encodeURIComponent(this.tournamentPass)}&room=${encodeURIComponent(this.roomCode)}`;
+        const roomUrl = this.getShareUrl();
         try {
-          await navigator.clipboard.writeText(passUrl);
+          await navigator.clipboard.writeText(roomUrl);
+          track('invitacion_copiada');
           const btn = document.getElementById('btn-banner-action');
           if (btn) {
             const prev = btn.textContent;
-            btn.textContent = '¡ENLACE DEL TORNEO COPIADO!';
+            btn.textContent = '¡ENLACE DE LA SALA COPIADO!';
             setTimeout(() => {
               btn.textContent = prev;
             }, 2000);
           }
         } catch {
-          prompt('Copia este enlace para tu copiloto:', passUrl);
+          prompt('Copia este enlace para tu copiloto:', roomUrl);
         }
       } else {
         this.switchHangarTab('hangar-tab-tournament');
@@ -1496,7 +1498,7 @@ class PacificSpeedClientApp {
       } catch (err) {
         const feedback = document.getElementById('tourney-feedback');
         if (feedback) {
-          feedback.textContent = `No se pudo iniciar sesión: ${(err as Error)?.message || 'intenta de nuevo'}`;
+          feedback.textContent = friendlyAuthError(err);
           feedback.style.color = 'var(--danger)';
         }
       }
@@ -1811,8 +1813,9 @@ class PacificSpeedClientApp {
         return true;
       }
       this.lastPassError = typeof data.message === 'string' ? data.message : null;
-      if (res.ok && localStorage.getItem('ps_tournament_pass') === cleanCode) {
-        // Stale pass (e.g. old transaction-id passes are no longer accepted)
+      const passGone = data.reason === 'not_found' || data.reason === 'invalid_format';
+      if (res.ok && passGone && localStorage.getItem('ps_tournament_pass') === cleanCode) {
+        // Stale pass (e.g. old transaction-id passes). Kept when the player only needs to sign in.
         localStorage.removeItem('ps_tournament_pass');
       }
       return false;
@@ -1836,7 +1839,7 @@ class PacificSpeedClientApp {
           : `MODO ACTUAL: <strong>TORNEO OFICIAL ACTIVO</strong> // PASE ACTIVADO POR TU COPILOTO`;
       }
       if (bannerBtn && this.tournamentPass) {
-        bannerBtn.textContent = 'Compartir Pase con Copiloto';
+        bannerBtn.textContent = 'Invitar a mi copiloto';
         bannerBtn.style.color = '#ffb703';
         bannerBtn.style.borderColor = 'var(--accent)';
       }

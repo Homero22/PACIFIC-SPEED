@@ -5,7 +5,15 @@ import path from 'path';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DatabaseProvider } from '../db.js';
-import { bearerToken, createFirebaseVerifier, readFirebaseWebConfig, type IdTokenVerifier } from '../firebaseAuth.js';
+import {
+  AuthError,
+  AuthUnavailableError,
+  bearerToken,
+  createFirebaseVerifier,
+  readFirebaseWebConfig,
+  type IdTokenVerifier
+} from '../firebaseAuth.js';
+import { authorizeRegistration } from '../registrationAuth.js';
 import { TournamentService } from '../tournamentService.js';
 import { parseClientMessage } from '../wsValidation.js';
 
@@ -50,6 +58,19 @@ describe('Firebase ID token verification', () => {
     await expect(verify('')).rejects.toThrow();
   });
 
+  it('tells a Google key outage apart from a bad session', async () => {
+    const timeout = Object.assign(new Error('timed out'), { code: 'ERR_JWKS_TIMEOUT' });
+    const down = createFirebaseVerifier(PROJECT, async () => {
+      throw timeout;
+    });
+    await expect(down(await token())).rejects.toBeInstanceOf(AuthUnavailableError);
+    const offline = createFirebaseVerifier(PROJECT, async () => {
+      throw new TypeError('fetch failed');
+    });
+    await expect(offline(await token())).rejects.toBeInstanceOf(AuthUnavailableError);
+    await expect(verify(await token({}, { exp: '-1m' }))).rejects.toBeInstanceOf(AuthError);
+  });
+
   it('reads the public web config and bearer headers', () => {
     expect(readFirebaseWebConfig({})).toBeNull();
     expect(readFirebaseWebConfig({ FIREBASE_API_KEY: 'k', FIREBASE_PROJECT_ID: 'p', FIREBASE_APP_ID: 'a' })).toEqual({
@@ -61,6 +82,24 @@ describe('Firebase ID token verification', () => {
     expect(bearerToken('Bearer abc.def')).toBe('abc.def');
     expect(bearerToken('Basic x')).toBeNull();
     expect(bearerToken(undefined)).toBeNull();
+  });
+});
+
+describe('Registration gate (create-link)', () => {
+  it('needs sign-in configured, a valid session and a verified e-mail, in that order', async () => {
+    expect(await authorizeRegistration(null, `Bearer ${await token()}`)).toMatchObject({ ok: false, status: 503 });
+    expect(await authorizeRegistration(verify, undefined)).toMatchObject({ ok: false, status: 401 });
+    expect(await authorizeRegistration(verify, 'Bearer basura')).toMatchObject({ ok: false, status: 401 });
+    expect(await authorizeRegistration(verify, `Bearer ${await token({ email_verified: false })}`)).toMatchObject({
+      ok: false,
+      status: 403
+    });
+    const down = createFirebaseVerifier(PROJECT, async () => {
+      throw Object.assign(new Error('timed out'), { code: 'ERR_JWKS_TIMEOUT' });
+    });
+    expect(await authorizeRegistration(down, `Bearer ${await token()}`)).toMatchObject({ ok: false, status: 503 });
+    const ok = await authorizeRegistration(verify, `Bearer ${await token()}`);
+    expect(ok).toMatchObject({ ok: true, player: { uid: 'uid-ana', emailVerified: true } });
   });
 });
 
@@ -84,11 +123,29 @@ describe('Tournament pass tied to the Google account that paid', () => {
     const { service, pass } = await setup();
     expect((await service.verifyTournamentPass(pass('ANA'), 'uid-ana')).valid).toBe(true);
     const stranger = await service.verifyTournamentPass(pass('ANA'), 'uid-otro');
-    expect(stranger.valid).toBe(false);
+    expect(stranger).toMatchObject({ valid: false, reason: 'other_account' });
     expect(stranger.message).toMatch(/otra cuenta/);
     const anonymous = await service.verifyTournamentPass(pass('ANA'), null);
-    expect(anonymous.valid).toBe(false);
+    expect(anonymous).toMatchObject({ valid: false, reason: 'sign_in_required' });
     expect(anonymous.message).toMatch(/Inicia sesión/);
+    expect(await service.verifyTournamentPass('PS-0000-0000-0000-0000-0000-0000-0000-0000', 'uid-ana')).toMatchObject({
+      valid: false,
+      reason: 'not_found'
+    });
+  });
+
+  it('the owner lives on the pass itself, so losing the registration row never frees the pass', async () => {
+    const { db, service, pass } = await setup();
+    const payments = await db.listPaymentAudits();
+    const ana = payments.find((p) => p.pair_driver_name === 'ANA')!;
+    expect(ana.owner_uid).toBe('uid-ana');
+    // Simulate the registration row disappearing (cleanup, migration...)
+    const local = (db as any).local();
+    local.pending_registrations = local.pending_registrations.filter(
+      (p: { client_transaction_id: string }) => p.client_transaction_id !== ana.client_transaction_id
+    );
+    expect((await service.verifyTournamentPass(pass('ANA'), 'uid-otro')).valid).toBe(false);
+    expect((await service.verifyTournamentPass(pass('ANA'), 'uid-ana')).valid).toBe(true);
   });
 
   it('older passes without an account keep working', async () => {

@@ -25,7 +25,15 @@ import {
 import { DatabaseUnavailableError, dbProvider } from './db.js';
 import { RoomManager } from './roomManager.js';
 import { validateRegistrationContact } from '../shared/registrationContact.js';
-import { AuthError, bearerToken, createFirebaseVerifier, readFirebaseWebConfig, type AuthUser } from './firebaseAuth.js';
+import {
+  AuthError,
+  AuthUnavailableError,
+  bearerToken,
+  createFirebaseVerifier,
+  readFirebaseWebConfig,
+  type AuthUser
+} from './firebaseAuth.js';
+import { authorizeRegistration } from './registrationAuth.js';
 import { roomFromQuery, withRoomParam } from './roomUrls.js';
 import { ConfigLockedError, sanitizePairName, tournamentService } from './tournamentService.js';
 import {
@@ -80,29 +88,34 @@ const wss = new WebSocketServer({
 const firebaseWebConfig = readFirebaseWebConfig();
 const verifyIdToken = firebaseWebConfig ? createFirebaseVerifier(firebaseWebConfig.projectId) : null;
 
-/** Verified player behind "Authorization: Bearer <Firebase ID token>", or null. */
-async function playerFromRequest(req: express.Request): Promise<AuthUser | null> {
-  const token = bearerToken(req.headers.authorization);
-  if (!token || !verifyIdToken) return null;
+/**
+ * The player behind a Firebase ID token, or null when there is no valid sign-in.
+ * Throws AuthUnavailableError when Google's keys cannot be reached (callers answer 503).
+ */
+async function verifyPlayerToken(idToken: string | null | undefined): Promise<AuthUser | null> {
+  if (!idToken || !verifyIdToken) return null;
   try {
-    return await verifyIdToken(token);
+    return await verifyIdToken(idToken);
   } catch (err) {
     if (err instanceof AuthError) return null;
     throw err;
   }
 }
 
-async function uidFromIdToken(idToken?: string): Promise<string | null> {
-  if (!idToken || !verifyIdToken) return null;
-  try {
-    return (await verifyIdToken(idToken)).uid;
-  } catch {
-    return null;
+const playerFromRequest = (req: express.Request) => verifyPlayerToken(bearerToken(req.headers.authorization));
+
+/** 503 for a Google outage, otherwise the usual error handling. */
+function sendAuthAwareError(res: express.Response, err: unknown): void {
+  if (err instanceof AuthUnavailableError) {
+    res.status(503).json({ success: false, message: err.message });
+    return;
   }
+  sendError(res, err);
 }
 
 const roomManager = new RoomManager(
-  async (pass, idToken) => tournamentService.verifyTournamentPass(pass, await uidFromIdToken(idToken)),
+  // A Google outage throws here, and the room manager answers "no se pudo verificar el pase"
+  async (pass, idToken) => tournamentService.verifyTournamentPass(pass, (await verifyPlayerToken(idToken))?.uid),
   {
     db: dbProvider
   }
@@ -143,6 +156,8 @@ function createIpLimiter(max: number, windowMs: number) {
 }
 const paymentLinkLimiter = createIpLimiter(10, 60 * 60 * 1000);
 const passLimiter = createIpLimiter(30, 15 * 60 * 1000);
+// "Mis pases" has its own budget: shared IPs (mobile carriers, events) must not lock out a lost-pass recovery
+const myPassesLimiter = createIpLimiter(60, 15 * 60 * 1000);
 
 // Initialize Database, Tournament Service & Leaderboard Persistence
 void tournamentService.init().then(async () => {
@@ -229,7 +244,7 @@ app.get('/api/auth/config', (_req, res) => {
 });
 
 // "Mis pases": passes of the active tournament paid by the signed-in account
-app.get('/api/tournament/my-passes', passLimiter, async (req, res) => {
+app.get('/api/tournament/my-passes', myPassesLimiter, async (req, res) => {
   try {
     const player = await playerFromRequest(req);
     if (!player) {
@@ -238,7 +253,7 @@ app.get('/api/tournament/my-passes', passLimiter, async (req, res) => {
     }
     res.json({ success: true, passes: await tournamentService.getMyPasses(player.uid) });
   } catch (err) {
-    sendError(res, err);
+    sendAuthAwareError(res, err);
   }
 });
 
@@ -252,9 +267,9 @@ app.post('/api/tournament/verify-pass', passLimiter, async (req, res) => {
     // Only validates; the pass is bound to a room through the WebSocket of a player in that room
     const player = await playerFromRequest(req);
     const result = await tournamentService.verifyTournamentPass(pass_code, player?.uid);
-    res.json({ valid: result.valid, message: result.message });
+    res.json({ valid: result.valid, message: result.message, reason: result.reason });
   } catch (err) {
-    if (err instanceof DatabaseUnavailableError) {
+    if (err instanceof DatabaseUnavailableError || err instanceof AuthUnavailableError) {
       res.status(503).json({ valid: false, message: err.message });
       return;
     }
@@ -289,19 +304,12 @@ app.post('/api/payphone/create-link', paymentLinkLimiter, async (req, res) => {
       return;
     }
     // The tournament requires a Google account: the pass is tied to it
-    if (!verifyIdToken) {
-      res.status(503).json({ success: false, message: 'El inicio de sesión todavía no está configurado.' });
+    const auth = await authorizeRegistration(verifyIdToken, req.headers.authorization);
+    if (!auth.ok) {
+      res.status(auth.status).json({ success: false, field: 'auth', message: auth.message });
       return;
     }
-    const player = await playerFromRequest(req);
-    if (!player) {
-      res.status(401).json({ success: false, field: 'auth', message: 'Inicia sesión con Google para inscribirte.' });
-      return;
-    }
-    if (!player.emailVerified) {
-      res.status(403).json({ success: false, field: 'auth', message: 'Tu cuenta no tiene un correo verificado.' });
-      return;
-    }
+    const player = auth.player;
     // Phone, e-mail and rules acceptance are mandatory: they identify and reach the winners
     const contact = validateRegistrationContact(req.body || {});
     if (!contact.ok) {

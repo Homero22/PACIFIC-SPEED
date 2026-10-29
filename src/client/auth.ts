@@ -108,3 +108,27 @@ class PlayerAuth {
 }
 
 export const playerAuth = new PlayerAuth();
+
+/** Firebase sign-in errors in plain Spanish (the raw message is technical English). */
+export function friendlyAuthError(err: unknown): string {
+  const code = String((err as { code?: string })?.code || '');
+  switch (code) {
+    case 'auth/unauthorized-domain':
+      return 'Este sitio todavía no está autorizado para iniciar sesión. Avísanos para corregirlo.';
+    case 'auth/network-request-failed':
+      return 'No hay conexión con Google. Revisa tu internet e intenta de nuevo.';
+    case 'auth/too-many-requests':
+      return 'Demasiados intentos. Espera un momento e intenta de nuevo.';
+    case 'auth/user-disabled':
+      return 'Esta cuenta de Google está deshabilitada.';
+    case 'auth/account-exists-with-different-credential':
+      return 'Ya existe una cuenta con este correo usando otro método de acceso.';
+    case 'auth/internal-error':
+    case 'auth/invalid-api-key':
+    case 'auth/api-key-not-valid':
+    case 'auth/operation-not-allowed':
+      return 'El inicio de sesión no está bien configurado. Avísanos para corregirlo.';
+    default:
+      return 'No se pudo iniciar sesión. Intenta de nuevo.';
+  }
+}

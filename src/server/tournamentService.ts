@@ -125,23 +125,33 @@ export class TournamentService {
    * activated by that same account (ownerUid from a verified sign-in); older passes without an
    * owner keep working as before.
    */
-  public async verifyTournamentPass(passCode: string, ownerUid?: string | null) {
+  public async verifyTournamentPass(
+    passCode: string,
+    ownerUid?: string | null
+  ): Promise<{
+    valid: boolean;
+    message?: string;
+    reason?: 'invalid_format' | 'not_found' | 'sign_in_required' | 'other_account';
+    driver_name?: string;
+    navigator_name?: string;
+    tournament_id?: string;
+    payment_audit_id?: string;
+  }> {
     const tournament = await this.db.getActiveTournament();
-    const check = await this.db.verifyTournamentPass(passCode, tournament.id);
-    if (!check.valid || !check.payment_audit_id) return check;
-    const audit = await this.db.getPaymentAuditById(check.payment_audit_id);
-    const pending = audit?.client_transaction_id
-      ? await this.db.getPendingRegistration(audit.client_transaction_id)
-      : null;
-    if (pending?.owner_uid && pending.owner_uid !== ownerUid) {
-      return {
-        valid: false,
-        message: ownerUid
-          ? 'Este pase pertenece a otra cuenta. Inicia sesión con la cuenta de Google que pagó la inscripción.'
-          : 'Inicia sesión con la cuenta de Google que pagó la inscripción para activar este pase.'
-      };
-    }
-    return check;
+    // The owner is read from the pass record itself, in the same query
+    const { owner_uid, ...check } = await this.db.verifyTournamentPass(passCode, tournament.id);
+    if (!check.valid || !owner_uid || owner_uid === ownerUid) return check;
+    return ownerUid
+      ? {
+          valid: false,
+          reason: 'other_account',
+          message: 'Este pase pertenece a otra cuenta. Inicia sesión con la cuenta de Google que pagó la inscripción.'
+        }
+      : {
+          valid: false,
+          reason: 'sign_in_required',
+          message: 'Inicia sesión con la cuenta de Google que pagó la inscripción para activar este pase.'
+        };
   }
 
   /** "Mis pases": the passes of the active tournament paid by this account. */
